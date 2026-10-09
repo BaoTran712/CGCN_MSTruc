@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { User, UserRole, ActiveNavTab, Notification } from '../../types';
 import * as api from '../../services/api';
+import logoUrl from '../../assets/logo.png';
 
 interface HeaderProps {
   currentUser: User;
@@ -81,9 +82,9 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="sticky top-0 z-30 flex items-center justify-between h-16 px-4 lg:px-8 bg-white border-b border-slate-200 shadow-2xs">
       {/* Zone 1: Brand title & breadcrumb */}
       <div className="flex items-center gap-3 min-w-0">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-md bg-blue-800 flex items-center justify-center text-white font-bold text-base shadow-2xs">
-            <Building2 className="w-4 h-4" />
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-full bg-white p-0.5 flex items-center justify-center ring-1 ring-slate-200 shrink-0 shadow-2xs">
+            <img src={logoUrl || '/logo.png'} alt="CTUMP Logo" className="w-full h-full object-contain rounded-full" />
           </div>
           <span className="text-base font-bold tracking-tight text-slate-900 hidden sm:inline">
             CTUMP DocuGov
@@ -101,40 +102,10 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Zone 2: Role Switcher & Notifications & User Dropdown */}
       <div className="flex items-center gap-3">
-        {/* Quick 2-Role Switcher for testing/demo */}
-        <div className="hidden md:flex items-center bg-slate-100 p-0.5 rounded-md border border-slate-200 text-xs">
-          <button
-            type="button"
-            onClick={() => onSwitchUser('USER')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded font-medium transition-all cursor-pointer ${
-              !isAdmin
-                ? 'bg-white text-blue-700 shadow-2xs font-semibold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-            title="Tài khoản Cán bộ trường (nvnam@ctump.edu.vn)"
-          >
-            <UserCheck className="w-3.5 h-3.5" />
-            <span>Cán bộ trường</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onSwitchUser('ADMIN')}
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded font-medium transition-all relative cursor-pointer ${
-              isAdmin
-                ? 'bg-white text-emerald-700 shadow-2xs font-semibold'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-            title="Tài khoản Admin duy nhất (admin@ctump.edu.vn)"
-          >
-            <Shield className="w-3.5 h-3.5" />
-            <span>Admin</span>
-            {pendingCount > 0 && (
-              <span className="ml-0.5 px-1.5 py-0.2 text-[10px] font-bold bg-amber-500 text-white rounded">
-                {pendingCount}
-              </span>
-            )}
-          </button>
+        {/* Chế độ kiểm thử toàn quyền */}
+        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 border border-slate-200 text-xs text-slate-600 font-medium">
+          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+          <span>Kiểm thử hệ thống (Toàn quyền)</span>
         </div>
 
         {/* Notifications Button & Dropdown */}
@@ -220,30 +191,9 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="p-2.5 bg-slate-50 rounded-md border border-slate-100 space-y-1">
                 <p className="text-xs font-bold text-slate-900">{currentUser.name}</p>
                 <p className="text-[11px] font-mono text-slate-500">{currentUser.email}</p>
-                <span
-                  className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-semibold border ${
-                    isAdmin
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                      : 'bg-blue-50 text-blue-800 border-blue-200'
-                  }`}
-                >
-                  {isAdmin ? 'Quản trị viên (Admin)' : 'Cán bộ trường'}
+                <span className="inline-block px-1.5 py-0.2 rounded text-[10px] font-semibold border bg-blue-50 text-blue-800 border-blue-200">
+                  Toàn quyền kiểm thử
                 </span>
-              </div>
-
-              {/* Mobile Quick Switcher */}
-              <div className="md:hidden pt-1 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onSwitchUser(isAdmin ? 'USER' : 'ADMIN');
-                    setShowUserMenu(false);
-                  }}
-                  className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-100 rounded-md flex items-center gap-2"
-                >
-                  {isAdmin ? <UserCheck className="w-4 h-4 text-blue-700" /> : <Shield className="w-4 h-4 text-emerald-700" />}
-                  <span>Chuyển sang {isAdmin ? 'Cán bộ trường' : 'Admin'}</span>
-                </button>
               </div>
 
               {onLogout && (
@@ -253,28 +203,26 @@ export const Header: React.FC<HeaderProps> = ({
                     setShowUserMenu(false);
                     onLogout();
                   }}
-                  className="w-full text-left px-3 py-2 text-xs text-rose-700 hover:bg-rose-50 rounded-md flex items-center gap-2 cursor-pointer transition-colors"
+                  className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 rounded-md flex items-center gap-2 cursor-pointer transition-colors"
                 >
-                  <LogOut className="w-4 h-4" />
-                  <span>Đăng xuất</span>
+                  <LogOut className="w-4 h-4 text-slate-500" />
+                  <span>Làm mới phiên kiểm thử</span>
                 </button>
               )}
             </div>
           )}
         </div>
 
-        {/* Create new dossier CTA for Cán bộ */}
-        {!isAdmin && (
-          <button
-            type="button"
-            onClick={() => onNavigate('create_dossier')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-lg shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">Tạo hồ sơ mới</span>
-            <span className="sm:hidden">Tạo</span>
-          </button>
-        )}
+        {/* Create new dossier CTA */}
+        <button
+          type="button"
+          onClick={() => onNavigate('create_dossier')}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-md shadow-2xs transition-colors whitespace-nowrap cursor-pointer"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Tạo hồ sơ mới</span>
+          <span className="sm:hidden">Tạo</span>
+        </button>
       </div>
     </header>
   );

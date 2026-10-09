@@ -17,7 +17,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 text-[11.5px] font-medium rounded whitespace-nowrap ${meta.badgeClass} ${className}`}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap ${meta.badgeClass} ${className}`}
     >
       {showDot && (
         <span

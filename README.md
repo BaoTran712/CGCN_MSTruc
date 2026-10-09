@@ -1,20 +1,36 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# CTUMP DocuGov — Quản lý hồ sơ Chuyển giao Công nghệ (CGCN)
 
-# Run and deploy your AI Studio app
+Ứng dụng web (React + Vite + Tailwind CSS v4) mô phỏng quy trình lập, thẩm định, trình ký và lưu trữ hồ sơ hành chính (Tờ trình CGCN, Kế hoạch CGCN, ...), xuất văn bản Word (.docx) trực tiếp trên trình duyệt.
 
-This contains everything you need to run your app locally.
+## Chạy local
 
-View your app in AI Studio: https://ai.studio/apps/69a7b4ca-798b-4124-857e-af693d9f2fe7
+**Yêu cầu:** Node.js 20+
 
-## Run Locally
+```bash
+npm install
+npm run dev      # http://localhost:3000
+npm run lint     # kiểm tra kiểu TypeScript
+npm run build    # build production vào dist/
+```
 
-**Prerequisites:**  Node.js
+## Backend
 
+Cấu hình webhook n8n tại [`src/config/api.config.ts`](src/config/api.config.ts).
+Khi `API_BASE_URL` còn là placeholder, toàn bộ API chạy ở **chế độ mock** (dữ liệu trong `src/services/mockData.ts`, lưu trạng thái qua `localStorage`).
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Cấu trúc
+
+```
+src/
+├── components/   # layout, modals, timeline, document preview
+├── config/       # cấu hình endpoint n8n
+├── pages/        # các màn hình chính
+├── services/     # api.ts (fetch + mock fallback), mockRepository, workflowEngine
+├── types/        # domain types
+└── utils/        # xuất DOCX, engine Word XML, helpers
+docs/
+├── REQUIREMENTS.md       # đặc tả kiến trúc mục tiêu
+├── flow_dexuat.txt       # luồng n8n + Google Form/Sheets đề xuất
+├── hình ảnh bổ sung.jpg  # ghi chú quy trình trình ký (viết tay)
+└── templates/            # biểu mẫu Word gốc (Mẫu 1a, Mẫu 2a)
+```

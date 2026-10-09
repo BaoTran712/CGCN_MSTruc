@@ -33,14 +33,8 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  // Filter dossiers created by this user
-  const userDossiers = dossiers.filter(
-    (d) =>
-      d.userId === currentUser.id ||
-      d.createdBy?.id === currentUser.id ||
-      d.createdBy?.email === currentUser.email ||
-      d.createdBy?.name === currentUser.name
-  );
+  // Chế độ kiểm thử: hiển thị toàn bộ hồ sơ để dễ dàng tra cứu, chỉnh sửa và kiểm tra luồng
+  const userDossiers = dossiers;
 
   const filtered = userDossiers.filter((d) => {
     const matchSearch =

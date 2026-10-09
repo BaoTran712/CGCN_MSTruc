@@ -77,16 +77,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span>Tạo hồ sơ mới</span>
           </button>
 
-          {isManager && (
-            <button
-              type="button"
-              onClick={() => onNavigate('pending_approval')}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-md shadow-2xs transition-colors cursor-pointer"
-            >
-              <span>Hồ sơ chờ duyệt</span>
-              <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => onNavigate('pending_approval')}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-md shadow-2xs transition-colors cursor-pointer"
+          >
+            <span>Hồ sơ chờ duyệt</span>
+            <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
+          </button>
         </div>
       </div>
 

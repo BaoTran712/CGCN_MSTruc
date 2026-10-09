@@ -28,22 +28,30 @@ import { SettingsView } from './pages/SettingsView';
 import { TemplateDetailModal } from './components/modals/TemplateDetailModal';
 import { Menu, CheckCircle2 } from 'lucide-react';
 
+const DEFAULT_DEV_USER: User = {
+  id: 'dev_admin',
+  name: 'Cán bộ Quản trị & Nghiệp vụ',
+  email: 'admin@ctump.edu.vn',
+  role: 'ADMIN',
+  department: 'Trường Đại học Y Dược Cần Thơ',
+  departmentId: 'bgh',
+  phone: '0292.3831.531',
+  jobTitle: 'Quản trị viên hệ thống (Toàn quyền)',
+};
+
 export default function App() {
-  // Current active user (Khởi tạo từ localStorage hoặc tài khoản Cán bộ trường)
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+  // Toàn quyền test: Khởi tạo người dùng kiểm thử mặc định, không yêu cầu đăng nhập
+  const [currentUser, setCurrentUser] = useState<User>(() => {
     try {
       const saved = localStorage.getItem('ctump_auth_user');
-      return saved ? JSON.parse(saved) : (MOCK_USERS.can_bo || MOCK_USERS.employee);
+      return saved ? JSON.parse(saved) : DEFAULT_DEV_USER;
     } catch {
-      return MOCK_USERS.can_bo || MOCK_USERS.employee;
+      return DEFAULT_DEV_USER;
     }
   });
 
-  // App navigation state (Mặc định: Cán bộ vào 'my_dossiers', Admin vào 'pending_approval')
-  const [activeTab, setActiveTab] = useState<ActiveNavTab>(() => {
-    const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'admin';
-    return isAdmin ? 'pending_approval' : 'my_dossiers';
-  });
+  // Mặc định vào Tổng quan hệ thống
+  const [activeTab, setActiveTab] = useState<ActiveNavTab>('dashboard');
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -111,8 +119,8 @@ export default function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('ctump_auth_user');
-    setCurrentUser(null);
-    showToast('Đã đăng xuất khỏi hệ thống CTUMP DocuGov.', 'info');
+    setCurrentUser(DEFAULT_DEV_USER);
+    showToast('Đã làm mới phiên làm việc kiểm thử.', 'info');
   };
 
   // Chuyển đổi nhanh 2 role (Cán bộ trường <-> Admin duy nhất)
@@ -289,19 +297,13 @@ export default function App() {
     }
   };
 
-  // Nếu chưa đăng nhập -> Hiển thị trang đăng nhập Gmail @ctump.edu.vn
-  if (!currentUser) {
-    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
-  }
-
   // Counts calculation
   const pendingCount = dossiers.filter((d) =>
     ['SUBMITTED', 'submitted', 'under_review', 'resubmitted', 'RESUBMITTED'].includes(d.status)
   ).length;
 
-  const myDossierCount = dossiers.filter((d) =>
-    d.userId === currentUser.id || d.createdBy.email === currentUser.email
-  ).length;
+  // Hiển thị số lượng hồ sơ
+  const myDossierCount = dossiers.length;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800 antialiased">

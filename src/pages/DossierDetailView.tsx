@@ -65,15 +65,12 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
   const normalized = normalizeStatus(dossier.status);
   const role = currentUser.role;
 
-  const isManager = role === 'MANAGER' || role === 'manager' || role === 'ADMIN' || role === 'admin';
-  const isSecretary = role === 'SECRETARY' || role === 'secretary' || role === 'ADMIN' || role === 'admin';
-  const isApplicant = currentUser.id === dossier.createdBy.id || currentUser.name === dossier.createdBy.name;
-
-  const canManagerReview = isManager && normalized === 'SUBMITTED';
-  const canUserUploadSign = (isApplicant || role === 'ADMIN' || role === 'admin') && normalized === 'APPROVED';
-  const canSecretaryReceive = isSecretary && normalized === 'USER_SIGNED';
-  const canSecretaryComplete = isSecretary && normalized === 'SECRETARY_RECEIVED';
-  const canUserResubmit = isApplicant && (normalized === 'DRAFT' || normalized === 'RETURNED');
+  // Chế độ kiểm thử: Mở toàn bộ quyền thao tác theo đúng giai đoạn hồ sơ, không chặn role
+  const canManagerReview = ['SUBMITTED', 'UNDER_REVIEW', 'RESUBMITTED'].includes(normalized);
+  const canUserUploadSign = normalized === 'APPROVED';
+  const canSecretaryReceive = normalized === 'USER_SIGNED';
+  const canSecretaryComplete = normalized === 'SECRETARY_RECEIVED';
+  const canUserResubmit = ['DRAFT', 'RETURNED', 'CHANGES_REQUESTED'].includes(normalized);
 
   const formData = dossier.formData || {};
 

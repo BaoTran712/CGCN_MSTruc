@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { User } from '../types';
 import { MOCK_USERS } from '../services/mockData';
 import { Shield, UserCheck, AlertCircle, ArrowRight, CheckCircle2, Info } from 'lucide-react';
+import logoUrl from '../assets/logo.png';
 
 interface LoginPageProps {
   onLoginSuccess: (user: User) => void;
@@ -74,8 +75,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       <header className="bg-white border-b border-slate-200 px-6 py-3.5 shadow-2xs">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-lg bg-blue-800 flex items-center justify-center text-white font-bold text-base shadow-xs shrink-0">
-              CTU
+            <div className="w-11 h-11 rounded-full bg-white p-0.5 flex items-center justify-center ring-1 ring-slate-200 shrink-0 shadow-2xs">
+              <img src={logoUrl || '/logo.png'} alt="CTUMP Logo" className="w-full h-full object-contain rounded-full" />
             </div>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 leading-none">
