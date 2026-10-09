@@ -1,0 +1,6 @@
+{
+  "name": "DocuGov - Quản Lý & Xử Lý Biểu Mẫu Word",
+  "description": "Hệ thống nội bộ quản lý tập trung, điền form trực tuyến, tự động xuất file Word và quy trình kiểm duyệt, trình ký hồ sơ hành chính.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
