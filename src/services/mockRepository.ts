@@ -18,7 +18,7 @@ import {
   MOCK_USERS,
   INITIAL_DEPARTMENTS,
   INITIAL_NOTIFICATIONS,
-} from './mockData';
+} from '../data';
 import { createAuditLog, createNotification, normalizeStatus } from './workflowEngine';
 
 /**

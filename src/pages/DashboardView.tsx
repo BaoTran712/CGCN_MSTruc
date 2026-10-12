@@ -196,46 +196,64 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {recentDossiers.map((d) => (
-                  <tr key={d.id} className="hover:bg-slate-50/80 transition-colors group">
-                    <td className="py-3 px-4 font-mono font-semibold text-blue-700 whitespace-nowrap">
-                      {d.code}
-                    </td>
-                    <td className="py-3 px-4 max-w-[200px] truncate font-medium text-slate-900">
-                      {d.templateTitle}
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap text-slate-600">
-                      <div>{d.createdBy.name}</div>
-                      <div className="text-[11px] text-slate-400 truncate max-w-[130px]">{d.createdBy.department}</div>
-                    </td>
-                    <td className="py-3 px-4 font-mono text-[11px] text-slate-500 whitespace-nowrap">
-                      {new Date(d.createdAt).toLocaleDateString('vi-VN')}
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <StatusBadge status={d.status} />
-                    </td>
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <div className="inline-flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => onSelectDossier(d)}
-                          className="p-1.5 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
-                          title="Xem chi tiết & Kiểm tra"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => generateAndDownloadDocx(d)}
-                          className="p-1.5 text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 rounded transition-colors"
-                          title="Tải file Word .docx"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                {recentDossiers.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 px-4 text-center text-slate-500">
+                      <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="font-semibold text-slate-800 text-sm">Hệ thống chưa có hồ sơ nào</p>
+                      <p className="text-xs text-slate-400 mt-0.5">Hệ thống mới hoàn toàn. Hãy chọn biểu mẫu bên cạnh để tạo hồ sơ đầu tiên.</p>
+                      <button
+                        type="button"
+                        onClick={() => onNavigate('create_dossier')}
+                        className="mt-3.5 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-md transition-colors cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Tạo hồ sơ đầu tiên</span>
+                      </button>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  recentDossiers.map((d) => (
+                    <tr key={d.id} className="hover:bg-slate-50/80 transition-colors group">
+                      <td className="py-3 px-4 font-mono font-semibold text-blue-700 whitespace-nowrap">
+                        {d.code}
+                      </td>
+                      <td className="py-3 px-4 max-w-[200px] truncate font-medium text-slate-900">
+                        {d.templateTitle}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap text-slate-600">
+                        <div>{d.createdBy.name}</div>
+                        <div className="text-[11px] text-slate-400 truncate max-w-[130px]">{d.createdBy.department}</div>
+                      </td>
+                      <td className="py-3 px-4 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                        {new Date(d.createdAt).toLocaleDateString('vi-VN')}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <StatusBadge status={d.status} />
+                      </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => onSelectDossier(d)}
+                            className="p-1.5 text-slate-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                            title="Xem chi tiết & Kiểm tra"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => generateAndDownloadDocx(d)}
+                            className="p-1.5 text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 rounded transition-colors"
+                            title="Tải file Word .docx"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

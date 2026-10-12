@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { User } from '../types';
-import { MOCK_USERS } from '../services/mockData';
+import { MOCK_USERS } from '../data';
+import { DEFAULT_DEV_USER } from '../constants';
 import { Shield, UserCheck, AlertCircle, ArrowRight, CheckCircle2, Info } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 
@@ -56,12 +57,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     }, 350);
   };
 
-  const handleQuickLogin = (userType: 'can_bo' | 'admin') => {
+  const handleQuickLogin = (userType: 'can_bo' | 'admin' | 'dev') => {
     setIsLoading(true);
     setErrorMsg('');
     setTimeout(() => {
       setIsLoading(false);
-      if (userType === 'admin') {
+      if (userType === 'dev') {
+        onLoginSuccess(DEFAULT_DEV_USER);
+      } else if (userType === 'admin') {
         onLoginSuccess(MOCK_USERS.admin);
       } else {
         onLoginSuccess(MOCK_USERS.can_bo || MOCK_USERS.employee);
@@ -158,9 +161,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             <div className="flex-grow border-t border-slate-200"></div>
           </div>
 
-          {/* Quick Demo Login Cards - Clean Enterprise Design */}
+          {/* Quick Role Login Cards */}
           <div className="space-y-2">
-            {/* Account 1: Cán bộ trường */}
+            {/* Vai trò 1: Cán bộ trường */}
             <button
               type="button"
               onClick={() => handleQuickLogin('can_bo')}
@@ -172,13 +175,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 </div>
                 <div>
                   <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                    ThS. Nguyễn Văn Nam
+                    Cán bộ / Giảng viên
                     <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded font-medium border border-blue-200">
-                      Cán bộ trường
+                      Lập hồ sơ CGCN
                     </span>
                   </div>
                   <div className="text-[11px] font-mono text-slate-500">
-                    nvnam@ctump.edu.vn
+                    canbo@ctump.edu.vn
                   </div>
                 </div>
               </div>
@@ -187,7 +190,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               </span>
             </button>
 
-            {/* Account 2: Admin */}
+            {/* Vai trò 2: Quản trị viên */}
             <button
               type="button"
               onClick={() => handleQuickLogin('admin')}
@@ -199,9 +202,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 </div>
                 <div>
                   <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                    TS. Lê Hoàng Quân
+                    Quản trị viên Hệ thống
                     <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-medium border border-emerald-200">
-                      Admin duyệt hồ sơ
+                      Phê duyệt & Toàn quyền
                     </span>
                   </div>
                   <div className="text-[11px] font-mono text-slate-500">

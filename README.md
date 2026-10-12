@@ -18,19 +18,30 @@ npm run build    # build production vào dist/
 Cấu hình webhook n8n tại [`src/config/api.config.ts`](src/config/api.config.ts).
 Khi `API_BASE_URL` còn là placeholder, toàn bộ API chạy ở **chế độ mock** (dữ liệu trong `src/services/mockData.ts`, lưu trạng thái qua `localStorage`).
 
-## Cấu trúc
+## Cấu trúc chuẩn React (Clean Architecture)
 
 ```
 src/
-├── components/   # layout, modals, timeline, document preview
-├── config/       # cấu hình endpoint n8n
-├── pages/        # các màn hình chính
+├── assets/       # Tài nguyên tĩnh (logo, ảnh)
+├── components/   # UI components theo phân loại chuẩn
+│   ├── common/   # StatusBadge, Toast, LoadingSpinner
+│   ├── document/ # WordDocumentPreview
+│   ├── dossiers/ # AuditLogViewer, VersionHistoryViewer
+│   ├── layout/   # Header, Sidebar, MainLayout
+│   ├── modals/   # ManagerEdit, Return, TemplateDetail, Signature, XmlInspector
+│   └── timeline/ # ApprovalTimeline
+├── config/       # Cấu hình endpoint n8n (api.config.ts)
+├── constants/    # Hằng số hệ thống, default dev user, storage keys
+├── contexts/     # React Context Providers (AuthContext, ToastContext, DossierContext)
+├── hooks/        # Custom React Hooks (useAuth, useToast, useDossiers)
+├── pages/        # Các màn hình chức năng & LoginPage
 ├── services/     # api.ts (fetch + mock fallback), mockRepository, workflowEngine
-├── types/        # domain types
-└── utils/        # xuất DOCX, engine Word XML, helpers
+├── types/        # TypeScript domain types & interfaces
+└── utils/        # Xuất DOCX, engine Word XML, helpers, textUtils
 docs/
-├── REQUIREMENTS.md       # đặc tả kiến trúc mục tiêu
-├── flow_dexuat.txt       # luồng n8n + Google Form/Sheets đề xuất
-├── hình ảnh bổ sung.jpg  # ghi chú quy trình trình ký (viết tay)
-└── templates/            # biểu mẫu Word gốc (Mẫu 1a, Mẫu 2a)
+├── REQUIREMENTS.md       # Đặc tả kiến trúc mục tiêu
+├── flow_dexuat.txt       # Luồng n8n + Google Form/Sheets đề xuất
+├── hình ảnh bổ sung.jpg  # Ghi chú quy trình trình ký (viết tay)
+└── templates/            # Biểu mẫu Word gốc (Mẫu 1a, Mẫu 2a)
 ```
+

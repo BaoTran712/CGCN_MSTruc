@@ -20,6 +20,7 @@ interface HeaderProps {
   activeTab: ActiveNavTab;
   pendingCount: number;
   onLogout?: () => void;
+  onSignOut?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -29,6 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab,
   pendingCount,
   onLogout,
+  onSignOut,
 }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifPopover, setShowNotifPopover] = useState(false);
@@ -207,6 +209,20 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <LogOut className="w-4 h-4 text-slate-500" />
                   <span>Làm mới phiên kiểm thử</span>
+                </button>
+              )}
+
+              {onSignOut && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUserMenu(false);
+                    onSignOut();
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs text-rose-700 hover:bg-rose-50 rounded-md flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <LogOut className="w-4 h-4 text-rose-500" />
+                  <span>Đăng xuất tài khoản</span>
                 </button>
               )}
             </div>

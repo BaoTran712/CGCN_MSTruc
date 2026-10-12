@@ -4,6 +4,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { Dossier, WordTemplate } from '../types';
 import { normalizeNFC } from './textUtils';
+import { generateAndDownloadDocx } from './docxExport';
 
 /**
  * Interface cho thông tin bóc tách từ XML của file Word (.docx)
@@ -165,7 +166,6 @@ export async function exportDossierDocxWithXmlEngine(
     outputBlob = await fillDocxTemplate(customTemplateFile, data, `${dossier.code}.docx`);
   } else {
     // Nếu dùng template mặc định của hệ thống
-    const { generateAndDownloadDocx } = await import('./docxExport');
     await generateAndDownloadDocx(dossier, template);
     return;
   }

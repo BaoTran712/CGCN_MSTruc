@@ -141,7 +141,7 @@ export const TemplateManagementView: React.FC<TemplateManagementViewProps> = ({
       description: newDescription.trim() || 'Mô tả biểu mẫu hành chính ban hành nội bộ.',
       version: newVersion,
       updatedAt: new Date().toISOString().slice(0, 10),
-      manager: 'ThS. Trần Thị Mai',
+      manager: 'Ban Giám Hiệu',
       active: true,
       fileName: newFileName,
       fileSize: '45.0 KB',

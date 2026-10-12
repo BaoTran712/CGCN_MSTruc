@@ -11,30 +11,31 @@ import {
   Building2,
   Users,
   FileSignature,
+  X,
 } from 'lucide-react';
 import { ActiveNavTab, User } from '../../types';
-import logoUrl from '../../assets/logo.png';
 
 interface SidebarProps {
   activeTab: ActiveNavTab;
   onNavigate: (tab: ActiveNavTab) => void;
-  currentUser: User;
+  currentUser?: User;
   pendingCount: number;
   myDossierCount: number;
   mobileOpen: boolean;
   onCloseMobile: () => void;
   onLogout?: () => void;
+  onSignOut?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onNavigate,
-  currentUser,
   pendingCount,
   myDossierCount,
   mobileOpen,
   onCloseMobile,
   onLogout,
+  onSignOut,
 }) => {
   interface NavItem {
     id: ActiveNavTab;
@@ -49,7 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     items: NavItem[];
   }
 
-  // Toàn bộ tính năng mở sẵn cho việc kiểm thử hệ thống (không bị rào cản phân quyền)
+  // Toàn bộ tính năng mở sẵn cho việc kiểm thử hệ thống
   const navSections: NavSection[] = [
     {
       title: 'Hồ sơ & Nghiệp vụ',
@@ -85,7 +86,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'Duyệt & Quản lý hồ sơ',
           icon: ClipboardCheck,
           badge: pendingCount > 0 ? pendingCount : undefined,
-          badgeColor: 'bg-amber-950/80 text-amber-300 border border-amber-800/60 font-semibold',
+          badgeColor: 'bg-amber-100 text-amber-800 border border-amber-300 font-semibold',
         },
         {
           id: 'secretary_queue',
@@ -131,65 +132,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Mobile Backdrop */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-slate-900/60 lg:hidden"
+          className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs lg:hidden"
           onClick={onCloseMobile}
         />
       )}
 
-      {/* Sidebar Container */}
+      {/* Sidebar Container - Light Blue Palette */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-800 transition-transform duration-200 ease-in-out lg:translate-x-0 ${
+        className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-[#edf4fc] text-slate-700 flex flex-col border-r border-blue-200/80 shadow-xs transition-transform duration-200 ease-in-out lg:translate-x-0 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* CTUMP Logo & Brand Title */}
-        <div className="h-16 flex items-center gap-3 px-4 border-b border-slate-800 shrink-0 bg-slate-950">
-          <div className="w-9 h-9 rounded-full bg-white p-0.5 flex items-center justify-center shrink-0 ring-1 ring-slate-700/60 shadow-xs">
-            <img
-              src={logoUrl || '/logo.png'}
-              alt="ĐH Y Dược Cần Thơ"
-              className="w-full h-full object-contain rounded-full"
-            />
-          </div>
-          <div className="flex flex-col min-w-0">
-            <span className="font-semibold text-xs uppercase tracking-wide text-white truncate">
-              ĐH Y DƯỢC CẦN THƠ
-            </span>
-            <span className="text-[11px] text-slate-400 truncate">
-              Hệ thống DocuGov
-            </span>
-          </div>
-        </div>
-
-        {/* User Profile: Clean & Minimalist */}
-        <div className="px-3.5 py-3 border-b border-slate-800 bg-slate-950/40">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded bg-slate-800 border border-slate-700/80 flex items-center justify-center text-slate-200 text-xs font-semibold shrink-0">
-              {currentUser.name.split(' ').slice(-1)[0]?.charAt(0) || 'U'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-1.5">
-                <span className="text-xs font-semibold text-slate-100 truncate">
-                  {currentUser.name}
-                </span>
-                <span
-                  className="inline-flex items-center text-[9px] font-medium px-1.5 py-0.2 rounded shrink-0 bg-blue-950 text-blue-300 border border-blue-800/60"
-                >
-                  Toàn quyền test
-                </span>
-              </div>
-              <p className="text-[10.5px] text-slate-400 font-mono truncate mt-0.5">
-                {currentUser.email}
-              </p>
-            </div>
-          </div>
+        {/* Header: MENU */}
+        <div className="pt-6 pb-2.5 px-5 flex items-center justify-between shrink-0">
+          <span className="font-bold text-sm tracking-widest uppercase text-blue-950">
+            MENU
+          </span>
+          {mobileOpen && (
+            <button
+              type="button"
+              onClick={onCloseMobile}
+              className="p-1.5 text-slate-500 hover:text-slate-800 lg:hidden rounded-md transition-colors cursor-pointer"
+              title="Đóng menu"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Navigation items */}
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+        <div className="flex-1 overflow-y-auto px-3.5 py-4 space-y-4">
           {navSections.map((sec, secIdx) => (
             <div key={secIdx} className="space-y-1">
-              <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-blue-900/60">
                 {sec.title}
               </div>
               {sec.items.map((item) => {
@@ -201,16 +176,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     key={item.id}
                     type="button"
                     onClick={() => handleItemClick(item.id)}
-                    className={`w-full flex items-center justify-between px-3 py-1.5 text-xs font-medium rounded-r transition-colors cursor-pointer group ${
+                    className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-lg transition-all cursor-pointer group ${
                       isActive
-                        ? 'border-l-2 border-blue-500 bg-slate-800/80 text-white font-medium pl-2.5'
-                        : 'border-l-2 border-transparent text-slate-300 hover:bg-slate-800/50 hover:text-white pl-2.5'
+                        ? 'bg-blue-600 text-white font-semibold shadow-xs'
+                        : 'text-slate-700 hover:bg-blue-100/70 hover:text-blue-950 font-medium'
                     }`}
                   >
                     <div className="flex items-center gap-2.5 truncate">
                       <Icon
                         className={`w-4 h-4 shrink-0 transition-colors ${
-                          isActive ? 'text-blue-400' : 'text-slate-400 group-hover:text-slate-200'
+                          isActive
+                            ? 'text-white'
+                            : 'text-blue-600 group-hover:text-blue-700'
                         }`}
                       />
                       <span className="truncate">{item.label}</span>
@@ -218,12 +195,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                     {item.badge !== undefined && (
                       <span
-                        className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${
+                        className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                           item.badgeColor
                             ? item.badgeColor
                             : isActive
-                            ? 'bg-slate-700 text-slate-200'
-                            : 'bg-slate-800 text-slate-400 border border-slate-700/60'
+                            ? 'bg-blue-700 text-white'
+                            : 'bg-blue-100 text-blue-800 border border-blue-200'
                         }`}
                       >
                         {item.badge}
@@ -236,16 +213,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ))}
         </div>
 
-        {/* Footer with Reset */}
-        <div className="p-3 border-t border-slate-800 bg-slate-950/40">
+        {/* Footer with Reset & Logout */}
+        <div className="p-3.5 space-y-1.5">
           {onLogout && (
             <button
               type="button"
               onClick={onLogout}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 rounded border border-slate-800 transition-colors cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:text-blue-900 bg-white hover:bg-blue-50/80 rounded-lg border border-blue-200/80 shadow-2xs transition-all cursor-pointer"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-4 h-4 text-blue-600" />
               <span>Làm mới phiên kiểm thử</span>
+            </button>
+          )}
+          {onSignOut && (
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50/80 rounded-lg transition-colors cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Đăng xuất</span>
             </button>
           )}
         </div>
