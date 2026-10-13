@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   WordTemplate,
   Dossier,
@@ -21,6 +21,7 @@ import {
 import { WordDocumentPreview } from '../components/document/WordDocumentPreview';
 import { generateAndDownloadDocx } from '../utils/docxExport';
 import { normalizeNFC } from '../utils/textUtils';
+import { OFFICIAL_TEMPLATES } from '../constants';
 
 interface CreateDossierViewProps {
   selectedTemplate: WordTemplate | null;
@@ -43,25 +44,41 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
   onCancel,
   onNavigate,
 }) => {
-  const safeTemplates = Array.isArray(templates) ? templates : [];
+  const safeTemplates = useMemo(() => {
+    const list = Array.isArray(templates) && templates.length > 0 ? templates : OFFICIAL_TEMPLATES;
+    return list.map((item) => {
+      const fallback = OFFICIAL_TEMPLATES.find((t) => t.id === item.id || t.code === item.code);
+      return {
+        ...fallback,
+        ...item,
+        fields: (item.fields && item.fields.length > 0) ? item.fields : (fallback?.fields || []),
+        sections: (item.sections && item.sections.length > 0) ? item.sections : (fallback?.sections || []),
+      };
+    });
+  }, [templates]);
+
   // If no template is selected, choose the first or initial one
   const [template, setTemplate] = useState<WordTemplate>(() => {
-    if (initialTemplate) return initialTemplate;
+    if (initialTemplate) {
+      const match = safeTemplates.find((t) => t.id === initialTemplate.id || t.code === initialTemplate.code);
+      return match || initialTemplate;
+    }
     if (editingDossier && safeTemplates.length > 0) {
       return safeTemplates.find((t) => t.id === editingDossier.templateId) || safeTemplates[0];
     }
-    return safeTemplates[0] || ({} as WordTemplate);
+    return safeTemplates[0] || OFFICIAL_TEMPLATES[0];
   });
 
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
 
   useEffect(() => {
     if (initialTemplate) {
-      setTemplate(initialTemplate);
+      const match = safeTemplates.find((t) => t.id === initialTemplate.id || t.code === initialTemplate.code);
+      setTemplate(match || initialTemplate);
     } else if (editingDossier && safeTemplates.length > 0) {
       const match = safeTemplates.find((t) => t.id === editingDossier.templateId);
       if (match) setTemplate(match);
-    } else if ((!template || !template.id) && safeTemplates.length > 0) {
+    } else if ((!template || !template.id || !template.fields || template.fields.length === 0) && safeTemplates.length > 0) {
       setTemplate(safeTemplates[0]);
     }
   }, [initialTemplate, editingDossier, safeTemplates]);
@@ -370,7 +387,7 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
                 onChange={(e) => handleTemplateChange(e.target.value)}
                 className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-md bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-600 focus:border-blue-600"
               >
-                {templates.map((t) => (
+                {safeTemplates.map((t) => (
                   <option key={t.id} value={t.id}>
                     [{t.code}] {t.title}
                   </option>

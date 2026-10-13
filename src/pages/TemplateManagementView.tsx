@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { WordTemplate, FormFieldConfig, FieldType } from '../types';
 import { WordXmlInspectorModal } from '../components/modals/WordXmlInspectorModal';
+import { OFFICIAL_TEMPLATES } from '../constants';
 
 interface TemplateManagementViewProps {
   templates: WordTemplate[];
@@ -31,7 +32,17 @@ export const TemplateManagementView: React.FC<TemplateManagementViewProps> = ({
   onAddTemplate,
   onUpdateTemplate,
 }) => {
-  const [selectedTemplate, setSelectedTemplate] = useState<WordTemplate>(templates[0]);
+  const safeTemplates = (Array.isArray(templates) && templates.length > 0 ? templates : OFFICIAL_TEMPLATES).map((item) => {
+    const fallback = OFFICIAL_TEMPLATES.find((t) => t.id === item.id || t.code === item.code);
+    return {
+      ...fallback,
+      ...item,
+      fields: (item.fields && item.fields.length > 0) ? item.fields : (fallback?.fields || []),
+      sections: (item.sections && item.sections.length > 0) ? item.sections : (fallback?.sections || []),
+    };
+  });
+
+  const [selectedTemplate, setSelectedTemplate] = useState<WordTemplate>(safeTemplates[0] || OFFICIAL_TEMPLATES[0]);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [showFieldModal, setShowFieldModal] = useState(false);
   const [editingField, setEditingField] = useState<FormFieldConfig | null>(null);
@@ -227,11 +238,11 @@ export const TemplateManagementView: React.FC<TemplateManagementViewProps> = ({
         <div className="lg:col-span-4 space-y-3">
           <div className="bg-white rounded-lg border border-slate-200 shadow-2xs p-3.5 space-y-3">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 border-b border-slate-100 pb-2">
-              Danh sách Biểu mẫu hiện hành ({templates.length})
+              Danh sách Biểu mẫu hiện hành ({safeTemplates.length})
             </h3>
 
             <div className="space-y-2">
-              {templates.map((tmpl) => (
+              {safeTemplates.map((tmpl) => (
                 <div
                   key={tmpl.id}
                   onClick={() => {

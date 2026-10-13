@@ -23,3 +23,5 @@ export const DEFAULT_CANBO_USER: User = {
 };
 
 export const AUTH_STORAGE_KEY = 'ctump_auth_user';
+
+export * from './templates';

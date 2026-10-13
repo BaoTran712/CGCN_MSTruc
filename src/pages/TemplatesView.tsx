@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Search,
   FileText,
@@ -9,6 +9,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { WordTemplate, ActiveNavTab } from '../types';
+import { OFFICIAL_TEMPLATES } from '../constants';
 
 interface TemplatesViewProps {
   templates: WordTemplate[];
@@ -24,7 +25,17 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({
   onNavigate,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const safeTemplates = Array.isArray(templates) ? templates : [];
+  const safeTemplates = useMemo(() => {
+    const list = Array.isArray(templates) && templates.length > 0 ? templates : OFFICIAL_TEMPLATES;
+    return list.map((item) => {
+      const fallback = OFFICIAL_TEMPLATES.find((t) => t.id === item.id || t.code === item.code);
+      return {
+        ...fallback,
+        ...item,
+        fields: (item.fields && item.fields.length > 0) ? item.fields : (fallback?.fields || []),
+      };
+    });
+  }, [templates]);
 
   const filteredTemplates = safeTemplates.filter((tmpl) => {
     const q = searchQuery.toLowerCase().trim();

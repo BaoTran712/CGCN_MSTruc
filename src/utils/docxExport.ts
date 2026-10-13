@@ -10,6 +10,9 @@ import {
   BorderStyle,
   Packer,
 } from 'docx';
+import PizZip from 'pizzip';
+import Docxtemplater from 'docxtemplater';
+import { saveAs } from 'file-saver';
 import { Dossier, WordTemplate } from '../types';
 import { normalizeNFC } from './textUtils';
 
@@ -226,14 +229,126 @@ function pFieldInline(label: string, value?: string): Paragraph {
   });
 }
 
+/**
+ * Xây dựng tập hợp biến mapping cho Docxtemplater
+ */
+function buildDocxRenderData(dossier: Dossier, isMau1a: boolean): Record<string, any> {
+  const d = dossier.formData || {};
+  const dateObj = new Date(dossier.createdAt || Date.now());
+  const day = dateObj.getDate().toString().padStart(2, '0');
+  const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+  const year = dateObj.getFullYear().toString();
+  const dept = d.department || dossier.createdBy.department || 'Khoa Công nghệ Thông tin';
+  const fullName = d.full_name || dossier.createdBy.name || '';
+
+  if (isMau1a) {
+    return {
+      don_vi_uppercase: dept.toUpperCase(),
+      so_to_trinh: d.proposal_number || `${dossier.code}/TTr`,
+      ngay: day,
+      thang: month,
+      nam: year,
+      ho_ten: fullName,
+      chuc_danh: d.position || '',
+      dien_thoai: d.phone || '',
+      email: d.email || '',
+      muc_dich: d.purpose || '',
+      nhu_cau_tiep_nhan: d.receiver_needs || '',
+      dap_ung_thuc_hien: d.provider_capacity || '',
+      muc_tieu: d.transfer_goals || '',
+      doi_tuong: d.transfer_target || '',
+      phuong_thuc: d.transfer_method || '',
+      hinh_thuc: d.transfer_form || 'Chuyển giao công nghệ độc lập.',
+      quyen_chuyen_giao: d.transfer_rights || '',
+      thoi_gian: d.transfer_time || '',
+      dia_diem: d.transfer_location || 'Tại Trường Đại học Y Dược Cần Thơ',
+      thanh_phan: d.attendees || '',
+      kinh_phi: d.funding_source || 'Từ nguồn kinh phí của Trường theo quy chế chi tiêu nội bộ.',
+      truong_don_vi: dossier.assignedManager?.name || 'Trưởng Đơn vị',
+      ...d,
+    };
+  }
+
+  // Mau 2a
+  return {
+    so_ke_hoach: d.plan_code || `${dossier.code}/KH`,
+    don_vi_viet_tat: dept.split(' ').map((w: string) => w[0]).join('').toUpperCase() || 'ĐV',
+    ngay: day,
+    thang: month,
+    nam: year,
+    ten_san_pham: d.product_name || d.research_title || 'Sản phẩm chuyển giao công nghệ',
+    ho_ten: fullName,
+    dien_thoai: d.phone || '',
+    email: d.email || '',
+    muc_dich: d.purpose || '',
+    nhom_tac_gia: d.authors_group || fullName,
+    loai_hinh_san_pham: d.product_type || 'Hệ thống phần mềm ứng dụng y tế',
+    phuong_thuc: d.transfer_method || '',
+    ben_nhan_chuyen_giao: d.receiving_party || 'Bệnh viện Trường Đại học Y Dược Cần Thơ',
+    thoi_gian: d.transfer_date ? new Date(d.transfer_date).toLocaleDateString('vi-VN') : (d.transfer_time || ''),
+    dia_diem: d.transfer_location || 'Tại Trường Đại học Y Dược Cần Thơ',
+    chi_phi: d.transfer_cost !== undefined && d.transfer_cost !== null
+      ? Number(d.transfer_cost) === 0
+        ? 'Không thu phí (kinh phí hoạt động Nhà trường)'
+        : `${Number(d.transfer_cost).toLocaleString('vi-VN')} VNĐ`
+      : 'Theo thỏa thuận',
+    ban_chi_dao: d.steering_committee || '',
+    ban_to_chuc: d.organizing_committee || '',
+    nhan_su: d.implementing_staff || '',
+    chu_toa: d.workshop_chair || '',
+    bao_cao_vien: d.workshop_speaker || '',
+    kinh_phi_hoi_thao: d.workshop_budget || 'Từ nguồn kinh phí của Trường theo quy chế chi tiêu nội bộ.',
+    ...d,
+  };
+}
+
+/**
+ * HÀM XUẤT FILE WORD:
+ * 1. Ưu tiên nạp biểu mẫu chuẩn gốc (/templates/mau_1a_chuan.docx hoặc /templates/mau_2a_chuan.docx)
+ *    và render bằng Docxtemplater để bảo toàn 100% định dạng, phông chữ, lề trang, bảng biểu của Trường.
+ * 2. Fallback sang programmatic docx nếu không fetch được template tĩnh.
+ */
 export async function generateAndDownloadDocx(rawDossier: Dossier, rawTemplate?: WordTemplate): Promise<void> {
   const dossier = normalizeNFC(rawDossier);
   const template = rawTemplate ? normalizeNFC(rawTemplate) : undefined;
   const d = dossier.formData || {};
-  const templateCode = template?.code || dossier.templateId || '';
+  const templateCode = template?.code || dossier.templateId || dossier.templateCode || '';
   const isMau1a = templateCode.includes('1a') || templateCode.includes('TTR') || templateCode.includes('tri-thuc');
   const isMau2a = templateCode.includes('2a') || templateCode.includes('KH') || templateCode.includes('trong-truong');
 
+  const outFileName = dossier.docxFileName || `${dossier.code}_${isMau1a ? 'Mau_1a_To_trinh' : 'Mau_2a_Ke_hoach'}.docx`;
+
+  // === CÁCH 1: NẠP VÀ MAPPING TRỰC TIẾP VÀO FILE MẪU CHUẨN GỐC ===
+  try {
+    const templateUrl = isMau1a ? '/templates/mau_1a_chuan.docx' : '/templates/mau_2a_chuan.docx';
+    const resp = await fetch(templateUrl);
+    if (resp.ok) {
+      const buffer = await resp.arrayBuffer();
+      const zip = new PizZip(buffer);
+      const doc = new Docxtemplater(zip, {
+        paragraphLoop: true,
+        linebreaks: true,
+        delimiters: { start: '{{', end: '}}' },
+        nullGetter: () => '',
+      });
+
+      const renderData = buildDocxRenderData(dossier, isMau1a);
+      doc.render(renderData);
+
+      const blob = doc.getZip().generate({
+        type: 'blob',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        compression: 'DEFLATE',
+      });
+
+      saveAs(blob, outFileName);
+      return;
+    }
+  } catch (templateError) {
+    console.warn('[generateAndDownloadDocx] Lỗi tải mẫu docx chuẩn, chuyển sang bộ sinh programmatic:', templateError);
+  }
+
+  // === CÁCH 2: FALLBACK PROGRAMMATIC DOCX NẾU KHÔNG CÓ KẾT NỐI TẢI TEMPLATE ===
   const contentParagraphs: (Paragraph | Table)[] = [];
 
   if (isMau1a) {
@@ -475,11 +590,21 @@ export async function generateAndDownloadDocx(rawDossier: Dossier, rawTemplate?:
           : 'Theo thỏa thuận và quy chế chi tiêu nội bộ.'
       ),
       pHeading('VIII. Ban chỉ đạo – tổ chức chuyển giao'),
+      pSubHeading('8.1. Ban chỉ đạo:'),
       pContent(d.steering_committee),
+      pSubHeading('8.2. Ban tổ chức:'),
+      pContent(d.organizing_committee),
+      pSubHeading('8.3. Nhân sự thực hiện:'),
+      pContent(d.implementing_staff),
       pHeading('IX. Hội thảo chuyển giao'),
-      pContent(d.workshop_program),
+      pSubHeading('9.1. Chủ tọa:'),
+      pContent(d.workshop_chair || 'Đại diện Ban Giám Hiệu, Khoa'),
+      pSubHeading('9.2. Báo cáo viên:'),
+      pContent(d.workshop_speaker || 'Chủ nhiệm đề tài và các tác giả'),
+      pSubHeading('9.5. Dự trù kinh phí hội thảo:'),
+      pContent(d.workshop_budget || 'Từ nguồn kinh phí của Trường theo quy chế chi tiêu nội bộ.'),
       pHeading('X. Quản lý rủi ro trong chuyển giao'),
-      pContent(d.risk_management)
+      pContent(d.risk_management || 'Tuân thủ chặt chẽ quy định an toàn y sinh và sở hữu trí tuệ của Trường.')
     );
   } else {
     // Generic
@@ -496,7 +621,7 @@ export async function generateAndDownloadDocx(rawDossier: Dossier, rawTemplate?:
         spacing: { after: 180 },
         children: [
           new TextRun({
-            text: (template?.name || dossier.title || 'VĂN BẢN ĐỀ NGHỊ').toUpperCase(),
+            text: (template?.title || dossier.title || 'VĂN BẢN ĐỀ NGHỊ').toUpperCase(),
             font: 'Times New Roman',
             size: 28,
             bold: true,
@@ -526,14 +651,7 @@ export async function generateAndDownloadDocx(rawDossier: Dossier, rawTemplate?:
   });
 
   const blob = await Packer.toBlob(doc);
-  const downloadUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = downloadUrl;
-  a.download = dossier.docxFileName || `${dossier.code}_bieu_mau.docx`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(downloadUrl);
+  saveAs(blob, outFileName);
 }
 
 function buildDocxFields(dossier: Dossier, template?: WordTemplate): Paragraph[] {

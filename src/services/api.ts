@@ -16,6 +16,7 @@ import {
   Notification as NotificationItem,
 } from '../types';
 import { API_BASE_URL, API_ENDPOINTS } from '../config/api.config';
+import { OFFICIAL_TEMPLATES } from '../constants';
 
 export { API_BASE_URL };
 
@@ -100,11 +101,42 @@ export async function checkBackendHealth(): Promise<BackendHealthStatus> {
 // =========================================================================
 
 export async function getTemplates(): Promise<DocumentTemplate[]> {
-  return request<DocumentTemplate[]>(API_ENDPOINTS.GET_TEMPLATES, { method: 'GET' });
+  try {
+    const list = await request<DocumentTemplate[]>(API_ENDPOINTS.GET_TEMPLATES, { method: 'GET' });
+    if (Array.isArray(list) && list.length > 0) {
+      return list.map((item) => {
+        const fallback = OFFICIAL_TEMPLATES.find((t) => t.id === item.id || t.code === item.code);
+        return {
+          ...fallback,
+          ...item,
+          fields: (item.fields && item.fields.length > 0) ? item.fields : (fallback?.fields || []),
+          sections: (item.sections && item.sections.length > 0) ? item.sections : (fallback?.sections || []),
+        };
+      });
+    }
+    return OFFICIAL_TEMPLATES;
+  } catch (err) {
+    console.warn('[getTemplates] Using official templates fallback:', err);
+    return OFFICIAL_TEMPLATES;
+  }
 }
 
 export async function getTemplateById(id: string): Promise<DocumentTemplate | null> {
-  return request<DocumentTemplate | null>(API_ENDPOINTS.GET_TEMPLATE_DETAIL(id), { method: 'GET' });
+  try {
+    const found = await request<DocumentTemplate | null>(API_ENDPOINTS.GET_TEMPLATE_DETAIL(id), { method: 'GET' });
+    if (found) {
+      const fallback = OFFICIAL_TEMPLATES.find((t) => t.id === found.id || t.code === found.code);
+      return {
+        ...fallback,
+        ...found,
+        fields: (found.fields && found.fields.length > 0) ? found.fields : (fallback?.fields || []),
+        sections: (found.sections && found.sections.length > 0) ? found.sections : (fallback?.sections || []),
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return OFFICIAL_TEMPLATES.find((t) => t.id === id || t.code === id) || null;
 }
 
 export async function saveTemplate(template: DocumentTemplate, _isNew = false): Promise<DocumentTemplate> {

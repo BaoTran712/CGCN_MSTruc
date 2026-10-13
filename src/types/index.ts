@@ -104,7 +104,7 @@ export interface DocumentTemplate {
   code: string;
   title: string;
   name?: string;
-  category: 'Hành chính' | 'Tài chính - Kế toán' | 'Nhân sự' | 'Đào tạo' | 'Quản trị thiết bị';
+  category: 'Hành chính' | 'Tài chính - Kế toán' | 'Nhân sự' | 'Đào tạo' | 'Quản trị thiết bị' | 'Khoa học Công nghệ';
   description: string;
   departmentId?: string;
   driveFileId?: string;

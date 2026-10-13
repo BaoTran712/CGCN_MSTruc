@@ -23,9 +23,7 @@ export interface ExtractedDocxInfo {
  * Ví dụ: <w:t>{{ho_</w:t></w:r><w:r><w:t>ten}}</w:t> -> {{ho_ten}}
  */
 export function cleanWordXmlPlaceholders(xmlString: string): string {
-  // Regex tìm và gộp các placeholder bị chia nhỏ qua các thẻ XML w:t/w:r
   return xmlString.replace(/\{\{[^}]*\}\}/g, (match) => {
-    // Loại bỏ các thẻ XML bên trong thẻ {{...}} nếu có
     return match.replace(/<[^>]+>/g, '');
   });
 }
@@ -40,7 +38,6 @@ export function extractPlaceholdersFromXml(xmlString: string): string[] {
   let match;
   while ((match = regex.exec(cleanXml)) !== null) {
     const key = match[1].trim();
-    // Bỏ qua các cú pháp đặc biệt của docxtemplater như {#list}, {/list}, {^cond}, {>partial}
     if (!key.startsWith('#') && !key.startsWith('/') && !key.startsWith('^') && !key.startsWith('>')) {
       matches.add(key);
     }
@@ -63,7 +60,6 @@ export async function unpackDocxAndAnalyze(file: File | Blob | ArrayBuffer, file
   const documentXml = await documentXmlFile.async('string');
   const placeholders = extractPlaceholdersFromXml(documentXml);
 
-  // Đếm số đoạn văn (<w:p>) và số bảng (<w:tbl>)
   const totalParagraphs = (documentXml.match(/<w:p[\s>]/g) || []).length;
   const totalTables = (documentXml.match(/<w:tbl[\s>]/g) || []).length;
 
@@ -79,18 +75,20 @@ export async function unpackDocxAndAnalyze(file: File | Blob | ArrayBuffer, file
 
 /**
  * 2. ĐIỀN DỮ LIỆU VÀO XML & ĐÓNG GÓI LẠI THÀNH FILE .DOCX
+ * Sử dụng delimiters {{ }} và tự động chuyển dòng \n thành <w:br/>
  */
 export async function fillDocxTemplate(
   templateBuffer: ArrayBuffer,
   data: Record<string, any>,
-  outputFileName = 'output.docx'
+  _outputFileName = 'output.docx'
 ): Promise<Blob> {
   try {
     const zip = new PizZip(templateBuffer);
     const doc = new Docxtemplater(zip, {
       paragraphLoop: true,
       linebreaks: true,
-      nullGetter: () => '', // Nếu biến không có dữ liệu thì để trống thay vì báo lỗi
+      delimiters: { start: '{{', end: '}}' },
+      nullGetter: () => '', // Trả về rỗng nếu không có dữ liệu, tránh văng lỗi
     });
 
     // Điền dữ liệu vào các biến trong XML
@@ -106,7 +104,6 @@ export async function fillDocxTemplate(
     return outBlob;
   } catch (error: any) {
     console.warn('Docxtemplater error, fallbacking to direct XML Replacement Engine:', error);
-    // Fallback: Nếu docxtemplater gặp lỗi cú pháp tag, dùng engine XML Regex Replace trực tiếp
     return await fallbackXmlRegexFill(templateBuffer, data);
   }
 }
@@ -125,7 +122,6 @@ async function fallbackXmlRegexFill(
   let xml = await docFile.async('string');
   xml = cleanWordXmlPlaceholders(xml);
 
-  // Thay thế từng biến
   Object.entries(data).forEach(([key, val]) => {
     const searchTag = `{{${key}}}`;
     const replacement = escapeXmlString(String(val ?? ''));
@@ -151,80 +147,118 @@ function escapeXmlString(unsafe: string): string {
 
 /**
  * 3. HÀM XUẤT VÀ TẢI FILE WORD CHO HỒ SƠ (DOSSIER)
+ * Tự động nạp biểu mẫu chuẩn gốc (/templates/mau_1a_chuan.docx hoặc /templates/mau_2a_chuan.docx)
+ * và mapping dữ liệu người dùng nhập mà không gây lỗi định dạng.
  */
 export async function exportDossierDocxWithXmlEngine(
-  dossier: Dossier,
-  template?: WordTemplate,
+  rawDossier: Dossier,
+  rawTemplate?: WordTemplate,
   customTemplateFile?: ArrayBuffer
 ): Promise<void> {
+  const dossier = normalizeNFC(rawDossier);
+  const template = rawTemplate ? normalizeNFC(rawTemplate) : undefined;
   const data = prepareDossierTemplateData(dossier, template);
 
-  let outputBlob: Blob;
+  const templateCode = template?.code || dossier.templateId || dossier.templateCode || '';
+  const isMau1a = templateCode.includes('1a') || templateCode.includes('TTR') || templateCode.includes('tri-thuc');
+  const targetTemplateUrl = isMau1a ? '/templates/mau_1a_chuan.docx' : '/templates/mau_2a_chuan.docx';
+
+  let outputBlob: Blob | null = null;
 
   if (customTemplateFile) {
-    // Nếu có file mẫu Word thực tế được tải lên
     outputBlob = await fillDocxTemplate(customTemplateFile, data, `${dossier.code}.docx`);
   } else {
-    // Nếu dùng template mặc định của hệ thống
-    await generateAndDownloadDocx(dossier, template);
+    try {
+      const resp = await fetch(targetTemplateUrl);
+      if (resp.ok) {
+        const buffer = await resp.arrayBuffer();
+        outputBlob = await fillDocxTemplate(buffer, data, `${dossier.code}.docx`);
+      }
+    } catch (err) {
+      console.warn(`[exportDossierDocxWithXmlEngine] Fetching ${targetTemplateUrl} failed, fallback to programmatic docx:`, err);
+    }
+  }
+
+  if (outputBlob) {
+    const outName = dossier.docxFileName || `${dossier.code}_bieu_mau.docx`;
+    saveAs(outputBlob, outName);
     return;
   }
 
-  saveAs(outputBlob, dossier.docxFileName || `${dossier.code}_hoan_chinh.docx`);
+  // Fallback programmatic nếu không tải được template file
+  await generateAndDownloadDocx(dossier, template);
 }
 
 /**
  * Chuẩn bị mapping dữ liệu đầy đủ từ Hồ sơ thành key-value cho template
  */
-export function prepareDossierTemplateData(rawDossier: Dossier, rawTemplate?: WordTemplate): Record<string, any> {
+export function prepareDossierTemplateData(rawDossier: Dossier, _rawTemplate?: WordTemplate): Record<string, any> {
   const dossier = normalizeNFC(rawDossier);
   const fd = dossier.formData || {};
   const d = new Date(dossier.createdAt || Date.now());
 
+  const day = d.getDate().toString().padStart(2, '0');
+  const month = (d.getMonth() + 1).toString().padStart(2, '0');
+  const year = d.getFullYear().toString();
+
+  const dept = fd.department || dossier.createdBy.department || 'Khoa Công nghệ Thông tin';
+  const fullName = fd.full_name || dossier.createdBy.name || '';
+
   return {
-    // Thông tin chung hồ sơ
+    // Thông tin chung hồ sơ & ngày tháng
     ma_ho_so: dossier.code,
-    so_to_trinh: fd.proposal_number || dossier.code,
-    so_ke_hoach: fd.plan_code || dossier.code,
-    ngay: d.getDate().toString().padStart(2, '0'),
-    thang: (d.getMonth() + 1).toString().padStart(2, '0'),
-    nam: d.getFullYear().toString(),
+    so_to_trinh: fd.proposal_number || `${dossier.code}/TTr`,
+    so_ke_hoach: fd.plan_code || `${dossier.code}/KH`,
+    ngay: day,
+    thang: month,
+    nam: year,
     ngay_tao: d.toLocaleDateString('vi-VN'),
+    don_vi: dept,
+    don_vi_uppercase: dept.toUpperCase(),
+    don_vi_viet_tat: dept.split(' ').map((w: string) => w[0]).join('').toUpperCase() || 'ĐV',
 
     // Thông tin người lập & phòng ban
-    ho_ten: fd.full_name || dossier.createdBy.name || '',
-    nguoi_trinh: fd.full_name || dossier.createdBy.name || '',
+    ho_ten: fullName,
+    nguoi_trinh: fullName,
     email: fd.email || dossier.createdBy.email || '',
     so_dien_thoai: fd.phone || dossier.createdBy.phone || '',
-    don_vi: fd.department || dossier.createdBy.department || 'Khoa / Phòng ban',
-    chuc_vu: fd.position || dossier.createdBy.title || 'Giảng viên / Chuyên viên',
+    chuc_vu: fd.position || dossier.createdBy.title || 'Giảng viên chính',
+    chuc_danh: fd.position || dossier.createdBy.title || 'Giảng viên chính',
+    dien_thoai: fd.phone || dossier.createdBy.phone || '',
     truong_don_vi: dossier.assignedManager?.name || 'Trưởng Đơn vị',
+    truong_don_vi_nhan: fd.receiver_manager || 'Trưởng Đơn vị nhận',
 
     // Dữ liệu chi tiết từ Form Mẫu 1a (Tờ trình)
     muc_dich: fd.purpose || '',
     nhu_cau_tiep_nhan: fd.receiver_needs || '',
+    dap_ung_thuc_hien: fd.provider_capacity || '',
     nang_luc_chuyen_giao: fd.provider_capacity || '',
     muc_tieu: fd.transfer_goals || '',
     doi_tuong: fd.transfer_target || '',
     phuong_thuc: fd.transfer_method || '',
-    hinh_thuc: fd.transfer_form || 'Chuyển giao công nghệ độc lập',
+    hinh_thuc: fd.transfer_form || 'Chuyển giao công nghệ độc lập.',
     quyen_chuyen_giao: fd.transfer_rights || '',
-    thoi_gian: fd.transfer_time || '',
-    dia_diem: fd.transfer_location || '',
+    thoi_gian: fd.transfer_time || (fd.transfer_date ? new Date(fd.transfer_date).toLocaleDateString('vi-VN') : ''),
+    dia_diem: fd.transfer_location || 'Tại Trường Đại học Y Dược Cần Thơ',
     thanh_phan: fd.attendees || '',
-    kinh_phi: fd.funding_source || 'Từ nguồn kinh phí của Trường',
+    kinh_phi: fd.funding_source || 'Từ nguồn kinh phí của Trường theo quy chế chi tiêu nội bộ.',
 
     // Dữ liệu chi tiết từ Form Mẫu 2a (Kế hoạch)
-    ten_san_pham: fd.product_name || '',
-    nhom_tac_gia: fd.authors_group || '',
-    loai_hinh_san_pham: fd.product_type || '',
-    ben_nhan_chuyen_giao: fd.receiving_party || '',
-    thoi_gian_chuyen_giao: fd.transfer_date ? new Date(fd.transfer_date).toLocaleDateString('vi-VN') : '',
-    dia_diem_chuyen_giao: fd.transfer_location || '',
-    chi_phi_chuyen_giao: fd.transfer_cost ? Number(fd.transfer_cost).toLocaleString('vi-VN') + ' VNĐ' : 'Theo thỏa thuận',
+    ten_san_pham: fd.product_name || fd.research_title || 'Sản phẩm chuyển giao công nghệ',
+    nhom_tac_gia: fd.authors_group || fullName,
+    loai_hinh_san_pham: fd.product_type || 'Hệ thống phần mềm ứng dụng y tế',
+    ben_nhan_chuyen_giao: fd.receiving_party || 'Bệnh viện Trường Đại học Y Dược Cần Thơ',
+    chi_phi: fd.transfer_cost !== undefined && fd.transfer_cost !== null
+      ? Number(fd.transfer_cost) === 0
+        ? 'Không thu phí (kinh phí hoạt động Nhà trường)'
+        : `${Number(fd.transfer_cost).toLocaleString('vi-VN')} VNĐ`
+      : 'Theo thỏa thuận',
     ban_chi_dao: fd.steering_committee || '',
-    hoi_thao: fd.workshop_program || '',
-    quan_ly_rui_ro: fd.risk_management || '',
+    ban_to_chuc: fd.organizing_committee || '',
+    nhan_su: fd.implementing_staff || '',
+    chu_toa: fd.workshop_chair || '',
+    bao_cao_vien: fd.workshop_speaker || '',
+    kinh_phi_hoi_thao: fd.workshop_budget || 'Từ nguồn kinh phí của Trường theo quy chế chi tiêu nội bộ.',
 
     // Flatten toàn bộ formData gốc để match với mọi tên biến tuỳ biến
     ...fd,
