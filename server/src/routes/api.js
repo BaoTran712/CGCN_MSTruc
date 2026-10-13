@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { isDbConnected } from '../utils/db.js';
 import userRoute from './userRoute.js';
-import departmentRoute from './departmentRoute.js';
 import templateRoute from './templateRoute.js';
 import dossierRoute from './dossierRoute.js';
 import auditRoute from './auditRoute.js';
@@ -28,7 +27,6 @@ router.get('/status', (req, res) => {
 // =========================================================================
 router.use('/projects', projectRoute);
 router.use('/users', userRoute);
-router.use('/departments', departmentRoute);
 router.use('/templates', templateRoute);
 router.use('/dossiers', dossierRoute);
 router.use('/audit-logs', auditRoute);

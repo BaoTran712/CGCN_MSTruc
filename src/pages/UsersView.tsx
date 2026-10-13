@@ -145,7 +145,7 @@ export const UsersView: React.FC<UsersViewProps> = ({ currentUser, onSwitchUser 
             )}
           </div>
           <p className="text-xs text-slate-600 leading-relaxed">
-            Tài khoản quản trị (<code>admin@ctump.edu.vn</code>). Quyền: thẩm định đối soát hồ sơ, yêu cầu cán bộ chỉnh sửa hoặc phê duyệt hồ sơ, tiếp nhận văn thư, cấu hình biểu mẫu Word XML, kiểm soát đồng bộ Google Sheets và cơ cấu phòng ban.
+            Tài khoản quản trị (<code>admin@ctump.edu.vn</code>). Quyền: thẩm định đối soát hồ sơ, yêu cầu cán bộ chỉnh sửa hoặc phê duyệt hồ sơ, tiếp nhận văn thư, cấu hình biểu mẫu Word XML, kiểm soát đồng bộ Google Sheets.
           </p>
         </div>
       </div>

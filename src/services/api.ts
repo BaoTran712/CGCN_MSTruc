@@ -13,7 +13,6 @@ import {
   GeneratedDocument,
   GoogleSheetRow,
   User,
-  Department,
   Notification as NotificationItem,
 } from '../types';
 import { API_BASE_URL, API_ENDPOINTS } from '../config/api.config';
@@ -314,20 +313,6 @@ export async function login(email: string): Promise<User> {
   });
 }
 
-// =========================================================================
-// 4. Đơn vị / Khoa / Phòng ban (departments)
-// =========================================================================
-
-export async function getDepartments(): Promise<Department[]> {
-  return request<Department[]>(`${API_BASE_URL}/departments`, { method: 'GET' });
-}
-
-export async function saveDepartment(dept: Department): Promise<Department> {
-  return request<Department>(`${API_BASE_URL}/departments`, {
-    method: 'POST',
-    body: JSON.stringify(dept),
-  });
-}
 
 // =========================================================================
 // 5. Nhật ký Audit Trail & Email Logs

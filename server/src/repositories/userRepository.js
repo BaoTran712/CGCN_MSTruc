@@ -5,10 +5,9 @@ export const userRepository = {
   // Lấy tất cả người dùng
   async findAll() {
     const rows = await query(`
-      SELECT u.id, u.name, u.email, u.role, u.title, u.department, u.department_id, u.phone, u.avatar,
-             u.created_at, u.updated_at, d.name as department_full_name
+      SELECT u.id, u.name, u.email, u.role, u.title, u.department, u.phone, u.avatar,
+             u.created_at, u.updated_at
       FROM users u
-      LEFT JOIN departments d ON u.department_id = d.id
       ORDER BY u.role DESC, u.name ASC
     `);
 

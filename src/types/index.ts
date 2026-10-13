@@ -310,7 +310,6 @@ export type ActiveNavTab =
   | 'secretary_queue'
   | 'history_sheets'
   | 'template_management'
-  | 'departments'
   | 'users'
   | 'settings';
 

@@ -3,7 +3,6 @@ import {
   ActiveNavTab,
   Application,
   DocumentTemplate,
-  Department,
   UserRole,
 } from './types';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -19,7 +18,6 @@ import {
   MyDossiersView,
   ReviewQueueView,
   SecretaryView,
-  DepartmentsView,
   DossierDetailView,
   ProcessingHistoryView,
   TemplateManagementView,
@@ -35,7 +33,6 @@ function AppContent() {
     templates,
     dossiers,
     sheetRows,
-    departments,
     users,
     isLoading,
     pendingCount,
@@ -52,7 +49,6 @@ function AppContent() {
     uploadFacultySignature,
     updateSchoolSigning,
     completeDossier,
-    saveDepartment,
     addTemplate,
     updateTemplate,
     refreshSheetRows,
@@ -196,15 +192,6 @@ function AppContent() {
       showToast(`Đã hoàn tất đóng dấu và lưu trữ Google Drive cho hồ sơ ${completed.code}!`);
     } catch (err) {
       console.error('Error completing dossier:', err);
-    }
-  };
-
-  const handleSaveDepartment = async (dept: Department) => {
-    try {
-      const saved = await saveDepartment(dept);
-      showToast(`Đã lưu thông tin phòng ban: ${saved.name}!`);
-    } catch (err) {
-      console.error('Error saving department:', err);
     }
   };
 
@@ -401,13 +388,6 @@ function AppContent() {
             />
           )}
 
-          {activeTab === 'departments' && (
-            <DepartmentsView
-              departments={departments}
-              users={users}
-              onSaveDepartment={handleSaveDepartment}
-            />
-          )}
 
           {activeTab === 'history_sheets' && (
             <ProcessingHistoryView

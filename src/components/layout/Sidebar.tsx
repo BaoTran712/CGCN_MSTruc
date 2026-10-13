@@ -8,7 +8,6 @@ import {
   FileCode2,
   TableProperties,
   LogOut,
-  Building2,
   Users,
   FileSignature,
   X,
@@ -107,11 +106,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'template_management',
           label: 'Cấu hình Biểu mẫu Word',
           icon: FileCode2,
-        },
-        {
-          id: 'departments',
-          label: 'Cơ cấu Phòng ban',
-          icon: Building2,
         },
         {
           id: 'users',

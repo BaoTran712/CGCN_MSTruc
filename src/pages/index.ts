@@ -4,7 +4,6 @@ export * from './CreateDossierView';
 export * from './MyDossiersView';
 export * from './ReviewQueueView';
 export * from './SecretaryView';
-export * from './DepartmentsView';
 export * from './DossierDetailView';
 export * from './ProcessingHistoryView';
 export * from './TemplateManagementView';

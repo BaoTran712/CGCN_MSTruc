@@ -31,7 +31,6 @@ app.get('/', (req, res) => {
     endpoints: {
       dossiers: '/api/dossiers',
       templates: '/api/templates',
-      departments: '/api/departments',
       users: '/api/users',
       status: '/api/status',
     },

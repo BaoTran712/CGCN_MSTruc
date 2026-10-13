@@ -2,7 +2,6 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import {
   Application,
   DocumentTemplate,
-  Department,
   GoogleSheetRow,
   User,
 } from '../types';
@@ -12,7 +11,6 @@ interface DossierContextValue {
   templates: DocumentTemplate[];
   dossiers: Application[];
   sheetRows: GoogleSheetRow[];
-  departments: Department[];
   users: User[];
   isLoading: boolean;
   pendingCount: number;
@@ -51,7 +49,6 @@ interface DossierContextValue {
     finalPdfUrl?: string,
     adminUser?: User
   ) => Promise<Application>;
-  saveDepartment: (dept: Department) => Promise<Department>;
   addTemplate: (tmpl: DocumentTemplate) => Promise<DocumentTemplate>;
   updateTemplate: (tmpl: DocumentTemplate) => Promise<DocumentTemplate>;
   refreshSheetRows: () => Promise<GoogleSheetRow[]>;
@@ -63,24 +60,21 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
   const [dossiers, setDossiers] = useState<Application[]>([]);
   const [sheetRows, setSheetRows] = useState<GoogleSheetRow[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   const reloadAll = useCallback(async () => {
     try {
       setIsLoading(true);
-      const [loadedTemplates, loadedApps, loadedSheetRows, loadedDepts, loadedUsers] = await Promise.all([
+      const [loadedTemplates, loadedApps, loadedSheetRows, loadedUsers] = await Promise.all([
         api.getTemplates(),
         api.getAllApplications(),
         api.getAllSheetRows(),
-        api.getDepartments(),
         api.getUsers(),
       ]);
       setTemplates(Array.isArray(loadedTemplates) ? loadedTemplates : []);
       setDossiers(Array.isArray(loadedApps) ? loadedApps : []);
       setSheetRows(Array.isArray(loadedSheetRows) ? loadedSheetRows : []);
-      setDepartments(Array.isArray(loadedDepts) ? loadedDepts : []);
       setUsers(Array.isArray(loadedUsers) ? loadedUsers : []);
     } catch (err) {
       console.error('Failed to load initial data via API:', err);
@@ -178,15 +172,6 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
     []
   );
 
-  const saveDepartment = useCallback(async (dept: Department): Promise<Department> => {
-    const saved = await api.saveDepartment(dept);
-    setDepartments((prev) => {
-      const exists = prev.some((d) => d.id === saved.id);
-      if (exists) return prev.map((d) => (d.id === saved.id ? saved : d));
-      return [...prev, saved];
-    });
-    return saved;
-  }, []);
 
   const addTemplate = useCallback(async (newTmpl: DocumentTemplate): Promise<DocumentTemplate> => {
     const saved = await api.saveTemplate(newTmpl, true);
@@ -272,7 +257,6 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
       templates,
       dossiers,
       sheetRows,
-      departments,
       users,
       isLoading,
       pendingCount,
@@ -290,7 +274,6 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
       uploadFacultySignature,
       updateSchoolSigning,
       completeDossier,
-      saveDepartment,
       addTemplate,
       updateTemplate,
       refreshSheetRows,
@@ -299,7 +282,6 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
       templates,
       dossiers,
       sheetRows,
-      departments,
       users,
       isLoading,
       pendingCount,
@@ -317,7 +299,6 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
       uploadFacultySignature,
       updateSchoolSigning,
       completeDossier,
-      saveDepartment,
       addTemplate,
       updateTemplate,
       refreshSheetRows,
