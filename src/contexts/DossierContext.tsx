@@ -31,6 +31,26 @@ interface DossierContextValue {
   uploadUserSignature: (dossierId: string, driveFileId: string, user: User) => Promise<Application>;
   receiveSecretaryIntake: (dossierId: string, user: User) => Promise<Application>;
   completeBySecretary: (dossierId: string, finalDriveFileId: string, user: User) => Promise<Application>;
+  // Quy trình Automation 8 bước (quy_trinh.md)
+  adminPrecheck: (id: string, isValid: boolean, reviewNotes?: string, adminUser?: User) => Promise<Application>;
+  uploadFacultySignature: (
+    id: string,
+    facultySignedPdfUrl?: string,
+    evidenceFiles?: Array<{ name: string; url: string; size?: string }>,
+    user?: User
+  ) => Promise<Application>;
+  updateSchoolSigning: (
+    id: string,
+    flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean },
+    adminUser?: User
+  ) => Promise<Application>;
+  completeDossier: (
+    id: string,
+    decisionNumber?: string,
+    decisionDate?: string,
+    finalPdfUrl?: string,
+    adminUser?: User
+  ) => Promise<Application>;
   saveDepartment: (dept: Department) => Promise<Department>;
   addTemplate: (tmpl: DocumentTemplate) => Promise<DocumentTemplate>;
   updateTemplate: (tmpl: DocumentTemplate) => Promise<DocumentTemplate>;
@@ -57,11 +77,11 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
         api.getDepartments(),
         api.getUsers(),
       ]);
-      setTemplates(loadedTemplates);
-      setDossiers(loadedApps);
-      setSheetRows(loadedSheetRows);
-      setDepartments(loadedDepts);
-      setUsers(loadedUsers);
+      setTemplates(Array.isArray(loadedTemplates) ? loadedTemplates : []);
+      setDossiers(Array.isArray(loadedApps) ? loadedApps : []);
+      setSheetRows(Array.isArray(loadedSheetRows) ? loadedSheetRows : []);
+      setDepartments(Array.isArray(loadedDepts) ? loadedDepts : []);
+      setUsers(Array.isArray(loadedUsers) ? loadedUsers : []);
     } catch (err) {
       console.error('Failed to load initial data via API:', err);
     } finally {
@@ -186,10 +206,61 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return rows;
   }, []);
 
+  const adminPrecheck = useCallback(
+    async (id: string, isValid: boolean, reviewNotes?: string, adminUser?: User): Promise<Application> => {
+      const updated = await api.adminPrecheck(id, isValid, reviewNotes, adminUser);
+      setDossiers((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+      return updated;
+    },
+    []
+  );
+
+  const uploadFacultySignature = useCallback(
+    async (
+      id: string,
+      facultySignedPdfUrl?: string,
+      evidenceFiles?: Array<{ name: string; url: string; size?: string }>,
+      user?: User
+    ): Promise<Application> => {
+      const updated = await api.uploadFacultySignature(id, facultySignedPdfUrl, evidenceFiles, user);
+      setDossiers((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+      return updated;
+    },
+    []
+  );
+
+  const updateSchoolSigning = useCallback(
+    async (
+      id: string,
+      flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean },
+      adminUser?: User
+    ): Promise<Application> => {
+      const updated = await api.updateSchoolSigning(id, flags, adminUser);
+      setDossiers((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+      return updated;
+    },
+    []
+  );
+
+  const completeDossier = useCallback(
+    async (
+      id: string,
+      decisionNumber?: string,
+      decisionDate?: string,
+      finalPdfUrl?: string,
+      adminUser?: User
+    ): Promise<Application> => {
+      const updated = await api.completeDossier(id, decisionNumber, decisionDate, finalPdfUrl, adminUser);
+      setDossiers((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+      return updated;
+    },
+    []
+  );
+
   const pendingCount = useMemo(
     () =>
       dossiers.filter((d) =>
-        ['SUBMITTED', 'submitted', 'under_review', 'resubmitted', 'RESUBMITTED'].includes(d.status)
+        ['NEW', 'SUBMITTED', 'submitted', 'under_review', 'resubmitted', 'RESUBMITTED'].includes(d.status)
       ).length,
     [dossiers]
   );
@@ -215,6 +286,10 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
       uploadUserSignature,
       receiveSecretaryIntake,
       completeBySecretary,
+      adminPrecheck,
+      uploadFacultySignature,
+      updateSchoolSigning,
+      completeDossier,
       saveDepartment,
       addTemplate,
       updateTemplate,
@@ -238,6 +313,10 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
       uploadUserSignature,
       receiveSecretaryIntake,
       completeBySecretary,
+      adminPrecheck,
+      uploadFacultySignature,
+      updateSchoolSigning,
+      completeDossier,
       saveDepartment,
       addTemplate,
       updateTemplate,

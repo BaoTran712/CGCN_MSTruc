@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { User } from '../types';
-import { MOCK_USERS } from '../data';
-import { DEFAULT_DEV_USER } from '../constants';
+import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER } from '../constants';
+import * as api from '../services/api';
 import { Shield, UserCheck, AlertCircle, ArrowRight, CheckCircle2, Info } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 
@@ -14,7 +14,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleCustomEmailLogin = (e: React.FormEvent) => {
+  const handleCustomEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const email = emailInput.trim().toLowerCase();
 
@@ -31,10 +31,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
     setErrorMsg('');
 
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      const user = await api.login(email);
+      onLoginSuccess(user);
+    } catch (err: any) {
+      console.warn('API login failed, falling back to local credentials:', err);
       if (email === 'admin@ctump.edu.vn') {
-        onLoginSuccess(MOCK_USERS.admin);
+        onLoginSuccess(DEFAULT_DEV_USER);
       } else {
         const username = email.replace('@ctump.edu.vn', '');
         const formattedName = username
@@ -54,22 +57,27 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         };
         onLoginSuccess(canBoUser);
       }
-    }, 350);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleQuickLogin = (userType: 'can_bo' | 'admin' | 'dev') => {
+  const handleQuickLogin = async (userType: 'can_bo' | 'admin' | 'dev') => {
     setIsLoading(true);
     setErrorMsg('');
-    setTimeout(() => {
-      setIsLoading(false);
-      if (userType === 'dev') {
-        onLoginSuccess(DEFAULT_DEV_USER);
-      } else if (userType === 'admin') {
-        onLoginSuccess(MOCK_USERS.admin);
+    try {
+      if (userType === 'dev' || userType === 'admin') {
+        const user = await api.login('admin@ctump.edu.vn').catch(() => DEFAULT_DEV_USER);
+        onLoginSuccess(user);
       } else {
-        onLoginSuccess(MOCK_USERS.can_bo || MOCK_USERS.employee);
+        const user = await api.login('nvan@ctump.edu.vn').catch(() => DEFAULT_CANBO_USER);
+        onLoginSuccess(user);
       }
-    }, 250);
+    } catch {
+      onLoginSuccess(userType === 'dev' || userType === 'admin' ? DEFAULT_DEV_USER : DEFAULT_CANBO_USER);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

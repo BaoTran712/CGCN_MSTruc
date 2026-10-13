@@ -24,7 +24,7 @@ interface MyDossiersViewProps {
 }
 
 export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
-  dossiers,
+  dossiers = [],
   currentUser,
   onSelectDossier,
   onEditDraft,
@@ -34,23 +34,23 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   // Chế độ kiểm thử: hiển thị toàn bộ hồ sơ để dễ dàng tra cứu, chỉnh sửa và kiểm tra luồng
-  const userDossiers = dossiers;
+  const userDossiers = Array.isArray(dossiers) ? dossiers : [];
 
   const filtered = userDossiers.filter((d) => {
     const matchSearch =
-      d.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.templateTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      d.templateCode.toLowerCase().includes(searchQuery.toLowerCase());
+      (d.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (d.templateTitle || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (d.templateCode || '').toLowerCase().includes(searchQuery.toLowerCase());
 
     const st = (d.status || '').toUpperCase();
     if (statusFilter === 'all') return matchSearch;
     if (statusFilter === 'draft') return matchSearch && st === 'DRAFT';
     if (statusFilter === 'processing')
-      return matchSearch && ['SUBMITTED', 'UNDER_REVIEW', 'RESUBMITTED'].includes(st);
+      return matchSearch && ['NEW', 'SUBMITTED', 'UNDER_REVIEW', 'RESUBMITTED'].includes(st);
     if (statusFilter === 'changes')
-      return matchSearch && (st === 'CHANGES_REQUESTED' || st === 'RETURNED');
+      return matchSearch && (st === 'NEEDS_REVISION' || st === 'CHANGES_REQUESTED' || st === 'RETURNED');
     if (statusFilter === 'approved')
-      return matchSearch && ['APPROVED', 'FOR_SIGNATURE', 'USER_SIGNED', 'SECRETARY_RECEIVED', 'COMPLETED'].includes(st);
+      return matchSearch && ['PRECHECK_PASSED', 'FACULTY_SIGNED', 'SCHOOL_SIGNING', 'APPROVED', 'FOR_SIGNATURE', 'USER_SIGNED', 'SECRETARY_RECEIVED', 'COMPLETED'].includes(st);
 
     return matchSearch;
   });
@@ -185,8 +185,8 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
 
                     {/* Reviewer */}
                     <td className="py-3.5 px-4 whitespace-nowrap">
-                      <div className="text-slate-800 font-medium">{dossier.assignedManager.name}</div>
-                      <div className="text-[11px] text-slate-400">{dossier.assignedManager.department}</div>
+                      <div className="text-slate-800 font-medium">{dossier.assignedManager?.name || 'Phòng KH&CN'}</div>
+                      <div className="text-[11px] text-slate-400">{dossier.assignedManager?.department || 'Trường ĐH Y Dược Cần Thơ'}</div>
                     </td>
 
                     {/* Actions */}

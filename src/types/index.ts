@@ -6,15 +6,21 @@
 export type UserRole = 'USER' | 'MANAGER' | 'SECRETARY' | 'ADMIN' | 'employee' | 'manager' | 'secretary' | 'admin';
 
 export type DossierStatus =
+  // 5 mốc chính theo quy trình automation (quy_trinh.md):
+  | 'NEW'             // Bước 1-2: Mới nộp (Chờ Admin tiền kiểm)
+  | 'NEEDS_REVISION'  // Bước 2: Yêu cầu bổ sung (Bản thảo có lỗi)
+  | 'PRECHECK_PASSED' // Bước 2-4: Đã duyệt thể thức & Xuất PDF chuẩn
+  | 'FACULTY_SIGNED'  // Bước 3-6: Đã ký cấp Khoa & Nộp minh chứng
+  | 'SCHOOL_SIGNING'  // Bước 4-7: Đang trình ký cấp Trường (KH&CN, KHTC, BGH)
+  | 'COMPLETED'       // Bước 4-8: Đã ban hành QĐ CGCN & Đóng hồ sơ
+  | 'CANCELLED'
+  // Backward-compatible aliases
   | 'DRAFT'
   | 'SUBMITTED'
   | 'RETURNED'
   | 'APPROVED'
   | 'USER_SIGNED'
   | 'SECRETARY_RECEIVED'
-  | 'COMPLETED'
-  | 'CANCELLED'
-  // Backward-compatible aliases
   | 'draft'
   | 'submitted'
   | 'under_review'
@@ -119,6 +125,10 @@ export type AuditAction =
   | 'CREATE'
   | 'UPDATE_DATA'
   | 'SUBMIT'
+  | 'PRECHECK_APPROVE'
+  | 'PRECHECK_REJECT'
+  | 'UPLOAD_FACULTY_SIGN'
+  | 'SCHOOL_SIGNING_STEP'
   | 'APPROVE'
   | 'RETURN'
   | 'UPLOAD_USER_SIGNATURE'
@@ -176,6 +186,20 @@ export interface ApplicationHistory {
   timestamp: string;
   status: DossierStatus;
   comment?: string;
+  applicationId?: string;
+  action?: string;
+  fromStatus?: DossierStatus;
+  toStatus?: DossierStatus;
+  performedBy?: {
+    id: string;
+    name: string;
+    role: string;
+    department?: string;
+    email?: string;
+    title?: string;
+  };
+  performedAt?: string;
+  comments?: string;
 }
 
 export type TimelineEvent = ApplicationHistory;
@@ -191,9 +215,12 @@ export interface ApprovalComment {
 }
 
 export interface GeneratedDocument {
+  id?: string;
   applicationId: string;
   fileName: string;
   fileSize: string;
+  format?: 'docx' | 'pdf';
+  fileUrl?: string;
   downloadUrl?: string;
   driveFileId?: string;
   mimeType: string;
@@ -227,6 +254,25 @@ export interface Application {
   formData: Record<string, any>;
   returnReason?: string;
   reviewNotes?: string;
+  review_notes?: string;
+  department_name?: string;
+  docx_file_url?: string;
+  docxFileUrl?: string;
+  precheck_pdf_url?: string;
+  precheckPdfUrl?: string;
+  faculty_signed_pdf_url?: string;
+  facultySignedPdfUrl?: string;
+  final_pdf_url?: string;
+  finalPdfUrl?: string;
+  decision_number?: string;
+  decision_date?: string;
+  has_financial_implication?: boolean;
+  khcn_signed?: boolean;
+  khtc_signed?: boolean;
+  bgh_signed?: boolean;
+  evidence_files?: Array<{ name: string; url: string; size?: string }>;
+  drive_folder_url?: string;
+  emailLogs?: any[];
   generatedDriveFileId?: string;
   userSignedDriveFileId?: string;
   finalSignedDriveFileId?: string;
@@ -252,7 +298,7 @@ export interface GoogleSheetRow {
   status: string;
   reviewerName: string;
   updatedAt: string;
-  syncStatus: 'Đã đồng bộ' | 'Đang đồng bộ' | 'Lỗi kết nối';
+  syncStatus: 'Đã đồng bộ' | 'Đang đồng bộ' | 'Lỗi kết nối' | 'Đã đồng bộ MySQL';
 }
 
 export type ActiveNavTab =

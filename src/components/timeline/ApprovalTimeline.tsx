@@ -2,21 +2,31 @@ import React from 'react';
 import { TimelineEvent, ApplicationStatus } from '../../types';
 
 interface ApprovalTimelineProps {
-  events: TimelineEvent[];
+  events?: TimelineEvent[];
   currentStatus: ApplicationStatus;
   className?: string;
 }
 
 export const ApprovalTimeline: React.FC<ApprovalTimelineProps> = ({
-  events,
+  events = [],
   currentStatus,
   className = '',
 }) => {
+  const safeEvents = Array.isArray(events) ? events : [];
+
+  if (safeEvents.length === 0) {
+    return (
+      <div className={`py-4 text-center text-xs text-slate-400 italic ${className}`}>
+        Chưa có sự kiện tiến trình nào được ghi nhận.
+      </div>
+    );
+  }
+
   return (
     <div className={`space-y-0 ${className}`}>
       <div className="relative pl-4 border-l border-gray-300 ml-2 space-y-4 py-2">
-        {events.map((evt, idx) => {
-          const isLatest = idx === events.length - 1;
+        {safeEvents.map((evt, idx) => {
+          const isLatest = idx === safeEvents.length - 1;
 
           return (
             <div key={evt.id || idx} className="relative group">

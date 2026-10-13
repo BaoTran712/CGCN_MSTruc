@@ -3,3 +3,5 @@ export * from './ReturnDossierModal';
 export * from './TemplateDetailModal';
 export * from './UploadUserSignatureModal';
 export * from './WordXmlInspectorModal';
+export * from './UploadFacultySignedModal';
+export * from './CompleteDecisionModal';

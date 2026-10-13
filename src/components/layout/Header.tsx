@@ -35,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifPopover, setShowNotifPopover] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<api.BackendHealthStatus>({ online: false });
 
   const isAdmin = currentUser.role === 'ADMIN' || currentUser.role === 'admin';
 
@@ -48,6 +49,14 @@ export const Header: React.FC<HeaderProps> = ({
       }
     }
     loadNotifications();
+
+    async function checkHealth() {
+      const status = await api.checkBackendHealth();
+      setBackendStatus(status);
+    }
+    checkHealth();
+    const interval = setInterval(checkHealth, 4000);
+    return () => clearInterval(interval);
   }, [currentUser.id]);
 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
@@ -104,10 +113,34 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Zone 2: Role Switcher & Notifications & User Dropdown */}
       <div className="flex items-center gap-3">
-        {/* Chế độ kiểm thử toàn quyền */}
-        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 border border-slate-200 text-xs text-slate-600 font-medium">
-          <span className="w-2 h-2 rounded-full bg-emerald-500" />
-          <span>Kiểm thử hệ thống (Toàn quyền)</span>
+        {/* Trạng thái kết nối Backend NodeJS */}
+        <div
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium border transition-all ${
+            backendStatus.online
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : 'bg-rose-50 text-rose-800 border-rose-300 shadow-2xs'
+          }`}
+          title={
+            backendStatus.online
+              ? `Backend NodeJS API (Port 5000) đang chạy. Database: ${
+                  backendStatus.databaseConnected ? 'MySQL Connected' : 'Bộ nhớ tạm (Memory Fallback)'
+                }`
+              : 'Backend NodeJS chưa chạy! Vui lòng mở terminal và gõ: npm run server'
+          }
+        >
+          <span
+            className={`w-2 h-2 rounded-full ${
+              backendStatus.online ? 'bg-emerald-500' : 'bg-rose-500 animate-ping'
+            }`}
+          />
+          <span className="hidden sm:inline">
+            {backendStatus.online
+              ? `Backend: Online (5000) · ${backendStatus.databaseConnected ? 'MySQL' : 'Memory'}`
+              : 'Chưa chạy Server (Port 5000)'}
+          </span>
+          <span className="sm:hidden">
+            {backendStatus.online ? 'Backend OK' : 'No Server'}
+          </span>
         </div>
 
         {/* Notifications Button & Dropdown */}

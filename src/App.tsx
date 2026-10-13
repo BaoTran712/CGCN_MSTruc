@@ -48,6 +48,10 @@ function AppContent() {
     uploadUserSignature,
     receiveSecretaryIntake,
     completeBySecretary,
+    adminPrecheck,
+    uploadFacultySignature,
+    updateSchoolSigning,
+    completeDossier,
     saveDepartment,
     addTemplate,
     updateTemplate,
@@ -226,6 +230,73 @@ function AppContent() {
     showToast('Đã đăng xuất khỏi hệ thống.', 'info');
   };
 
+  // ----------------------------------------------------
+  // AUTOMATION WORKFLOW HANDLERS (quy_trinh.md)
+  // ----------------------------------------------------
+  const handleAdminPrecheck = async (dossierId: string, isValid: boolean, reviewNotes?: string) => {
+    try {
+      const updated = await adminPrecheck(dossierId, isValid, reviewNotes, currentUser);
+      if (selectedDossier?.id === updated.id) {
+        setSelectedDossier(updated);
+      }
+      if (isValid) {
+        showToast(`Đã duyệt hợp lệ thể thức hồ sơ ${updated.code} và xuất file PDF chuẩn.`);
+      } else {
+        showToast(`Đã gửi yêu cầu bổ sung chỉnh sửa hồ sơ ${updated.code} qua Gmail.`);
+      }
+    } catch (err) {
+      console.error('Error in admin precheck:', err);
+    }
+  };
+
+  const handleUploadFacultySignature = async (
+    dossierId: string,
+    pdfUrl: string,
+    evidenceFiles: Array<{ name: string; url: string; size?: string }>
+  ) => {
+    try {
+      const updated = await uploadFacultySignature(dossierId, pdfUrl, evidenceFiles, currentUser);
+      if (selectedDossier?.id === updated.id) {
+        setSelectedDossier(updated);
+      }
+      showToast(`Đã nộp bản ký số cấp Khoa cho hồ sơ ${updated.code}!`);
+    } catch (err) {
+      console.error('Error in faculty signature upload:', err);
+    }
+  };
+
+  const handleUpdateSchoolSigning = async (
+    dossierId: string,
+    flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean }
+  ) => {
+    try {
+      const updated = await updateSchoolSigning(dossierId, flags, currentUser);
+      if (selectedDossier?.id === updated.id) {
+        setSelectedDossier(updated);
+      }
+      showToast(`Đã cập nhật tiến độ ký số cấp Trường cho hồ sơ ${updated.code}!`);
+    } catch (err) {
+      console.error('Error updating school signing:', err);
+    }
+  };
+
+  const handleCompleteDossier = async (
+    dossierId: string,
+    decisionNumber: string,
+    decisionDate: string,
+    finalPdfUrl: string
+  ) => {
+    try {
+      const updated = await completeDossier(dossierId, decisionNumber, decisionDate, finalPdfUrl, currentUser);
+      if (selectedDossier?.id === updated.id) {
+        setSelectedDossier(updated);
+      }
+      showToast(`Đã ban hành Quyết định ${decisionNumber} và lưu trữ Google Drive cho hồ sơ ${updated.code}!`);
+    } catch (err) {
+      console.error('Error completing dossier:', err);
+    }
+  };
+
   return (
     <MainLayout
       activeTab={activeTab}
@@ -250,12 +321,13 @@ function AppContent() {
           currentUser={currentUser}
           onBack={() => setSelectedDossier(null)}
           onEditDossier={(d) => handleEditDraft(d)}
+          onAdminPrecheck={handleAdminPrecheck}
+          onUploadFacultySignature={handleUploadFacultySignature}
+          onUpdateSchoolSigning={handleUpdateSchoolSigning}
+          onCompleteDossier={handleCompleteDossier}
           onApproveDossier={handleApproveDossier}
           onReturnDossier={handleReturnDossier}
           onSaveManagerEdit={handleSaveManagerEdit}
-          onUploadUserSignature={handleUploadUserSignature}
-          onReceiveSecretaryIntake={handleReceiveSecretaryIntake}
-          onCompleteBySecretary={handleCompleteBySecretary}
           onNavigate={(tab) => {
             setSelectedDossier(null);
             setActiveTab(tab);

@@ -53,7 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Toàn bộ tính năng mở sẵn cho việc kiểm thử hệ thống
   const navSections: NavSection[] = [
     {
-      title: 'Hồ sơ & Nghiệp vụ',
+      title: 'Cán bộ / Đề xuất',
       items: [
         {
           id: 'dashboard',
@@ -62,40 +62,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         {
           id: 'create_dossier',
-          label: 'Tạo hồ sơ mới',
+          label: 'Tạo hồ sơ CGCN (Web Form)',
           icon: FilePlus,
         },
         {
           id: 'my_dossiers',
-          label: 'Danh sách hồ sơ',
+          label: 'Hồ sơ của tôi',
           icon: FolderOpen,
           badge: myDossierCount > 0 ? myDossierCount : undefined,
         },
         {
           id: 'templates',
-          label: 'Danh mục Biểu mẫu',
+          label: 'Danh mục Biểu mẫu chuẩn',
           icon: FileSpreadsheet,
         },
       ],
     },
     {
-      title: 'Thẩm định & Tiếp nhận',
+      title: 'Phòng KH&CN / Thẩm định',
       items: [
         {
           id: 'pending_approval',
-          label: 'Duyệt & Quản lý hồ sơ',
+          label: 'Tiền kiểm hồ sơ (Admin)',
           icon: ClipboardCheck,
           badge: pendingCount > 0 ? pendingCount : undefined,
-          badgeColor: 'bg-amber-100 text-amber-800 border border-amber-300 font-semibold',
+          badgeColor: 'bg-rose-100 text-rose-800 border border-rose-300 font-semibold',
         },
         {
           id: 'secretary_queue',
-          label: 'Tiếp nhận Văn thư',
+          label: 'Trình ký & Ban hành QĐ',
           icon: FileSignature,
         },
         {
           id: 'history_sheets',
-          label: 'Lịch sử & Google Sheets',
+          label: 'Audit Trail & Báo cáo BGH',
           icon: TableProperties,
         },
       ],

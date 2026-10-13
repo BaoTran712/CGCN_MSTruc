@@ -43,15 +43,28 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
   onCancel,
   onNavigate,
 }) => {
+  const safeTemplates = Array.isArray(templates) ? templates : [];
   // If no template is selected, choose the first or initial one
-  const [template, setTemplate] = useState<WordTemplate>(
-    initialTemplate ||
-      (editingDossier
-        ? templates.find((t) => t.id === editingDossier.templateId) || templates[0]
-        : templates[0])
-  );
+  const [template, setTemplate] = useState<WordTemplate>(() => {
+    if (initialTemplate) return initialTemplate;
+    if (editingDossier && safeTemplates.length > 0) {
+      return safeTemplates.find((t) => t.id === editingDossier.templateId) || safeTemplates[0];
+    }
+    return safeTemplates[0] || ({} as WordTemplate);
+  });
 
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+
+  useEffect(() => {
+    if (initialTemplate) {
+      setTemplate(initialTemplate);
+    } else if (editingDossier && safeTemplates.length > 0) {
+      const match = safeTemplates.find((t) => t.id === editingDossier.templateId);
+      if (match) setTemplate(match);
+    } else if ((!template || !template.id) && safeTemplates.length > 0) {
+      setTemplate(safeTemplates[0]);
+    }
+  }, [initialTemplate, editingDossier, safeTemplates]);
 
   // Form values state
   const [formData, setFormData] = useState<Record<string, any>>(() => {
@@ -65,7 +78,7 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
       phone: currentUser.phone,
       position: currentUser.title,
     };
-    if (template && template.fields) {
+    if (template && template.fields && Array.isArray(template.fields)) {
       template.fields.forEach((f) => {
         const key = f.name || f.key || f.id;
         if (f.defaultValue !== undefined) {
@@ -81,7 +94,7 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
 
   // When template changes
   const handleTemplateChange = (newTemplateId: string) => {
-    const found = templates.find((t) => t.id === newTemplateId);
+    const found = safeTemplates.find((t) => t.id === newTemplateId);
     if (found) {
       setTemplate(found);
       const defaults: Record<string, any> = {
@@ -90,12 +103,14 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
         phone: currentUser.phone,
         position: currentUser.title,
       };
-      found.fields.forEach((f) => {
-        const key = f.name || f.key || f.id;
-        if (f.defaultValue !== undefined) {
-          defaults[key] = f.defaultValue;
-        }
-      });
+      if (found.fields && Array.isArray(found.fields)) {
+        found.fields.forEach((f) => {
+          const key = f.name || f.key || f.id;
+          if (f.defaultValue !== undefined) {
+            defaults[key] = f.defaultValue;
+          }
+        });
+      }
       setFormData(defaults);
       setErrors({});
     }
@@ -369,7 +384,7 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
             <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-md space-y-1 text-xs text-rose-950">
               <div className="flex items-center gap-1.5 font-bold text-rose-800">
                 <AlertCircle className="w-4 h-4 text-rose-600" />
-                <span>Yêu cầu chỉnh sửa từ Người quản lý ({editingDossier.assignedManager.name}):</span>
+                <span>Yêu cầu chỉnh sửa từ Người quản lý ({editingDossier.assignedManager?.name || 'Phòng KH&CN'}):</span>
               </div>
               <p className="italic pl-5 font-medium">"{editingDossier.reviewNotes}"</p>
               <p className="text-[11px] text-rose-700 pl-5">Vui lòng cập nhật các trường liên quan bên dưới và gửi lại hồ sơ.</p>

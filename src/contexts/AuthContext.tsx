@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { User, UserRole } from '../types';
-import { MOCK_USERS } from '../data';
-import { DEFAULT_DEV_USER, AUTH_STORAGE_KEY } from '../constants';
+import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER, AUTH_STORAGE_KEY } from '../constants';
 
 interface AuthContextValue {
   currentUser: User | null;
@@ -53,12 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const switchRole = useCallback((targetRole: UserRole): User => {
     const roleKey = String(targetRole).toUpperCase();
-    let nextUser: User;
-    if (roleKey === 'ADMIN') {
-      nextUser = MOCK_USERS.admin;
-    } else {
-      nextUser = MOCK_USERS.can_bo || MOCK_USERS.employee;
-    }
+    const nextUser = roleKey === 'ADMIN' ? DEFAULT_DEV_USER : DEFAULT_CANBO_USER;
     setCurrentUser(nextUser);
     try {
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextUser));

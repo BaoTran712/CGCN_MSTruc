@@ -18,14 +18,15 @@ interface TemplatesViewProps {
 }
 
 export const TemplatesView: React.FC<TemplatesViewProps> = ({
-  templates,
+  templates = [],
   onSelectTemplate,
   onViewDetails,
   onNavigate,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const safeTemplates = Array.isArray(templates) ? templates : [];
 
-  const filteredTemplates = templates.filter((tmpl) => {
+  const filteredTemplates = safeTemplates.filter((tmpl) => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return true;
     return (
@@ -43,7 +44,7 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
             <span>Danh mục Biểu mẫu Word</span>
             <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
-              {templates.length} biểu mẫu
+              {safeTemplates.length} biểu mẫu
             </span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
@@ -110,7 +111,7 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({
               <div className="pt-2 flex items-center gap-3 text-[11px] text-slate-500">
                 <span className="inline-flex items-center gap-1 font-medium text-slate-700">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  {template.fields.length} trường nhập liệu
+                  {template.fields?.length || 0} trường nhập liệu
                 </span>
                 <span>·</span>
                 <span>v{template.version}</span>

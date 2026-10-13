@@ -16,33 +16,37 @@ import {
 
 // Normalize all legacy and uppercase statuses to standard DossierStatus
 export function normalizeStatus(status: string): DossierStatus {
+  if (!status) return 'NEW';
   const upper = status.toUpperCase();
-  if (upper === 'DRAFT' || upper === 'DRAFT') return 'DRAFT';
-  if (upper === 'SUBMITTED' || upper === 'UNDER_REVIEW' || upper === 'RESUBMITTED') return 'SUBMITTED';
-  if (upper === 'RETURNED' || upper === 'CHANGES_REQUESTED') return 'RETURNED';
-  if (upper === 'APPROVED') return 'APPROVED';
-  if (upper === 'USER_SIGNED' || upper === 'FOR_SIGNATURE') return 'USER_SIGNED';
-  if (upper === 'SECRETARY_RECEIVED') return 'SECRETARY_RECEIVED';
+  if (upper === 'NEW' || upper === 'SUBMITTED' || upper === 'UNDER_REVIEW' || upper === 'RESUBMITTED') return 'NEW';
+  if (upper === 'NEEDS_REVISION' || upper === 'RETURNED' || upper === 'CHANGES_REQUESTED') return 'NEEDS_REVISION';
+  if (upper === 'PRECHECK_PASSED' || upper === 'APPROVED') return 'PRECHECK_PASSED';
+  if (upper === 'FACULTY_SIGNED' || upper === 'USER_SIGNED' || upper === 'FOR_SIGNATURE') return 'FACULTY_SIGNED';
+  if (upper === 'SCHOOL_SIGNING' || upper === 'SECRETARY_RECEIVED') return 'SCHOOL_SIGNING';
   if (upper === 'COMPLETED') return 'COMPLETED';
+  if (upper === 'DRAFT') return 'DRAFT';
   if (upper === 'CANCELLED') return 'CANCELLED';
-  return 'DRAFT';
+  return 'NEW';
 }
 
 /**
- * State Transition Guard Matrix
+ * State Transition Guard Matrix theo đặc tả quy_trinh.md
  */
 const ALLOWED_TRANSITIONS: Record<string, { target: DossierStatus; allowedRoles: UserRole[] }[]> = {
-  DRAFT: [{ target: 'SUBMITTED', allowedRoles: ['USER', 'employee', 'ADMIN', 'admin'] }],
-  SUBMITTED: [
-    { target: 'APPROVED', allowedRoles: ['MANAGER', 'manager', 'ADMIN', 'admin'] },
-    { target: 'RETURNED', allowedRoles: ['MANAGER', 'manager', 'ADMIN', 'admin'] },
-    { target: 'SUBMITTED', allowedRoles: ['MANAGER', 'manager', 'ADMIN', 'admin'] }, // Data edit by manager
+  DRAFT: [{ target: 'NEW', allowedRoles: ['USER', 'ADMIN', 'employee', 'admin'] }],
+  NEW: [
+    { target: 'PRECHECK_PASSED', allowedRoles: ['ADMIN', 'admin'] },
+    { target: 'NEEDS_REVISION', allowedRoles: ['ADMIN', 'admin'] },
+    { target: 'NEW', allowedRoles: ['ADMIN', 'admin', 'USER', 'employee'] },
   ],
-  RETURNED: [{ target: 'SUBMITTED', allowedRoles: ['USER', 'employee', 'ADMIN', 'admin'] }],
-  APPROVED: [{ target: 'USER_SIGNED', allowedRoles: ['USER', 'employee', 'ADMIN', 'admin'] }],
-  USER_SIGNED: [{ target: 'SECRETARY_RECEIVED', allowedRoles: ['SECRETARY', 'secretary', 'ADMIN', 'admin'] }],
-  SECRETARY_RECEIVED: [{ target: 'COMPLETED', allowedRoles: ['SECRETARY', 'secretary', 'ADMIN', 'admin'] }],
-  COMPLETED: [], // Terminal
+  NEEDS_REVISION: [{ target: 'NEW', allowedRoles: ['USER', 'ADMIN', 'employee', 'admin'] }],
+  PRECHECK_PASSED: [{ target: 'FACULTY_SIGNED', allowedRoles: ['USER', 'ADMIN', 'employee', 'admin'] }],
+  FACULTY_SIGNED: [
+    { target: 'SCHOOL_SIGNING', allowedRoles: ['ADMIN', 'admin'] },
+    { target: 'COMPLETED', allowedRoles: ['ADMIN', 'admin'] },
+  ],
+  SCHOOL_SIGNING: [{ target: 'COMPLETED', allowedRoles: ['ADMIN', 'admin'] }],
+  COMPLETED: [],
   CANCELLED: [],
 };
 

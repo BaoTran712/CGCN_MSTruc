@@ -17,6 +17,7 @@ import {
 import { Dossier, WordTemplate, UserProfile, ActiveNavTab } from '../types';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { generateAndDownloadDocx } from '../utils/docxExport';
+import { normalizeStatus } from '../services/workflowEngine';
 
 interface DashboardViewProps {
   dossiers: Dossier[];
@@ -28,26 +29,27 @@ interface DashboardViewProps {
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
-  dossiers,
-  templates,
+  dossiers = [],
+  templates = [],
   currentUser,
   onNavigate,
   onSelectDossier,
   onCreateWithTemplate,
 }) => {
-  // Statistics calculations
-  const totalCount = dossiers.length;
-  const draftCount = dossiers.filter((d) => d.status === 'draft').length;
-  const processingCount = dossiers.filter((d) =>
-    ['submitted', 'under_review', 'resubmitted'].includes(d.status)
-  ).length;
-  const changesCount = dossiers.filter((d) => d.status === 'changes_requested').length;
-  const approvedCount = dossiers.filter((d) => d.status === 'approved').length;
-  const signatureCount = dossiers.filter((d) => d.status === 'for_signature' || d.status === 'completed').length;
+  const safeDossiers = Array.isArray(dossiers) ? dossiers : [];
+  const safeTemplates = Array.isArray(templates) ? templates : [];
 
-  const recentDossiers = dossiers.slice(0, 6);
+  // Statistics calculations theo đúng 5 mốc của quy_trinh.md
+  const totalCount = safeDossiers.length;
+  const newCount = safeDossiers.filter((d) => normalizeStatus(d.status) === 'NEW').length;
+  const revisionCount = safeDossiers.filter((d) => normalizeStatus(d.status) === 'NEEDS_REVISION').length;
+  const precheckPassedCount = safeDossiers.filter((d) => normalizeStatus(d.status) === 'PRECHECK_PASSED').length;
+  const signingCount = safeDossiers.filter((d) => ['FACULTY_SIGNED', 'SCHOOL_SIGNING'].includes(normalizeStatus(d.status))).length;
+  const completedCount = safeDossiers.filter((d) => normalizeStatus(d.status) === 'COMPLETED').length;
 
-  const isManager = currentUser.role === 'manager' || currentUser.role === 'admin';
+  const recentDossiers = safeDossiers.slice(0, 6);
+
+  const isManager = currentUser.role === 'manager' || currentUser.role === 'admin' || currentUser.role === 'ADMIN';
 
   return (
     <div className="space-y-6">
@@ -60,10 +62,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           </div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            Tổng quan hệ thống xử lý hồ sơ
+            Tổng quan hệ thống xử lý hồ sơ Chuyển giao Công nghệ
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Theo dõi tiến độ thẩm định, phê duyệt biểu mẫu và lưu trữ văn bản theo quy định
+            Theo dõi tiến độ tiền kiểm, ký số điện tử liên cấp và ban hành Quyết định CGCN theo quy trình Automation
           </p>
         </div>
 
@@ -82,7 +84,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             onClick={() => onNavigate('pending_approval')}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-md shadow-2xs transition-colors cursor-pointer"
           >
-            <span>Hồ sơ chờ duyệt</span>
+            <span>Hồ sơ chờ tiền kiểm</span>
             <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
           </button>
         </div>
@@ -102,63 +104,63 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Drafts */}
+        {/* Chờ tiền kiểm */}
         <div className="p-3.5 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-[11.5px] font-medium">Bản nháp</span>
-            <FileEdit className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-[11.5px] font-medium text-blue-800">Chờ tiền kiểm</span>
+            <Clock className="w-3.5 h-3.5 text-blue-500" />
           </div>
           <div className="flex items-baseline justify-between">
-            <span className="text-xl font-bold font-mono text-slate-700">{draftCount}</span>
-            <span className="text-[10.5px] text-slate-400">Chưa gửi</span>
+            <span className="text-xl font-bold font-mono text-blue-700">{newCount}</span>
+            <span className="text-[10.5px] text-blue-600 font-medium">Bản thảo Word</span>
           </div>
         </div>
 
-        {/* Processing */}
-        <div className="p-3.5 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-[11.5px] font-medium text-amber-800">Đang xử lý</span>
-            <Clock className="w-3.5 h-3.5 text-amber-500" />
-          </div>
-          <div className="flex items-baseline justify-between">
-            <span className="text-xl font-bold font-mono text-amber-700">{processingCount}</span>
-            <span className="text-[10.5px] text-amber-600 font-medium">Chờ duyệt</span>
-          </div>
-        </div>
-
-        {/* Changes requested */}
+        {/* Yêu cầu sửa */}
         <div className="p-3.5 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 mb-2">
             <span className="text-[11.5px] font-medium text-rose-800">Yêu cầu sửa</span>
             <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
           </div>
           <div className="flex items-baseline justify-between">
-            <span className="text-xl font-bold font-mono text-rose-700">{changesCount}</span>
-            <span className="text-[10.5px] text-rose-600 font-medium">Cần bổ sung</span>
+            <span className="text-xl font-bold font-mono text-rose-700">{revisionCount}</span>
+            <span className="text-[10.5px] text-rose-600 font-medium">Chưa duyệt</span>
           </div>
         </div>
 
-        {/* Approved */}
+        {/* Đã duyệt thể thức */}
         <div className="p-3.5 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500 mb-2">
-            <span className="text-[11.5px] font-medium text-emerald-800">Đã duyệt</span>
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+            <span className="text-[11.5px] font-medium text-indigo-800">Duyệt thể thức</span>
+            <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500" />
           </div>
           <div className="flex items-baseline justify-between">
-            <span className="text-xl font-bold font-mono text-emerald-700">{approvedCount}</span>
-            <span className="text-[10.5px] text-emerald-600 font-medium">Hợp lệ</span>
+            <span className="text-xl font-bold font-mono text-indigo-700">{precheckPassedCount}</span>
+            <span className="text-[10.5px] text-indigo-600 font-medium">Đã xuất PDF</span>
           </div>
         </div>
 
-        {/* For signature */}
+        {/* Đang trình ký số */}
         <div className="p-3.5 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-700 mb-2">
-            <span className="text-[11.5px] font-medium text-sky-800">Trình ký / Xong</span>
-            <FileSignature className="w-3.5 h-3.5 text-sky-600" />
+            <span className="text-[11.5px] font-medium text-amber-800">Trình ký liên cấp</span>
+            <FileSignature className="w-3.5 h-3.5 text-amber-600" />
           </div>
           <div className="flex items-baseline justify-between">
-            <span className="text-xl font-bold font-mono text-sky-900">{signatureCount}</span>
-            <span className="text-[10.5px] text-sky-600 font-medium">Lưu trữ</span>
+            <span className="text-xl font-bold font-mono text-amber-900">{signingCount}</span>
+            <span className="text-[10.5px] text-amber-700 font-medium">Khoa / Trường</span>
+          </div>
+        </div>
+
+        {/* Hoàn tất */}
+        <div className="p-3.5 bg-white rounded-lg border border-slate-200 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-700 mb-2">
+            <span className="text-[11.5px] font-medium text-emerald-800">Đã ban hành QĐ</span>
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+          </div>
+          <div className="flex items-baseline justify-between">
+            <span className="text-xl font-bold font-mono text-emerald-800">{completedCount}</span>
+            <span className="text-[10.5px] text-emerald-600 font-medium">Lưu Drive</span>
           </div>
         </div>
       </div>
@@ -272,12 +274,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 onClick={() => onNavigate('templates')}
                 className="text-xs text-blue-700 font-semibold hover:underline"
               >
-                Xem tất cả ({templates.length})
+                Xem tất cả ({safeTemplates.length})
               </button>
             </div>
 
             <div className="space-y-2">
-              {templates.slice(0, 4).map((tmpl) => (
+              {safeTemplates.slice(0, 4).map((tmpl) => (
                 <div
                   key={tmpl.id}
                   onClick={() => onCreateWithTemplate(tmpl)}
