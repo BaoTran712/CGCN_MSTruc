@@ -309,7 +309,5 @@ export type ActiveNavTab =
   | 'pending_approval'
   | 'secretary_queue'
   | 'history_sheets'
-  | 'template_management'
-  | 'users'
   | 'settings';
 

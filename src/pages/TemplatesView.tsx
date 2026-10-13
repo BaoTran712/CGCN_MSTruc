@@ -3,8 +3,6 @@ import {
   Search,
   FileText,
   ArrowRight,
-  Plus,
-  UploadCloud,
   Info,
   CheckCircle2,
 } from 'lucide-react';
@@ -62,17 +60,6 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({
             Chọn biểu mẫu để điền thông tin trực tuyến và tự động xuất file Word (.docx)
           </p>
         </div>
-
-        {onNavigate && (
-          <button
-            type="button"
-            onClick={() => onNavigate('template_management')}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-lg shadow-2xs transition-colors cursor-pointer self-start sm:self-auto"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Tải lên / Thêm biểu mẫu mới</span>
-          </button>
-        )}
       </div>
 
       {/* Tìm kiếm nhanh tối giản */}
@@ -151,24 +138,6 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({
             </div>
           </div>
         ))}
-
-        {/* Thẻ Upload biểu mẫu mới (dành cho các biểu mẫu sau này up lên) */}
-        {onNavigate && (
-          <div
-            onClick={() => onNavigate('template_management')}
-            className="bg-slate-50/60 hover:bg-blue-50/40 rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-400 transition-all p-6 flex flex-col items-center justify-center text-center cursor-pointer group min-h-[220px]"
-          >
-            <div className="w-12 h-12 rounded-full bg-white group-hover:bg-blue-100/60 border border-slate-200 group-hover:border-blue-300 flex items-center justify-center text-slate-400 group-hover:text-blue-700 transition-all mb-3 shadow-2xs">
-              <UploadCloud className="w-6 h-6" />
-            </div>
-            <h3 className="text-sm font-bold text-slate-800 group-hover:text-blue-800 mb-1">
-              + Tải lên biểu mẫu mới
-            </h3>
-            <p className="text-xs text-slate-500 max-w-[220px] leading-relaxed">
-              Tải file Word (.docx) hoặc cấu hình mẫu mới vào hệ thống
-            </p>
-          </div>
-        )}
       </div>
 
       {filteredTemplates.length === 0 && (

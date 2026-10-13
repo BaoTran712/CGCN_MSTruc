@@ -1,30 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
-import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER } from '../constants';
 import * as api from '../services/api';
-import { Shield, UserCheck, AlertCircle, ArrowRight, CheckCircle2, Info } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
+
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
+
+const GOOGLE_CLIENT_ID =
+  (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID ||
+  '155584685837-ggv7pj77tb2r1entrs988ocg5qvmpp4t.apps.googleusercontent.com';
 
 interface LoginPageProps {
   onLoginSuccess: (user: User) => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
-  const [emailInput, setEmailInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isGisReady, setIsGisReady] = useState(false);
+  const googleBtnRef = useRef<HTMLDivElement>(null);
 
-  const handleCustomEmailLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const email = emailInput.trim().toLowerCase();
-
-    if (!email) {
-      setErrorMsg('Vui lòng nhập địa chỉ email @ctump.edu.vn.');
-      return;
-    }
-
-    if (!email.endsWith('@ctump.edu.vn')) {
-      setErrorMsg('Hệ thống chỉ chấp nhận tài khoản email nội bộ của Trường Đại học Y Dược Cần Thơ có đuôi @ctump.edu.vn.');
+  // Xử lý phản hồi xác thực từ Google Identity Services
+  const handleGoogleCredentialResponse = async (response: any) => {
+    if (!response?.credential) {
+      setErrorMsg('Không nhận được mã xác thực từ Google. Vui lòng thử lại.');
       return;
     }
 
@@ -32,67 +35,125 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     setErrorMsg('');
 
     try {
-      const user = await api.login(email);
+      // Giải mã JWT payload từ Google credential
+      const base64Url = response.credential.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      const googleData = JSON.parse(jsonPayload);
+      const email = (googleData.email || '').trim().toLowerCase();
+      const name = googleData.name || googleData.given_name || 'Người dùng Google';
+      const avatar = googleData.picture || '';
+      const googleId = googleData.sub || '';
+
+      if (!email) {
+        throw new Error('Google không cung cấp địa chỉ email.');
+      }
+
+      const isAdmin = email === 'toanhkhai12345@gmail.com';
+
+      // Gửi thông tin về backend API để lưu/cập nhật vào CSDL MySQL
+      let user: User;
+      try {
+        user = await api.login(email, { name, avatar, googleId });
+      } catch (backendErr) {
+        console.warn('Backend login fallback:', backendErr);
+        user = {
+          id: `usr-${googleId || Date.now()}`,
+          name: name,
+          email: email,
+          role: isAdmin ? 'ADMIN' : 'USER',
+          title: isAdmin ? 'Quản trị viên Hệ thống' : 'Cán bộ / Giảng viên',
+          department: isAdmin ? 'Phòng Khoa học Công nghệ' : 'Trường Đại học Y Dược Cần Thơ',
+          avatar: avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
+        };
+      }
+
       onLoginSuccess(user);
     } catch (err: any) {
-      console.warn('API login failed, falling back to local credentials:', err);
-      if (email === 'admin@ctump.edu.vn') {
-        onLoginSuccess(DEFAULT_DEV_USER);
-      } else {
-        const username = email.replace('@ctump.edu.vn', '');
-        const formattedName = username
-          .split(/[._-]/)
-          .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-          .join(' ');
-
-        const canBoUser: User = {
-          id: `usr-${username}`,
-          name: formattedName || 'Cán bộ Trường ĐH Y Dược Cần Thơ',
-          title: 'Cán bộ / Giảng viên',
-          department: 'Trường Đại học Y Dược Cần Thơ',
-          email: email,
-          phone: '0912 345 678',
-          role: 'USER',
-          avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${username}`,
-        };
-        onLoginSuccess(canBoUser);
-      }
+      console.error('Lỗi xác thực Google:', err);
+      setErrorMsg(err.message || 'Đăng nhập Google thất bại. Vui lòng thử lại.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleQuickLogin = async (userType: 'can_bo' | 'admin' | 'dev') => {
-    setIsLoading(true);
-    setErrorMsg('');
-    try {
-      if (userType === 'dev' || userType === 'admin') {
-        const user = await api.login('admin@ctump.edu.vn').catch(() => DEFAULT_DEV_USER);
-        onLoginSuccess(user);
-      } else {
-        const user = await api.login('nvan@ctump.edu.vn').catch(() => DEFAULT_CANBO_USER);
-        onLoginSuccess(user);
+  // Khởi tạo nút Google Sign-In chính thức (GIS)
+  useEffect(() => {
+    let checkInterval: any = null;
+    let isMounted = true;
+
+    const renderGoogleBtn = () => {
+      if (!isMounted) return;
+      if (window.google?.accounts?.id && googleBtnRef.current) {
+        try {
+          window.google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: handleGoogleCredentialResponse,
+            auto_select: false,
+            cancel_on_tap_outside: true,
+          });
+
+          googleBtnRef.current.innerHTML = '';
+          window.google.accounts.id.renderButton(googleBtnRef.current, {
+            type: 'standard',
+            theme: 'outline',
+            size: 'large',
+            text: 'signin_with',
+            shape: 'rectangular',
+            logo_alignment: 'left',
+            width: 340,
+          });
+
+          setIsGisReady(true);
+
+          // Kích hoạt Google One Tap nếu trình duyệt hỗ trợ
+          try {
+            window.google.accounts.id.prompt();
+          } catch {
+            // One Tap optional
+          }
+        } catch (err) {
+          console.error('Lỗi khởi tạo nút Google:', err);
+        }
       }
-    } catch {
-      onLoginSuccess(userType === 'dev' || userType === 'admin' ? DEFAULT_DEV_USER : DEFAULT_CANBO_USER);
-    } finally {
-      setIsLoading(false);
+    };
+
+    if (window.google?.accounts?.id) {
+      renderGoogleBtn();
+    } else {
+      checkInterval = setInterval(() => {
+        if (window.google?.accounts?.id) {
+          clearInterval(checkInterval);
+          renderGoogleBtn();
+        }
+      }, 200);
     }
-  };
+
+    return () => {
+      isMounted = false;
+      if (checkInterval) clearInterval(checkInterval);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col justify-between text-slate-800">
-      {/* Official Top Institutional Bar */}
+      {/* Official Header */}
       <header className="bg-white border-b border-slate-200 px-6 py-3.5 shadow-2xs">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3.5">
             <div className="w-11 h-11 rounded-full bg-white p-0.5 flex items-center justify-center ring-1 ring-slate-200 shrink-0 shadow-2xs">
-              <img src={logoUrl || '/logo.png'} alt="CTUMP Logo" className="w-full h-full object-contain rounded-full" />
+              <img
+                src={logoUrl || '/logo.png'}
+                alt="CTUMP Logo"
+                className="w-full h-full object-contain rounded-full"
+              />
             </div>
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 leading-none">
-                BỘ Y TẾ
-              </p>
               <h1 className="text-sm font-bold text-blue-950 uppercase tracking-tight leading-snug">
                 TRƯỜNG ĐẠI HỌC Y DƯỢC CẦN THƠ
               </h1>
@@ -101,137 +162,80 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               </p>
             </div>
           </div>
-
-          <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500">
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span>Cổng xác thực nội bộ SSO</span>
-          </div>
         </div>
       </header>
 
-      {/* Main Login Area */}
+      {/* Main Login Card */}
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-auto">
-        <div className="w-full max-w-md bg-white border border-slate-200 rounded-xl shadow-sm p-6 sm:p-8 space-y-6">
-          {/* Card Title */}
-          <div className="space-y-1.5 pb-4 border-b border-slate-100">
-            <h2 className="text-base font-bold text-slate-900">
-              Đăng nhập hệ thống
-            </h2>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Sử dụng tài khoản thư điện tử của Nhà trường (<span className="font-mono text-slate-700">@ctump.edu.vn</span>) để truy cập.
-            </p>
+        <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl shadow-sm p-6 sm:p-8 space-y-6">
+          {/* Card Header with Google Logo */}
+          <div className="text-center space-y-3">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-white shadow-xs border border-slate-100 mx-auto p-3 ring-4 ring-slate-100/80">
+              <svg viewBox="0 0 24 24" className="w-7 h-7" aria-hidden="true">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                />
+              </svg>
+            </div>
+            <div className="space-y-1">
+              <h2 className="text-lg font-bold text-slate-900">
+                Đăng nhập bằng tài khoản Google
+              </h2>
+              <p className="text-xs text-slate-500 leading-relaxed max-w-xs mx-auto">
+                Sử dụng tài khoản Gmail để đăng nhập vào hệ thống
+              </p>
+            </div>
           </div>
 
           {/* Error Notice */}
           {errorMsg && (
-            <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-xs flex items-start gap-2.5">
+            <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
               <div className="leading-relaxed">{errorMsg}</div>
             </div>
           )}
 
-          {/* Standard Email Input Form */}
-          <form onSubmit={handleCustomEmailLogin} className="space-y-4">
-            <div className="space-y-1.5">
-              <label htmlFor="email-input" className="block text-xs font-semibold text-slate-700">
-                Email công vụ (@ctump.edu.vn)
-              </label>
-              <input
-                id="email-input"
-                type="email"
-                value={emailInput}
-                onChange={(e) => {
-                  setEmailInput(e.target.value);
-                  if (errorMsg) setErrorMsg('');
-                }}
-                placeholder="hovaten@ctump.edu.vn"
-                className="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 transition-colors"
-                autoComplete="email"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-2.5 px-4 bg-blue-800 hover:bg-blue-900 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-2xs"
-            >
-              <span>{isLoading ? 'Đang xác thực...' : 'Đăng nhập với email trường'}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </form>
-
-          {/* Divider */}
-          <div className="relative flex py-1 items-center">
-            <div className="flex-grow border-t border-slate-200"></div>
-            <span className="flex-shrink mx-3 text-[11px] text-slate-400 font-medium uppercase tracking-wider">
-              Hoặc chọn tài khoản thử nghiệm
-            </span>
-            <div className="flex-grow border-t border-slate-200"></div>
+          {/* Google Sign-In Action Area */}
+          <div className="py-2 flex flex-col items-center justify-center min-h-[56px]">
+            {isLoading ? (
+              <div className="flex items-center justify-center gap-2.5 py-3 text-xs text-blue-700 font-medium">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Đang xác thực thông tin tài khoản Google...</span>
+              </div>
+            ) : (
+              <div className="w-full flex flex-col items-center justify-center">
+                <div
+                  ref={googleBtnRef}
+                  className="w-full flex justify-center min-h-[44px]"
+                ></div>
+                {!isGisReady && (
+                  <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Đang tải dịch vụ xác thực Google...</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Quick Role Login Cards */}
-          <div className="space-y-2">
-            {/* Vai trò 1: Cán bộ trường */}
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('can_bo')}
-              className="w-full text-left p-3 rounded-lg bg-slate-50 hover:bg-slate-100/80 border border-slate-200 transition-colors flex items-center justify-between group cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-md bg-blue-100 text-blue-800 flex items-center justify-center font-bold text-xs">
-                  CB
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                    Cán bộ / Giảng viên
-                    <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded font-medium border border-blue-200">
-                      Lập hồ sơ CGCN
-                    </span>
-                  </div>
-                  <div className="text-[11px] font-mono text-slate-500">
-                    canbo@ctump.edu.vn
-                  </div>
-                </div>
-              </div>
-              <span className="text-xs font-medium text-blue-700 opacity-0 group-hover:opacity-100 transition-opacity">
-                Vào ngay &rarr;
-              </span>
-            </button>
-
-            {/* Vai trò 2: Quản trị viên */}
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('admin')}
-              className="w-full text-left p-3 rounded-lg bg-slate-50 hover:bg-slate-100/80 border border-slate-200 transition-colors flex items-center justify-between group cursor-pointer"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-md bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
-                  AD
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                    Quản trị viên Hệ thống
-                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-medium border border-emerald-200">
-                      Phê duyệt & Toàn quyền
-                    </span>
-                  </div>
-                  <div className="text-[11px] font-mono text-slate-500">
-                    admin@ctump.edu.vn
-                  </div>
-                </div>
-              </div>
-              <span className="text-xs font-medium text-emerald-700 opacity-0 group-hover:opacity-100 transition-opacity">
-                Vào ngay &rarr;
-              </span>
-            </button>
-          </div>
-
-          {/* Institutional note */}
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/80 text-[11px] text-slate-500 flex items-start gap-2">
-            <Info className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-            <span className="leading-relaxed">
-              Trường hợp chưa được cấp hòm thư @ctump.edu.vn hoặc quên mật khẩu, vui lòng liên hệ Trung tâm Công nghệ thông tin để được hỗ trợ.
-            </span>
+          {/* Security Note */}
+          <div className="pt-2 border-t border-slate-100 text-center">
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Xác thực an toàn qua Google Identity Services (OAuth 2.0).
+            </p>
           </div>
         </div>
       </main>
@@ -243,7 +247,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             © 2026 TRƯỜNG ĐẠI HỌC Y DƯỢC CẦN THƠ
           </p>
           <p className="text-[11px]">
-            Địa chỉ: Số 179, đường Nguyễn Văn Cừ, phường An Khánh, quận Ninh Kiều, TP. Cần Thơ | Điện thoại: (0292) 3 739 730
+            Hệ thống Quản lý Biểu mẫu & Trình ký Trực tuyến (DocuGov)
           </p>
         </div>
       </footer>

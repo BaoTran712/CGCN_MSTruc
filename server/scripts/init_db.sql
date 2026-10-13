@@ -110,10 +110,11 @@ CREATE TABLE IF NOT EXISTS `audit_logs` (
 -- Seed Users
 INSERT INTO `users` (`id`, `email`, `name`, `role`, `title`, `department`, `phone`)
 VALUES
+  ('usr-admin-toanhkhai', 'toanhkhai12345@gmail.com', 'Quản trị viên (Toàn Khải)', 'ADMIN', 'Quản trị viên Hệ thống', 'Phòng Khoa học Công nghệ & HTQT', '0912.345.678'),
   ('usr-admin', 'admin@ctump.edu.vn', 'Quản trị viên KH&CN', 'ADMIN', 'Chuyên viên Phòng KH&CN', 'Phòng Khoa học Công nghệ & HTQT', '0292.3831.531'),
   ('usr-canbo', 'canbo@ctump.edu.vn', 'TS. Nguyễn Văn Nam', 'USER', 'Trưởng bộ môn Công nghệ phần mềm', 'Khoa Công nghệ Thông tin', '0918.123.456'),
   ('usr-dean', 'truongkhoa@ctump.edu.vn', 'PGS.TS. Trần Văn Trưởng', 'DEAN', 'Trưởng Khoa Y', 'Khoa Y', '0903.999.888')
-ON DUPLICATE KEY UPDATE `name` = VALUES(`name`);
+ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `role` = VALUES(`role`);
 
 -- Seed Projects
 INSERT INTO `transfer_projects` (

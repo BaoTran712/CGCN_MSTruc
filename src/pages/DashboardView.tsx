@@ -46,7 +46,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const recentDossiers = safeDossiers.slice(0, 6);
 
-  const isManager = currentUser.role === 'manager' || currentUser.role === 'admin' || currentUser.role === 'ADMIN';
+  const isManager =
+    currentUser.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com' ||
+    currentUser.role === 'manager' ||
+    currentUser.role === 'admin' ||
+    currentUser.role === 'ADMIN';
 
   return (
     <div className="space-y-6">

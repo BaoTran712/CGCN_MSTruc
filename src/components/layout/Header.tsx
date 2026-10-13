@@ -1,16 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Plus,
   UserCheck,
   Shield,
-  Bell,
   FileText,
   Building2,
   LogOut,
   ChevronDown,
 } from 'lucide-react';
-import { User, UserRole, ActiveNavTab, Notification } from '../../types';
-import * as api from '../../services/api';
+import { User, UserRole, ActiveNavTab } from '../../types';
 import logoUrl from '../../assets/logo.png';
 
 interface HeaderProps {
@@ -32,41 +30,9 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   onSignOut,
 }) => {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [showNotifPopover, setShowNotifPopover] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [backendStatus, setBackendStatus] = useState<api.BackendHealthStatus>({ online: false });
 
   const isAdmin = currentUser.role === 'ADMIN' || currentUser.role === 'admin';
-
-  useEffect(() => {
-    async function loadNotifications() {
-      try {
-        const notifs = await api.getNotifications(currentUser.id);
-        setNotifications(notifs);
-      } catch (err) {
-        console.error('Failed to load notifications:', err);
-      }
-    }
-    loadNotifications();
-
-    async function checkHealth() {
-      const status = await api.checkBackendHealth();
-      setBackendStatus(status);
-    }
-    checkHealth();
-    const interval = setInterval(checkHealth, 4000);
-    return () => clearInterval(interval);
-  }, [currentUser.id]);
-
-  const unreadCount = notifications.filter((n) => !n.isRead).length;
-
-  const handleMarkAsRead = async (notifId: string) => {
-    await api.markNotificationAsRead(notifId);
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === notifId ? { ...n, isRead: true } : n))
-    );
-  };
 
   const getTabTitle = (tab: ActiveNavTab): string => {
     switch (tab) {
@@ -82,8 +48,6 @@ export const Header: React.FC<HeaderProps> = ({
         return 'Quản lý & Duyệt hồ sơ';
       case 'history_sheets':
         return 'Lịch sử & Google Sheets';
-      case 'template_management':
-        return 'Quản lý Biểu mẫu Word XML';
       default:
         return 'Trang chính';
     }
@@ -111,95 +75,8 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Zone 2: Role Switcher & Notifications & User Dropdown */}
+      {/* Zone 2: Role Switcher & User Dropdown */}
       <div className="flex items-center gap-3">
-        {/* Trạng thái kết nối Backend NodeJS */}
-        <div
-          className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium border transition-all ${
-            backendStatus.online
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-              : 'bg-rose-50 text-rose-800 border-rose-300 shadow-2xs'
-          }`}
-          title={
-            backendStatus.online
-              ? `Backend NodeJS API (Port 5000) đang chạy. Database: ${
-                  backendStatus.databaseConnected ? 'MySQL Connected' : 'Bộ nhớ tạm (Memory Fallback)'
-                }`
-              : 'Backend NodeJS chưa chạy! Vui lòng mở terminal và gõ: npm run server'
-          }
-        >
-          <span
-            className={`w-2 h-2 rounded-full ${
-              backendStatus.online ? 'bg-emerald-500' : 'bg-rose-500 animate-ping'
-            }`}
-          />
-          <span className="hidden sm:inline">
-            {backendStatus.online
-              ? `Backend: Online (5000) · ${backendStatus.databaseConnected ? 'MySQL' : 'Memory'}`
-              : 'Chưa chạy Server (Port 5000)'}
-          </span>
-          <span className="sm:hidden">
-            {backendStatus.online ? 'Backend OK' : 'No Server'}
-          </span>
-        </div>
-
-        {/* Notifications Button & Dropdown */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setShowNotifPopover(!showNotifPopover)}
-            className="p-2 rounded-md text-slate-600 hover:text-slate-900 hover:bg-slate-100 relative transition-colors cursor-pointer"
-            title="Thông báo hệ thống"
-          >
-            <Bell className="w-5 h-5" />
-            {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center border border-white">
-                {unreadCount}
-              </span>
-            )}
-          </button>
-
-          {showNotifPopover && (
-            <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-md border border-slate-200 z-50 py-1 animate-in fade-in zoom-in-95 duration-100">
-              <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Thông báo quy trình ({notifications.length})
-                </span>
-                <span className="text-[11px] text-slate-500">{unreadCount} chưa đọc</span>
-              </div>
-
-              <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
-                {notifications.length === 0 ? (
-                  <div className="p-4 text-center text-xs text-slate-500">
-                    Không có thông báo mới.
-                  </div>
-                ) : (
-                  notifications.map((notif) => (
-                    <div
-                      key={notif.id}
-                      onClick={() => handleMarkAsRead(notif.id)}
-                      className={`p-3.5 text-xs hover:bg-slate-50 cursor-pointer transition-colors ${
-                        !notif.isRead ? 'bg-blue-50/40 font-medium' : ''
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="font-semibold text-slate-900">{notif.title}</span>
-                        {!notif.isRead && (
-                          <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0 mt-1" />
-                        )}
-                      </div>
-                      <p className="text-slate-600 mt-1 leading-relaxed">{notif.message}</p>
-                      <span className="text-[10px] text-slate-400 mt-1.5 block">
-                        {new Date(notif.createdAt).toLocaleString('vi-VN')}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* User Card & Dropdown */}
         <div className="relative">
           <button
@@ -226,8 +103,20 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="p-2.5 bg-slate-50 rounded-md border border-slate-100 space-y-1">
                 <p className="text-xs font-bold text-slate-900">{currentUser.name}</p>
                 <p className="text-[11px] font-mono text-slate-500">{currentUser.email}</p>
-                <span className="inline-block px-1.5 py-0.2 rounded text-[10px] font-semibold border bg-blue-50 text-blue-800 border-blue-200">
-                  Toàn quyền kiểm thử
+                <span
+                  className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-semibold border ${
+                    currentUser.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com' ||
+                    currentUser.role === 'ADMIN' ||
+                    currentUser.role === 'admin'
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                      : 'bg-blue-50 text-blue-800 border-blue-200'
+                  }`}
+                >
+                  {currentUser.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com' ||
+                  currentUser.role === 'ADMIN' ||
+                  currentUser.role === 'admin'
+                    ? 'Quản trị viên (Admin)'
+                    : 'Cán bộ / Giảng viên (User)'}
                 </span>
               </div>
 

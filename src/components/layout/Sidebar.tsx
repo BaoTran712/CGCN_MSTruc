@@ -5,10 +5,8 @@ import {
   FilePlus,
   FolderOpen,
   ClipboardCheck,
-  FileCode2,
   TableProperties,
   LogOut,
-  Users,
   FileSignature,
   X,
 } from 'lucide-react';
@@ -29,6 +27,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onNavigate,
+  currentUser,
   pendingCount,
   myDossierCount,
   mobileOpen,
@@ -49,7 +48,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     items: NavItem[];
   }
 
-  // Toàn bộ tính năng mở sẵn cho việc kiểm thử hệ thống
+  const isAdmin =
+    currentUser?.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com' ||
+    currentUser?.role === 'ADMIN' ||
+    currentUser?.role === 'admin';
+
   const navSections: NavSection[] = [
     {
       title: 'Cán bộ / Đề xuất',
@@ -77,43 +80,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
       ],
     },
-    {
-      title: 'Phòng KH&CN / Thẩm định',
-      items: [
-        {
-          id: 'pending_approval',
-          label: 'Tiền kiểm hồ sơ (Admin)',
-          icon: ClipboardCheck,
-          badge: pendingCount > 0 ? pendingCount : undefined,
-          badgeColor: 'bg-rose-100 text-rose-800 border border-rose-300 font-semibold',
-        },
-        {
-          id: 'secretary_queue',
-          label: 'Trình ký & Ban hành QĐ',
-          icon: FileSignature,
-        },
-        {
-          id: 'history_sheets',
-          label: 'Audit Trail & Báo cáo BGH',
-          icon: TableProperties,
-        },
-      ],
-    },
-    {
-      title: 'Cấu hình & Quản trị',
-      items: [
-        {
-          id: 'template_management',
-          label: 'Cấu hình Biểu mẫu Word',
-          icon: FileCode2,
-        },
-        {
-          id: 'users',
-          label: 'Tài khoản người dùng',
-          icon: Users,
-        },
-      ],
-    },
+    ...(isAdmin
+      ? [
+          {
+            title: 'Phòng KH&CN / Thẩm định (Admin)',
+            items: [
+              {
+                id: 'pending_approval' as ActiveNavTab,
+                label: 'Tiền kiểm hồ sơ (Admin)',
+                icon: ClipboardCheck,
+                badge: pendingCount > 0 ? pendingCount : undefined,
+                badgeColor: 'bg-rose-100 text-rose-800 border border-rose-300 font-semibold',
+              },
+              {
+                id: 'secretary_queue' as ActiveNavTab,
+                label: 'Trình ký & Ban hành QĐ',
+                icon: FileSignature,
+              },
+              {
+                id: 'history_sheets' as ActiveNavTab,
+                label: 'Audit Trail & Báo cáo BGH',
+                icon: TableProperties,
+              },
+            ],
+          },
+        ]
+      : []),
   ];
 
   const handleItemClick = (id: ActiveNavTab) => {

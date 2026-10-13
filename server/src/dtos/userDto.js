@@ -10,10 +10,10 @@ export class LoginRequestDto {
 
   validate() {
     if (!this.email) {
-      throw new Error('Vui lòng nhập địa chỉ email @ctump.edu.vn');
+      throw new Error('Vui lòng nhập địa chỉ email đăng nhập');
     }
-    if (!this.email.endsWith('@ctump.edu.vn')) {
-      throw new Error('Hệ thống chỉ chấp nhận tài khoản email nội bộ @ctump.edu.vn');
+    if (!this.email.includes('@')) {
+      throw new Error('Địa chỉ email không hợp lệ (ví dụ: toanhkhai12345@gmail.com hoặc tài khoản Gmail)');
     }
   }
 }

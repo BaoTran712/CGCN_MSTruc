@@ -17,9 +17,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
       const saved = localStorage.getItem(AUTH_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : DEFAULT_DEV_USER;
+      return saved ? JSON.parse(saved) : null;
     } catch {
-      return DEFAULT_DEV_USER;
+      return null;
     }
   });
 
@@ -63,8 +63,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const isAdmin = useMemo(() => {
-    if (!currentUser) return false;
-    return currentUser.role === 'ADMIN' || currentUser.role === 'admin';
+    if (!currentUser?.email) return false;
+    return currentUser.email.trim().toLowerCase() === 'toanhkhai12345@gmail.com';
   }, [currentUser]);
 
   const value = useMemo(

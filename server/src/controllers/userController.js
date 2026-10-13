@@ -42,8 +42,8 @@ export const userController = {
   // POST /api/users/login (hoặc /api/auth/login)
   async login(req, res) {
     try {
-      const { email } = req.body;
-      const user = await userService.login(email);
+      const { email, name, avatar, googleId } = req.body;
+      const user = await userService.login(email, { name, avatar, googleId });
       return ApiResponse.success(user, 'Đăng nhập thành công').send(res);
     } catch (err) {
       console.error('[userController.login]', err);

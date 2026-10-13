@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ActiveNavTab,
   Application,
@@ -20,8 +20,6 @@ import {
   SecretaryView,
   DossierDetailView,
   ProcessingHistoryView,
-  TemplateManagementView,
-  UsersView,
   SettingsView,
   LoginPage,
 } from './pages';
@@ -49,8 +47,6 @@ function AppContent() {
     uploadFacultySignature,
     updateSchoolSigning,
     completeDossier,
-    addTemplate,
-    updateTemplate,
     refreshSheetRows,
   } = useDossiers();
 
@@ -60,13 +56,26 @@ function AppContent() {
   const [templateForCreation, setTemplateForCreation] = useState<DocumentTemplate | null>(null);
   const [templateDetailModal, setTemplateDetailModal] = useState<DocumentTemplate | null>(null);
 
+  const isAdmin = Boolean(
+    currentUser?.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com'
+  );
+
+  // Chặn người dùng thông thường truy cập các tab đặc quyền Admin
+  useEffect(() => {
+    if (currentUser && !isAdmin && ['pending_approval', 'secretary_queue', 'history_sheets'].includes(activeTab)) {
+      setActiveTab('dashboard');
+    }
+  }, [currentUser, isAdmin, activeTab]);
+
   // If user is not authenticated, show Login page
   if (!currentUser) {
     return (
       <LoginPage
         onLoginSuccess={(user) => {
           login(user);
-          if (user.role === 'ADMIN' || user.role === 'admin') {
+          const isUserAdmin =
+            user.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com';
+          if (isUserAdmin) {
             setActiveTab('pending_approval');
           } else {
             setActiveTab('my_dossiers');
@@ -369,7 +378,7 @@ function AppContent() {
             />
           )}
 
-          {activeTab === 'pending_approval' && (
+          {activeTab === 'pending_approval' && isAdmin && (
             <ReviewQueueView
               dossiers={dossiers}
               currentUser={currentUser}
@@ -378,7 +387,7 @@ function AppContent() {
             />
           )}
 
-          {activeTab === 'secretary_queue' && (
+          {activeTab === 'secretary_queue' && isAdmin && (
             <SecretaryView
               dossiers={dossiers}
               currentUser={currentUser}
@@ -389,7 +398,7 @@ function AppContent() {
           )}
 
 
-          {activeTab === 'history_sheets' && (
+          {activeTab === 'history_sheets' && isAdmin && (
             <ProcessingHistoryView
               sheetRows={sheetRows}
               dossiers={dossiers}
@@ -397,27 +406,6 @@ function AppContent() {
                 await refreshSheetRows();
                 showToast('Đã làm mới dữ liệu từ API Google Sheets!');
               }}
-            />
-          )}
-
-          {activeTab === 'template_management' && (
-            <TemplateManagementView
-              templates={templates}
-              onAddTemplate={async (newTmpl) => {
-                const saved = await addTemplate(newTmpl);
-                showToast(`Đã thêm biểu mẫu mới: ${saved.title}!`);
-              }}
-              onUpdateTemplate={async (updatedTmpl) => {
-                const saved = await updateTemplate(updatedTmpl);
-                showToast(`Đã cập nhật cấu hình biểu mẫu: ${saved.code}!`);
-              }}
-            />
-          )}
-
-          {activeTab === 'users' && (
-            <UsersView
-              currentUser={currentUser}
-              onSwitchUser={(r) => handleSwitchUserRole(r as UserRole)}
             />
           )}
 

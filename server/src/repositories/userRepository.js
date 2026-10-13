@@ -37,8 +37,8 @@ export const userRepository = {
   // Tạo người dùng mới
   async create(user) {
     await execute(`
-      INSERT INTO users (id, email, name, role, title, department, phone)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (id, email, name, role, title, department, phone, avatar)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       user.id,
       user.email,
@@ -47,6 +47,7 @@ export const userRepository = {
       user.title || 'Cán bộ / Giảng viên',
       user.department || 'Trường Đại học Y Dược Cần Thơ',
       user.phone || '',
+      user.avatar || '',
     ]);
 
     return this.findById(user.id);

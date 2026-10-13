@@ -30,8 +30,10 @@ npm run dev:all
 
 ---
 
-## Tài khoản Đăng nhập Mặc định
+## Phân Quyền & Tài Khoản Đăng Nhập
 
-Hệ thống hỗ trợ đăng nhập nhanh trên giao diện (`http://localhost:3000`):
-- **Quản trị viên / Phòng KH&CN (Admin)**: `admin@ctump.edu.vn`
-- **Cán bộ / Giảng viên nộp hồ sơ (User)**: `nvan@ctump.edu.vn` (hoặc email bất kỳ đuôi `@ctump.edu.vn`)
+Hệ thống phân quyền theo tài khoản Gmail (`http://localhost:3000`):
+- **Quản trị viên (Admin duy nhất)**: `toanhkhai12345@gmail.com`
+  - *Quyền hạn*: Xem toàn bộ hồ sơ, tiền kiểm hồ sơ, yêu cầu chỉnh sửa/phê duyệt, quản lý trình ký và kết nối Google Sheets.
+- **Cán bộ / Giảng viên (User)**: Bất kỳ địa chỉ Gmail nào khác (ví dụ: `canbo@gmail.com` hoặc `user.test@gmail.com`)
+  - *Quyền hạn*: Tạo hồ sơ trực tuyến từ biểu mẫu Word, xem và chỉnh sửa bản nháp, theo dõi tiến độ hồ sơ cá nhân.

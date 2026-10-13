@@ -1,25 +1,32 @@
 import { User } from '../types';
 
+export const ADMIN_EMAIL = 'toanhkhai12345@gmail.com';
+
+export const isAdminEmail = (email?: string | null): boolean => {
+  if (!email) return false;
+  return email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+};
+
 export const DEFAULT_DEV_USER: User = {
-  id: 'usr_admin_01',
-  name: 'Trần Văn Quản Trị',
-  email: 'admin@ctump.edu.vn',
+  id: 'usr_admin_toanhkhai',
+  name: 'Quản trị viên (Toàn Khải)',
+  email: ADMIN_EMAIL,
   role: 'ADMIN',
-  department: 'Ban Giám hiệu / Quản trị hệ thống',
-  departmentId: 'bgh',
-  title: 'Quản trị viên Hệ thống',
-  jobTitle: 'Quản trị viên Hệ thống',
+  department: 'Phòng Khoa học Công nghệ',
+  departmentId: 'khcn',
+  title: 'Quản trị viên Hệ thống (Admin)',
+  jobTitle: 'Quản trị viên Hệ thống (Admin)',
 };
 
 export const DEFAULT_CANBO_USER: User = {
-  id: 'usr_canbo_01',
-  name: 'TS. Nguyễn Văn An',
-  email: 'nvan@ctump.edu.vn',
+  id: 'usr_user_test',
+  name: 'Cán bộ / Giảng viên (User)',
+  email: 'user.test@gmail.com',
   role: 'USER',
-  department: 'Khoa Y',
+  department: 'Trường Đại học Y Dược Cần Thơ',
   departmentId: 'khoa_y',
-  title: 'Giảng viên chính',
-  jobTitle: 'Giảng viên chính',
+  title: 'Cán bộ / Giảng viên',
+  jobTitle: 'Cán bộ / Giảng viên',
 };
 
 export const AUTH_STORAGE_KEY = 'ctump_auth_user';
