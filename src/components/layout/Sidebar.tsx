@@ -55,7 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const navSections: NavSection[] = [
     {
-      title: 'Cán bộ / Đề xuất',
+      title: 'Tổng quan',
       items: [
         {
           id: 'dashboard',
@@ -64,7 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         {
           id: 'create_dossier',
-          label: 'Tạo hồ sơ CGCN (Web Form)',
+          label: 'Tạo hồ sơ CGCN',
           icon: FilePlus,
         },
         {
