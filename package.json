@@ -15,6 +15,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@xmldom/xmldom": "^0.9.8",
     "docx": "^9.8.1",
     "docxtemplater": "^3.71.0",
     "file-saver": "^2.0.5",

@@ -4,7 +4,16 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { Dossier, WordTemplate } from '../types';
 import { normalizeNFC } from './textUtils';
-import { generateAndDownloadDocx } from './docxExport';
+import {
+  generateAndDownloadDocx,
+  applyPaginationAndSignatureProtection,
+  pairTwoColumns,
+  adaptRiskTable,
+  adaptRiskControlTable,
+  adaptWorkshopSchedule,
+  adaptWorkshopAssignment,
+  normalizeMultiline,
+} from './docxExport';
 
 /**
  * Interface cho thông tin bóc tách từ XML của file Word (.docx)
@@ -87,12 +96,14 @@ export async function fillDocxTemplate(
     const doc = new Docxtemplater(zip, {
       paragraphLoop: true,
       linebreaks: true,
-      delimiters: { start: '{{', end: '}}' },
       nullGetter: () => '', // Trả về rỗng nếu không có dữ liệu, tránh văng lỗi
     });
 
     // Điền dữ liệu vào các biến trong XML
     doc.render(data);
+
+    // Hậu xử lý DOM: khóa phân trang bảng và bảo vệ bảng chữ ký
+    applyPaginationAndSignatureProtection(doc.getZip());
 
     // Đóng gói lại thành file .docx nhị phân
     const outBlob = doc.getZip().generate({
@@ -229,36 +240,65 @@ export function prepareDossierTemplateData(rawDossier: Dossier, _rawTemplate?: W
     truong_don_vi_nhan: fd.receiver_manager || 'Trưởng Đơn vị nhận',
 
     // Dữ liệu chi tiết từ Form Mẫu 1a (Tờ trình)
-    muc_dich: fd.purpose || '',
-    nhu_cau_tiep_nhan: fd.receiver_needs || '',
-    dap_ung_thuc_hien: fd.provider_capacity || '',
-    nang_luc_chuyen_giao: fd.provider_capacity || '',
-    muc_tieu: fd.transfer_goals || '',
-    doi_tuong: fd.transfer_target || '',
-    phuong_thuc: fd.transfer_method || '',
+    muc_dich: normalizeMultiline(fd.purpose || ''),
+    nhu_cau_tiep_nhan: normalizeMultiline(fd.receiver_needs || ''),
+    dap_ung_thuc_hien: normalizeMultiline(fd.provider_capacity || ''),
+    nang_luc_chuyen_giao: normalizeMultiline(fd.provider_capacity || ''),
+    muc_tieu: normalizeMultiline(fd.transfer_goals || ''),
+    doi_tuong: normalizeMultiline(fd.transfer_target || ''),
+    phuong_thuc: normalizeMultiline(fd.transfer_method || ''),
     hinh_thuc: fd.transfer_form || 'Chuyển giao công nghệ độc lập.',
-    quyen_chuyen_giao: fd.transfer_rights || '',
+    quyen_chuyen_giao: normalizeMultiline(fd.transfer_rights || ''),
     thoi_gian: fd.transfer_time || (fd.transfer_date ? new Date(fd.transfer_date).toLocaleDateString('vi-VN') : ''),
     dia_diem: fd.transfer_location || 'Tại Trường Đại học Y Dược Cần Thơ',
-    thanh_phan: fd.attendees || '',
-    kinh_phi: fd.funding_source || 'Từ nguồn kinh phí của Trường theo quy chế chi tiêu nội bộ.',
+    thanh_phan: normalizeMultiline(fd.attendees || ''),
+    kinh_phi: normalizeMultiline(fd.funding_source || 'Từ nguồn kinh phí của Trường theo quy chế chi tiêu nội bộ.'),
 
     // Dữ liệu chi tiết từ Form Mẫu 2a (Kế hoạch)
     ten_san_pham: fd.product_name || fd.research_title || 'Sản phẩm chuyển giao công nghệ',
-    nhom_tac_gia: fd.authors_group || fullName,
+    nhom_tac_gia: normalizeMultiline(fd.authors_group || fullName),
     loai_hinh_san_pham: fd.product_type || 'Hệ thống phần mềm ứng dụng y tế',
     ben_nhan_chuyen_giao: fd.receiving_party || 'Bệnh viện Trường Đại học Y Dược Cần Thơ',
-    chi_phi: fd.transfer_cost !== undefined && fd.transfer_cost !== null
-      ? Number(fd.transfer_cost) === 0
-        ? 'Không thu phí (kinh phí hoạt động Nhà trường)'
-        : `${Number(fd.transfer_cost).toLocaleString('vi-VN')} VNĐ`
-      : 'Theo thỏa thuận',
-    ban_chi_dao: fd.steering_committee || '',
-    ban_to_chuc: fd.organizing_committee || '',
-    nhan_su: fd.implementing_staff || '',
-    chu_toa: fd.workshop_chair || '',
-    bao_cao_vien: fd.workshop_speaker || '',
-    kinh_phi_hoi_thao: fd.workshop_budget || 'Từ nguồn kinh phí của Trường theo quy chế chi tiêu nội bộ.',
+    chi_phi:
+      fd.transfer_cost !== undefined && fd.transfer_cost !== null && fd.transfer_cost !== ''
+        ? Number(fd.transfer_cost) === 0
+          ? 'Không thu phí (kinh phí hoạt động Nhà trường)'
+          : `${Number(fd.transfer_cost).toLocaleString('vi-VN')} VNĐ`
+        : 'Theo thỏa thuận',
+    // Nhân sự 2 cột Mục VIII
+    ds_ban_chi_dao: pairTwoColumns(fd.steering_committee || fd.ban_chi_dao || fd.ds_ban_chi_dao),
+    ds_ban_to_chuc: pairTwoColumns(fd.organizing_committee || fd.ban_to_chuc || fd.ds_ban_to_chuc),
+    ds_nhan_su: pairTwoColumns(fd.implementing_staff || fd.nhan_su || fd.ds_nhan_su),
+    // Khối điều kiện Mục IX
+    has_hoi_thao: Boolean(
+      fd.has_workshop === true ||
+      fd.has_hoi_thao === true ||
+      (fd.has_workshop !== false &&
+        fd.has_hoi_thao !== false &&
+        (fd.workshop_chair ||
+          fd.workshop_speaker ||
+          fd.workshop_program ||
+          fd.chu_toa ||
+          fd.bao_cao_vien))
+    ),
+    ds_chu_toa: pairTwoColumns(fd.workshop_chair || fd.chu_toa || fd.ds_chu_toa),
+    ds_bao_cao_vien: pairTwoColumns(fd.workshop_speaker || fd.bao_cao_vien || fd.ds_bao_cao_vien),
+    ds_chuong_trinh_hoi_thao: adaptWorkshopSchedule(
+      fd.workshop_program || fd.chuong_trinh_hoi_thao || fd.ds_chuong_trinh_hoi_thao
+    ),
+    ds_phan_cong_hoi_thao: adaptWorkshopAssignment(
+      fd.workshop_assignments || fd.phan_cong_hoi_thao || fd.ds_phan_cong_hoi_thao
+    ),
+    kinh_phi_hoi_thao: normalizeMultiline(
+      fd.workshop_budget || fd.kinh_phi_hoi_thao || 'Từ nguồn kinh phí của Trường theo quy chế chi tiêu nội bộ.'
+    ),
+    // Bảng rủi ro Mục X
+    ds_danh_gia_rui_ro: adaptRiskTable(
+      fd.risks || fd.danh_gia_rui_ro || fd.risk_management || fd.ds_danh_gia_rui_ro
+    ),
+    ds_kiem_soat_rui_ro: adaptRiskControlTable(
+      fd.risk_controls || fd.kiem_soat_rui_ro || fd.ds_kiem_soat_rui_ro
+    ),
 
     // Flatten toàn bộ formData gốc để match với mọi tên biến tuỳ biến
     ...fd,
