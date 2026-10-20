@@ -40,4 +40,5 @@ export const config = {
     process.env.GOOGLE_DRIVE_FOLDER_URL ||
     'https://drive.google.com/drive/folders/1UZfnO_hY9LshjsaHH6btODtWgii0Vv8-?usp=drive_link',
   uploadDir: path.resolve(__dirname, '../../uploads'),
+  jwtSecret: process.env.JWT_SECRET || 'ctump-docugov-jwt-secret-dev-only-change-in-production',
 };

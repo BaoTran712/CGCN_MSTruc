@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { User, UserRole } from '../types';
 import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER, AUTH_STORAGE_KEY } from '../constants';
+import { setAuthToken } from '../services/api';
 
 interface AuthContextValue {
   currentUser: User | null;
@@ -17,7 +18,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
       const saved = localStorage.getItem(AUTH_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : null;
+      if (saved) {
+        const user = JSON.parse(saved);
+        if (user?.token) {
+          setAuthToken(user.token);
+        }
+        return user;
+      }
+      return null;
     } catch {
       return null;
     }
@@ -25,6 +33,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = useCallback((user: User) => {
     setCurrentUser(user);
+    if (user.token) {
+      setAuthToken(user.token);
+    }
     try {
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
     } catch {
@@ -33,6 +44,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const logout = useCallback(() => {
+    setAuthToken(null);
     try {
       localStorage.removeItem(AUTH_STORAGE_KEY);
     } catch {
@@ -42,6 +54,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const resetDevUser = useCallback(() => {
+    setAuthToken(DEFAULT_DEV_USER.token || 'dev-token-admin');
     try {
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(DEFAULT_DEV_USER));
     } catch {
@@ -53,6 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const switchRole = useCallback((targetRole: UserRole): User => {
     const roleKey = String(targetRole).toUpperCase();
     const nextUser = roleKey === 'ADMIN' ? DEFAULT_DEV_USER : DEFAULT_CANBO_USER;
+    setAuthToken(nextUser.token || (roleKey === 'ADMIN' ? 'dev-token-admin' : 'dev-token-user'));
     setCurrentUser(nextUser);
     try {
       localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextUser));
@@ -63,8 +77,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const isAdmin = useMemo(() => {
-    if (!currentUser?.email) return false;
-    return currentUser.email.trim().toLowerCase() === 'toanhkhai12345@gmail.com';
+    if (!currentUser) return false;
+    if (currentUser.role === 'ADMIN') return true;
+    if (currentUser.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com') return true;
+    return false;
   }, [currentUser]);
 
   const value = useMemo(

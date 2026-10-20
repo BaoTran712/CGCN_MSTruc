@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Menu } from 'lucide-react';
-import { ActiveNavTab, User, UserRole } from '../../types';
+import { ActiveNavTab, User } from '../../types';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 
@@ -11,9 +11,7 @@ interface MainLayoutProps {
   currentUser: User;
   pendingCount: number;
   myDossierCount: number;
-  onLogout: () => void;
-  onSignOut?: () => void;
-  onSwitchUserRole: (role: UserRole) => void;
+  onSignOut: () => void;
 }
 
 export const MainLayout: React.FC<MainLayoutProps> = ({
@@ -23,9 +21,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
   currentUser,
   pendingCount,
   myDossierCount,
-  onLogout,
   onSignOut,
-  onSwitchUserRole,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -44,7 +40,6 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
           myDossierCount={myDossierCount}
           mobileOpen={mobileMenuOpen}
           onCloseMobile={() => setMobileMenuOpen(false)}
-          onLogout={onLogout}
           onSignOut={onSignOut}
         />
 
@@ -63,11 +58,9 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
             <div className="flex-1">
               <Header
                 currentUser={currentUser}
-                onSwitchUser={onSwitchUserRole}
                 onNavigate={onNavigate}
                 activeTab={activeTab}
                 pendingCount={pendingCount}
-                onLogout={onLogout}
                 onSignOut={onSignOut}
               />
             </div>

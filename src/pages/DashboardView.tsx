@@ -18,6 +18,7 @@ import { Dossier, WordTemplate, UserProfile, ActiveNavTab } from '../types';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { generateAndDownloadDocx } from '../utils/docxExport';
 import { normalizeStatus } from '../services/workflowEngine';
+import { isAdminUser } from '../constants';
 
 interface DashboardViewProps {
   dossiers: Dossier[];
@@ -46,11 +47,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const recentDossiers = safeDossiers.slice(0, 6);
 
-  const isManager =
-    currentUser.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com' ||
-    currentUser.role === 'manager' ||
-    currentUser.role === 'admin' ||
-    currentUser.role === 'ADMIN';
+  const isManager = isAdminUser(currentUser);
 
   return (
     <div className="space-y-6">
@@ -63,31 +60,59 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </span>
           </div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            Tổng quan hệ thống xử lý hồ sơ Chuyển giao Công nghệ
+            {isManager
+              ? 'Tổng quan hệ thống xử lý hồ sơ Chuyển giao Công nghệ (Admin)'
+              : 'Cổng thông tin Chuyển giao Công nghệ - Dành cho Thầy / Cô'}
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Theo dõi tiến độ tiền kiểm, ký số điện tử liên cấp và ban hành Quyết định CGCN theo quy trình Automation
+            {isManager
+              ? 'Theo dõi tiến độ tiền kiểm, ký số điện tử liên cấp và ban hành Quyết định CGCN theo quy trình chuẩn'
+              : 'Xin chào Thầy/Cô! Theo dõi tiến độ hồ sơ cá nhân, nhận kết quả thẩm định và nộp bản ký trực tuyến'}
           </p>
         </div>
 
         <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => onNavigate('create_dossier')}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-md shadow-2xs transition-colors cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Tạo hồ sơ mới</span>
-          </button>
+          {!isManager ? (
+            <>
+              <button
+                type="button"
+                onClick={() => onNavigate('create_dossier')}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-md shadow-2xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Tạo hồ sơ mới</span>
+              </button>
 
-          <button
-            type="button"
-            onClick={() => onNavigate('pending_approval')}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-md shadow-2xs transition-colors cursor-pointer"
-          >
-            <span>Hồ sơ chờ tiền kiểm</span>
-            <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
-          </button>
+              <button
+                type="button"
+                onClick={() => onNavigate('my_dossiers')}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-md shadow-2xs transition-colors cursor-pointer"
+              >
+                <span>Hồ sơ của tôi</span>
+                <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => onNavigate('pending_approval')}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-md shadow-2xs transition-colors cursor-pointer"
+              >
+                <span>Hồ sơ chờ tiền kiểm</span>
+                <ArrowRight className="w-3.5 h-3.5 text-white/80" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onNavigate('secretary_queue')}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-md shadow-2xs transition-colors cursor-pointer"
+              >
+                <span>Trình ký & Ban hành QĐ</span>
+                <ArrowRight className="w-3.5 h-3.5 text-slate-500" />
+              </button>
+            </>
+          )}
         </div>
       </div>
 

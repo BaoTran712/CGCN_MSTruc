@@ -1,5 +1,6 @@
 import { userService } from '../services/userService.js';
 import { ApiResponse } from '../dtos/apiResponse.js';
+import { generateToken } from '../middlewares/authMiddleware.js';
 
 export const userController = {
   // GET /api/users
@@ -44,7 +45,8 @@ export const userController = {
     try {
       const { email, name, avatar, googleId } = req.body;
       const user = await userService.login(email, { name, avatar, googleId });
-      return ApiResponse.success(user, 'Đăng nhập thành công').send(res);
+      const token = generateToken(user);
+      return ApiResponse.success({ ...user, token }, 'Đăng nhập thành công').send(res);
     } catch (err) {
       console.error('[userController.login]', err);
       return ApiResponse.error(err.message, 400).send(res);

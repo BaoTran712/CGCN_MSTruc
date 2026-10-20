@@ -11,25 +11,25 @@ export interface StatusMeta {
 
 export const STATUS_MAP: Record<string, StatusMeta> = {
   NEW: {
-    label: 'Mới nộp (Chờ tiền kiểm)',
+    label: 'Chờ Admin duyệt (Tiền kiểm)',
     badgeClass: 'text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded text-xs font-semibold',
     dotClass: 'bg-blue-600',
     stepIndex: 1,
-    description: 'Hồ sơ đã nộp thành công, chờ Quản trị viên Phòng KH&CN tải bản thảo Word để tiền kiểm.',
+    description: 'Thầy/Cô đã nộp hồ sơ thành công, đang chờ Quản trị viên Phòng KH&CN tiền kiểm phê duyệt.',
   },
   NEEDS_REVISION: {
-    label: 'Yêu cầu bổ sung',
+    label: 'Admin yêu cầu sửa đổi',
     badgeClass: 'text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded text-xs font-semibold',
     dotClass: 'bg-rose-600',
     stepIndex: 2,
-    description: 'Bản thảo có sai sót. Admin đã gửi nhận xét qua Gmail để Cán bộ đăng nhập sửa lại form.',
+    description: 'Admin đã gửi yêu cầu chỉnh sửa kèm lý do. Thầy/Cô cần mở lại biểu mẫu để cập nhật và nộp lại.',
   },
   PRECHECK_PASSED: {
-    label: 'Đã duyệt thể thức (Đã xuất PDF)',
+    label: 'Admin đã duyệt hợp lệ',
     badgeClass: 'text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded text-xs font-semibold',
     dotClass: 'bg-indigo-600',
     stepIndex: 3,
-    description: 'Admin đã duyệt hợp lệ. Hệ thống đã khóa nội dung & xuất file PDF chuẩn để xin chữ ký Trưởng Khoa.',
+    description: 'Admin đã phê duyệt thể thức. Thầy/Cô tải file PDF chuẩn để xin chữ ký Trưởng Khoa.',
   },
   FACULTY_SIGNED: {
     label: 'Đã ký cấp Khoa & Nộp minh chứng',

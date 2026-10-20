@@ -309,10 +309,45 @@ export function applyPaginationAndSignatureProtection(zip) {
         if (pPr.getElementsByTagName('w:keepLines').length === 0) {
           pPr.appendChild(domDoc.createElement('w:keepLines'));
         }
-        if (pPr.getElementsByTagName('w:keepNext').length === 0) {
-          pPr.appendChild(domDoc.createElement('w:keepNext'));
+      }
+    }
+  }
+
+  // 3. Xóa triệt để các đoạn văn trống cuối văn bản giữa bảng cuối cùng và <w:sectPr> để không bị thừa trang trắng
+  const body = domDoc.getElementsByTagName('w:body')[0];
+  if (body) {
+    const sectPr = body.getElementsByTagName('w:sectPr')[0];
+    if (sectPr) {
+      let prevNode = sectPr.previousSibling;
+      while (prevNode && prevNode.nodeName === 'w:p') {
+        const text = prevNode.textContent ? prevNode.textContent.trim() : '';
+        const nodeToRemove = prevNode;
+        prevNode = prevNode.previousSibling;
+        if (text === '') {
+          body.removeChild(nodeToRemove);
+        } else {
+          break;
         }
       }
+      // Chèn 1 paragraph kích thước siêu nhỏ 1pt trước sectPr để Word hợp lệ mà không tạo trang trắng
+      const zeroP = domDoc.createElement('w:p');
+      const pPr = domDoc.createElement('w:pPr');
+      const spacing = domDoc.createElement('w:spacing');
+      spacing.setAttribute('w:before', '0');
+      spacing.setAttribute('w:after', '0');
+      spacing.setAttribute('w:line', '20');
+      spacing.setAttribute('w:lineRule', 'exact');
+      pPr.appendChild(spacing);
+      const rPr = domDoc.createElement('w:rPr');
+      const sz = domDoc.createElement('w:sz');
+      sz.setAttribute('w:val', '2');
+      rPr.appendChild(sz);
+      const szCs = domDoc.createElement('w:szCs');
+      szCs.setAttribute('w:val', '2');
+      rPr.appendChild(szCs);
+      pPr.appendChild(rPr);
+      zeroP.appendChild(pPr);
+      body.insertBefore(zeroP, sectPr);
     }
   }
 

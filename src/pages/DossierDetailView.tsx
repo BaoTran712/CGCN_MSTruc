@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Download,
@@ -33,6 +33,7 @@ import { UploadFacultySignedModal } from '../components/modals/UploadFacultySign
 import { CompleteDecisionModal } from '../components/modals/CompleteDecisionModal';
 import { generateAndDownloadDocx } from '../utils/docxExport';
 import { normalizeStatus } from '../services/workflowEngine';
+import { isAdminUser } from '../constants';
 
 interface DossierDetailViewProps {
   dossier: Application;
@@ -77,17 +78,23 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
   onSaveManagerEdit,
   onNavigate,
 }) => {
+  const [currentDossier, setCurrentDossier] = useState<Application>(dossier);
+
+  useEffect(() => {
+    setCurrentDossier(dossier);
+  }, [dossier]);
+
   const [activeTab, setActiveTab] = useState<'preview' | 'audit' | 'versions' | 'emails'>('preview');
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
   const [isManagerEditModalOpen, setIsManagerEditModalOpen] = useState(false);
   const [isUploadFacultyModalOpen, setIsUploadFacultyModalOpen] = useState(false);
   const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
 
-  const normalized = normalizeStatus(dossier.status);
-  const isAdmin =
-    currentUser.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com' ||
-    currentUser.role === 'ADMIN' ||
-    currentUser.role === 'admin';
+  const normalized = normalizeStatus(currentDossier.status);
+  const isAdmin = isAdminUser(currentUser);
+  const isOwner =
+    currentDossier.createdBy?.id === currentUser.id ||
+    currentDossier.createdBy?.email === currentUser.email;
 
   // Quy trình kiểm tra trạng thái
   const isPrecheckPhase = normalized === 'NEW';
@@ -96,8 +103,8 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
   const isSchoolSigningPhase = normalized === 'FACULTY_SIGNED' || normalized === 'SCHOOL_SIGNING';
   const isCompletedPhase = normalized === 'COMPLETED';
 
-  const formData = dossier.formData || {};
-  const driveUrl = dossier.drive_folder_url || 'https://drive.google.com/drive/folders/1UZfnO_hY9LshjsaHH6btODtWgii0Vv8-?usp=drive_link';
+  const formData = currentDossier.formData || {};
+  const driveUrl = currentDossier.drive_folder_url || 'https://drive.google.com/drive/folders/1UZfnO_hY9LshjsaHH6btODtWgii0Vv8-?usp=drive_link';
 
   // 5 mốc tiến độ trực quan
   const workflowSteps = [
@@ -125,17 +132,17 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                {dossier.code}
+                {currentDossier.code}
               </span>
-              <StatusBadge status={dossier.status} />
-              {dossier.versions && dossier.versions.length > 1 && (
+              <StatusBadge status={currentDossier.status} />
+              {currentDossier.versions && currentDossier.versions.length > 1 && (
                 <span className="px-1.5 py-0.2 text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300 rounded font-mono">
-                  v{dossier.versions.length}
+                  v{currentDossier.versions.length}
                 </span>
               )}
             </div>
             <h1 className="text-base font-bold text-slate-900 leading-snug mt-1">
-              {dossier.templateTitle}
+              {currentDossier.templateTitle}
             </h1>
           </div>
         </div>
@@ -144,54 +151,108 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           {/* BƯỚC 2: Tiền kiểm (Admin Pre-check) */}
           {isPrecheckPhase && (
-            <>
-              <button
-                type="button"
-                onClick={() => setIsReturnModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors cursor-pointer"
-              >
-                <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                <span>Yêu cầu sửa đổi (Chưa duyệt)</span>
-              </button>
+            isAdmin ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setIsReturnModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors cursor-pointer"
+                >
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Yêu cầu sửa đổi (Chưa duyệt)</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={async () => {
-                  if (onAdminPrecheck) {
-                    await onAdminPrecheck(dossier.id, true, 'Duyệt hợp lệ thể thức.');
-                  } else if (onApproveDossier) {
-                    await onApproveDossier(dossier.id, 'Duyệt hợp lệ thể thức.');
-                  }
-                }}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-md shadow-2xs transition-colors cursor-pointer"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Duyệt hợp lệ & Xuất PDF chuẩn</span>
-              </button>
-            </>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const nowIso = new Date().toISOString();
+                    const updatedLocal: Application = {
+                      ...currentDossier,
+                      status: 'PRECHECK_PASSED',
+                      reviewNotes: 'Duyệt hợp lệ thể thức.',
+                      review_notes: 'Duyệt hợp lệ thể thức.',
+                      reviewedAt: nowIso,
+                      updatedAt: nowIso,
+                      timeline: [
+                        ...(currentDossier.timeline || []),
+                        {
+                          id: `evt-${Date.now()}`,
+                          title: 'Duyệt tiền kiểm & xuất PDF',
+                          actor: currentUser.name || 'Quản trị viên',
+                          role: currentUser.role === 'ADMIN' ? 'Admin' : 'Chuyên viên KH&CN',
+                          timestamp: new Date().toLocaleString('vi-VN'),
+                          description: 'Duyệt hợp lệ thể thức.',
+                          status: 'PRECHECK_PASSED',
+                        },
+                      ],
+                      auditLogs: [
+                        ...(currentDossier.auditLogs || []),
+                        {
+                          id: `log-${Date.now()}`,
+                          dossierId: currentDossier.id,
+                          action: 'PRECHECK_APPROVE',
+                          actorId: currentUser.id,
+                          actorName: currentUser.name,
+                          actorRole: currentUser.role,
+                          fromStatus: currentDossier.status,
+                          toStatus: 'PRECHECK_PASSED',
+                          notes: 'Duyệt hợp lệ thể thức.',
+                          createdAt: nowIso,
+                        },
+                      ],
+                    };
+                    setCurrentDossier(updatedLocal);
+                    if (onAdminPrecheck) {
+                      await onAdminPrecheck(currentDossier.id, true, 'Duyệt hợp lệ thể thức.');
+                    } else if (onApproveDossier) {
+                      await onApproveDossier(currentDossier.id, 'Duyệt hợp lệ thể thức.');
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-md shadow-2xs transition-colors cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Duyệt hợp lệ & Xuất PDF chuẩn</span>
+                </button>
+              </>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-800 bg-blue-50 border border-blue-200 rounded-md">
+                <Clock className="w-3.5 h-3.5 text-blue-600" />
+                <span>Đang chờ Phòng KH&CN tiền kiểm</span>
+              </span>
+            )
           )}
 
-          {/* BƯỚC 1: Sửa đổi khi có yêu cầu (User sửa lại form) */}
-          {isNeedsRevision && (
+          {/* BƯỚC 1: Sửa đổi khi có yêu cầu (Chỉ chủ hồ sơ - User) */}
+          {isNeedsRevision && isOwner && !isAdmin && (
             <button
               type="button"
-              onClick={() => onEditDossier(dossier)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-md transition-colors cursor-pointer"
+              onClick={() => onEditDossier(currentDossier)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-md transition-colors cursor-pointer"
             >
               <Edit className="w-3.5 h-3.5" />
               <span>Chỉnh sửa lại Web Form & Nộp lại</span>
             </button>
           )}
+          {/* Admin chỉ xem trạng thái yêu cầu sửa đổi */}
+          {isNeedsRevision && isAdmin && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-800 bg-rose-50 border border-rose-200 rounded-md">
+              <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+              <span>Đang chờ Thầy/Cô chỉnh sửa và nộp lại</span>
+            </span>
+          )}
 
-          {/* BƯỚC 3 & 6: Ký số cấp cơ sở (User tải PDF & nộp bản ký Khoa) */}
-          {isFacultySigningPhase && (
+          {/* BƯỚC 3 & 6: Ký số cấp cơ sở (Chỉ chủ hồ sơ - User tải PDF & nộp bản ký Khoa) */}
+          {isFacultySigningPhase && !isAdmin && (
             <>
               <a
-                href={dossier.precheck_pdf_url || '#'}
+                href={currentDossier.precheck_pdf_url || '#'}
+                download={`${currentDossier.code}-chuan-ky-khoa.pdf`}
+                target="_blank"
+                rel="noopener noreferrer"
                 onClick={(e) => {
-                  if (!dossier.precheck_pdf_url) {
+                  if (!currentDossier.precheck_pdf_url) {
                     e.preventDefault();
-                    generateAndDownloadDocx(dossier, template);
+                    generateAndDownloadDocx(currentDossier, template);
                   }
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md transition-colors cursor-pointer"
@@ -203,26 +264,38 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
               <button
                 type="button"
                 onClick={() => setIsUploadFacultyModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-amber-700 hover:bg-amber-800 rounded-md shadow-2xs transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-amber-700 hover:bg-amber-800 rounded-md shadow-2xs transition-colors cursor-pointer"
               >
                 <Upload className="w-3.5 h-3.5" />
                 <span>Nộp PDF đã ký Khoa + Minh chứng</span>
               </button>
             </>
           )}
+          {/* Admin xem trạng thái chờ ký Khoa */}
+          {isFacultySigningPhase && isAdmin && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-800 bg-indigo-50 border border-indigo-200 rounded-md">
+              <Clock className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Đang chờ Thầy/Cô ký số cấp Khoa</span>
+            </span>
+          )}
 
           {/* BƯỚC 4 & 7: Trình ký cấp Trường & Ban hành QĐ */}
           {isSchoolSigningPhase && (
-            <>
+            isAdmin ? (
               <button
                 type="button"
                 onClick={() => setIsCompleteModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-md shadow-2xs transition-colors cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-md shadow-2xs transition-colors cursor-pointer"
               >
                 <Award className="w-3.5 h-3.5" />
                 <span>Ban hành Quyết định & Đóng hồ sơ</span>
               </button>
-            </>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 rounded-md">
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <span>Đang trong luồng trình ký cấp Trường</span>
+              </span>
+            )
           )}
 
           {/* BƯỚC 4 & 8: Đã hoàn tất */}
@@ -241,7 +314,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
           {/* Nút tải Word bản thảo */}
           <button
             type="button"
-            onClick={() => generateAndDownloadDocx(dossier, template)}
+            onClick={() => generateAndDownloadDocx(currentDossier, template)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-md transition-colors cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
@@ -286,18 +359,20 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
             Quản trị viên đã tiền kiểm bản thảo Word và gửi nội dung nhận xét chi tiết sau đây qua Gmail cho Cán bộ:
           </p>
           <div className="p-3 bg-white rounded border border-rose-200 font-medium italic text-rose-900">
-            "{dossier.review_notes || dossier.returnReason}"
+            "{currentDossier.review_notes || currentDossier.reviewNotes || currentDossier.returnReason || 'Cần bổ sung, chỉnh sửa nội dung hồ sơ theo thông báo.'}"
           </div>
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={() => onEditDossier(dossier)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-700 text-white font-semibold rounded hover:bg-rose-800 transition-colors cursor-pointer"
-            >
-              <Edit className="w-3.5 h-3.5" />
-              <span>Bấm vào đây để mở Form chỉnh sửa & nộp lại</span>
-            </button>
-          </div>
+          {isOwner && !isAdmin && (
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={() => onEditDossier(currentDossier)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-700 text-white font-semibold rounded hover:bg-rose-800 transition-colors cursor-pointer"
+              >
+                <Edit className="w-3.5 h-3.5" />
+                <span>Bấm vào đây để mở Form chỉnh sửa & nộp lại</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -333,28 +408,28 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
             <div className="p-2.5 bg-white rounded border border-amber-200 flex items-center gap-2">
-              <CheckCircle2 className={`w-4 h-4 ${dossier.khcn_signed ? 'text-emerald-600' : 'text-slate-300'}`} />
+              <CheckCircle2 className={`w-4 h-4 ${currentDossier.khcn_signed ? 'text-emerald-600' : 'text-slate-300'}`} />
               <div>
                 <div className="font-semibold text-slate-800">1. Trưởng phòng KH&CN</div>
-                <div className="text-[10px] text-slate-500">{dossier.khcn_signed ? 'Đã ký số' : 'Đang xử lý'}</div>
+                <div className="text-[10px] text-slate-500">{currentDossier.khcn_signed ? 'Đã ký số' : 'Đang xử lý'}</div>
               </div>
             </div>
 
             <div className="p-2.5 bg-white rounded border border-amber-200 flex items-center gap-2">
-              <CheckCircle2 className={`w-4 h-4 ${dossier.khtc_signed ? 'text-emerald-600' : 'text-slate-300'}`} />
+              <CheckCircle2 className={`w-4 h-4 ${currentDossier.khtc_signed ? 'text-emerald-600' : 'text-slate-300'}`} />
               <div>
                 <div className="font-semibold text-slate-800">2. Phòng KHTC</div>
                 <div className="text-[10px] text-slate-500">
-                  {dossier.has_financial_implication ? (dossier.khtc_signed ? 'Đã ký số' : 'Cần thẩm định kinh phí') : 'Không phát sinh $'}
+                  {currentDossier.has_financial_implication ? (currentDossier.khtc_signed ? 'Đã ký số' : 'Cần thẩm định kinh phí') : 'Không phát sinh $'}
                 </div>
               </div>
             </div>
 
             <div className="p-2.5 bg-white rounded border border-amber-200 flex items-center gap-2">
-              <CheckCircle2 className={`w-4 h-4 ${dossier.bgh_signed ? 'text-emerald-600' : 'text-slate-300'}`} />
+              <CheckCircle2 className={`w-4 h-4 ${currentDossier.bgh_signed ? 'text-emerald-600' : 'text-slate-300'}`} />
               <div>
                 <div className="font-semibold text-slate-800">3. Hiệu trưởng (BGH)</div>
-                <div className="text-[10px] text-slate-500">{dossier.bgh_signed ? 'Đã ký duyệt' : 'Chờ ký ban hành'}</div>
+                <div className="text-[10px] text-slate-500">{currentDossier.bgh_signed ? 'Đã ký duyệt' : 'Chờ ký ban hành'}</div>
               </div>
             </div>
           </div>
@@ -369,7 +444,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
               <span>HỒ SƠ ĐÃ HOÀN TẤT - QUYẾT ĐỊNH CGCN ĐÃ BAN HÀNH CHÍNH THỨC</span>
             </div>
             <span className="font-mono font-bold text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded border border-emerald-300">
-              Số: {dossier.decision_number || '128/QĐ-ĐHYDCT'}
+              Số: {currentDossier.decision_number || '128/QĐ-ĐHYDCT'}
             </span>
           </div>
           <p className="text-slate-700">
@@ -412,7 +487,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
           }`}
         >
           <Shield className="w-4 h-4 text-blue-700" />
-          <span>Nhật ký Xử lý (Audit Trail) ({dossier.auditLogs?.length || 0})</span>
+          <span>Nhật ký Xử lý (Audit Trail) ({currentDossier.auditLogs?.length || 0})</span>
         </button>
 
         <button
@@ -438,7 +513,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
           }`}
         >
           <History className="w-4 h-4" />
-          <span>Lịch sử Phiên bản ({dossier.versions?.length || 1})</span>
+          <span>Lịch sử Phiên bản ({currentDossier.versions?.length || 1})</span>
         </button>
       </div>
 
@@ -455,23 +530,23 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
               <div className="space-y-3 text-xs">
                 <div className="flex items-center gap-2.5 pb-2.5 border-b border-slate-100">
                   <div className="w-8 h-8 rounded bg-blue-100 text-blue-800 flex items-center justify-center font-bold text-xs shrink-0">
-                    {dossier.createdBy.name.charAt(0)}
+                    {currentDossier.createdBy.name.charAt(0)}
                   </div>
                   <div>
-                    <div className="font-semibold text-slate-900">{dossier.createdBy.name}</div>
-                    <div className="text-slate-500 text-[11px]">{dossier.createdBy.title}</div>
+                    <div className="font-semibold text-slate-900">{currentDossier.createdBy.name}</div>
+                    <div className="text-slate-500 text-[11px]">{currentDossier.createdBy.title}</div>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-slate-600">
                   <div>
                     <span className="text-[11px] text-slate-400 block">Đơn vị:</span>
-                    <span className="font-medium text-slate-800">{dossier.createdBy.department}</span>
+                    <span className="font-medium text-slate-800">{currentDossier.createdBy.department}</span>
                   </div>
                   <div>
                     <span className="text-[11px] text-slate-400 block">Email trường:</span>
                     <span className="font-mono text-slate-800 truncate block text-[11px]">
-                      {dossier.createdBy.email}
+                      {currentDossier.createdBy.email}
                     </span>
                   </div>
                 </div>
@@ -479,13 +554,13 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
             </div>
 
             {/* Evidence & Signed Files Box */}
-            {(dossier.evidence_files && dossier.evidence_files.length > 0 || dossier.faculty_signed_pdf_url || dossier.final_pdf_url) && (
+            {((currentDossier.evidence_files && currentDossier.evidence_files.length > 0) || currentDossier.faculty_signed_pdf_url || currentDossier.final_pdf_url) && (
               <div className="bg-white rounded-lg border border-slate-200 shadow-2xs p-4 space-y-3 text-xs">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 border-b border-slate-100 pb-2">
                   Tệp Văn bản & Minh chứng đính kèm
                 </h3>
                 <div className="space-y-2">
-                  {dossier.faculty_signed_pdf_url && (
+                  {currentDossier.faculty_signed_pdf_url && (
                     <div className="flex items-center justify-between p-2 bg-amber-50 rounded border border-amber-200">
                       <div className="flex items-center gap-1.5 font-medium text-amber-900">
                         <FileText className="w-3.5 h-3.5 text-amber-700" />
@@ -495,7 +570,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
                     </div>
                   )}
 
-                  {dossier.final_pdf_url && (
+                  {currentDossier.final_pdf_url && (
                     <div className="flex items-center justify-between p-2 bg-emerald-50 rounded border border-emerald-200">
                       <div className="flex items-center gap-1.5 font-medium text-emerald-900">
                         <Award className="w-3.5 h-3.5 text-emerald-700" />
@@ -505,7 +580,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
                     </div>
                   )}
 
-                  {dossier.evidence_files && dossier.evidence_files.map((f, i) => (
+                  {currentDossier.evidence_files && currentDossier.evidence_files.map((f, i) => (
                     <div key={i} className="flex items-center justify-between p-2 bg-slate-50 rounded border border-slate-200">
                       <div className="flex items-center gap-1.5 truncate">
                         <FileText className="w-3.5 h-3.5 text-slate-500" />
@@ -560,9 +635,9 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
               </div>
               <ApprovalTimeline
                 events={
-                  dossier.timeline && dossier.timeline.length > 0
-                    ? dossier.timeline
-                    : (dossier.auditLogs || []).map((log: any) => ({
+                  currentDossier.timeline && currentDossier.timeline.length > 0
+                    ? currentDossier.timeline
+                    : (currentDossier.auditLogs || []).map((log: any) => ({
                         id: log.id,
                         title:
                           log.action === 'CREATE'
@@ -582,17 +657,17 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
                         role: log.actorRole || 'Hệ thống',
                         timestamp: log.createdAt ? new Date(log.createdAt).toLocaleString('vi-VN') : '',
                         description: log.notes || '',
-                        status: (log.toStatus || dossier.status || 'NEW') as any,
+                        status: (log.toStatus || currentDossier.status || 'NEW') as any,
                       }))
                 }
-                currentStatus={dossier.status}
+                currentStatus={currentDossier.status}
               />
             </div>
           </div>
 
           {/* Right Column Word Document Preview */}
           <div className="lg:col-span-7 space-y-4">
-            <WordDocumentPreview dossier={dossier} template={template} />
+            <WordDocumentPreview dossier={currentDossier} template={template} />
           </div>
         </div>
       )}
@@ -600,30 +675,70 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
       {/* TAB CONTENT: Audit Trail */}
       {activeTab === 'audit' && (
         <div className="bg-white rounded-lg border border-slate-200 p-5 shadow-2xs">
-          <AuditLogViewer logs={dossier.auditLogs || []} />
+          <AuditLogViewer logs={currentDossier.auditLogs || []} />
         </div>
       )}
 
       {/* TAB CONTENT: Email Logs */}
       {activeTab === 'emails' && (
         <div className="bg-white rounded-lg border border-slate-200 p-5 shadow-2xs">
-          <EmailLogViewer logs={dossier.emailLogs || []} />
+          <EmailLogViewer logs={currentDossier.emailLogs || []} />
         </div>
       )}
 
       {/* TAB CONTENT: Version History */}
       {activeTab === 'versions' && (
         <div className="bg-white rounded-lg border border-slate-200 p-5 shadow-2xs">
-          <VersionHistoryViewer versions={dossier.versions || []} />
+          <VersionHistoryViewer versions={currentDossier.versions || []} />
         </div>
       )}
 
       {/* Modals */}
       <ReturnDossierModal
-        dossier={dossier}
+        dossier={currentDossier}
         isOpen={isReturnModalOpen}
         onClose={() => setIsReturnModalOpen(false)}
         onConfirmReturn={async (id, reason) => {
+          const nowIso = new Date().toISOString();
+          const updatedLocal: Application = {
+            ...currentDossier,
+            status: 'NEEDS_REVISION',
+            reviewNotes: reason,
+            review_notes: reason,
+            returnReason: reason,
+            reviewedAt: nowIso,
+            updatedAt: nowIso,
+            timeline: [
+              ...(currentDossier.timeline || []),
+              {
+                id: `evt-${Date.now()}`,
+                title: 'Yêu cầu sửa đổi hồ sơ',
+                actor: currentUser.name || 'Quản trị viên',
+                role: currentUser.role === 'ADMIN' ? 'Admin' : 'Chuyên viên KH&CN',
+                timestamp: new Date().toLocaleString('vi-VN'),
+                description: reason,
+                status: 'NEEDS_REVISION',
+              },
+            ],
+            auditLogs: [
+              ...(currentDossier.auditLogs || []),
+              {
+                id: `log-${Date.now()}`,
+                dossierId: currentDossier.id,
+                action: 'PRECHECK_REJECT',
+                actorId: currentUser.id,
+                actorName: currentUser.name,
+                actorRole: currentUser.role,
+                fromStatus: currentDossier.status,
+                toStatus: 'NEEDS_REVISION',
+                notes: reason,
+                createdAt: nowIso,
+              },
+            ],
+          };
+          setCurrentDossier(updatedLocal);
+          setIsReturnModalOpen(false);
+
           if (onAdminPrecheck) {
             await onAdminPrecheck(id, false, reason);
           } else if (onReturnDossier) {
@@ -633,7 +748,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
       />
 
       <ManagerEditDossierModal
-        dossier={dossier}
+        dossier={currentDossier}
         template={template}
         isOpen={isManagerEditModalOpen}
         onClose={() => setIsManagerEditModalOpen(false)}
@@ -641,7 +756,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
       />
 
       <UploadFacultySignedModal
-        dossier={dossier}
+        dossier={currentDossier}
         isOpen={isUploadFacultyModalOpen}
         onClose={() => setIsUploadFacultyModalOpen(false)}
         onUploadConfirm={async (id, pdfUrl, evidenceFiles) => {
@@ -652,7 +767,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
       />
 
       <CompleteDecisionModal
-        dossier={dossier}
+        dossier={currentDossier}
         isOpen={isCompleteModalOpen}
         onClose={() => setIsCompleteModalOpen(false)}
         onConfirmComplete={async (id, decisionNumber, decisionDate, finalPdfUrl) => {

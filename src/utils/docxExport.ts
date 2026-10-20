@@ -440,7 +440,7 @@ export function adaptWorkshopAssignment(assignments: any): any[] {
 }
 
 /**
- * Hậu xử lý DOM XML: Khóa phân trang bảng (<w:cantSplit/>) và bảo vệ bảng chữ ký (<w:keepLines/>, <w:keepNext/>)
+ * Hậu xử lý DOM XML: Khóa phân trang bảng (<w:cantSplit/>), bảo vệ bảng chữ ký và loại bỏ trang trắng cuối
  */
 export function applyPaginationAndSignatureProtection(zip: any): void {
   const xmlString = zip.file('word/document.xml').asText();
@@ -461,7 +461,7 @@ export function applyPaginationAndSignatureProtection(zip: any): void {
     }
   }
 
-  // 2. Chèn <w:keepLines/> và <w:keepNext/> vào <w:pPr> của các đoạn văn nằm trong bảng chữ ký cuối văn bản
+  // 2. Chèn <w:keepLines/> vào các đoạn văn nằm trong bảng chữ ký cuối văn bản
   const signatureKeywords = [
     'Trưởng đơn vị nhận',
     'Trưởng đơn vị giao',
@@ -491,10 +491,45 @@ export function applyPaginationAndSignatureProtection(zip: any): void {
         if (pPr.getElementsByTagName('w:keepLines').length === 0) {
           pPr.appendChild(domDoc.createElement('w:keepLines'));
         }
-        if (pPr.getElementsByTagName('w:keepNext').length === 0) {
-          pPr.appendChild(domDoc.createElement('w:keepNext'));
+      }
+    }
+  }
+
+  // 3. Xóa triệt để các đoạn văn trống cuối văn bản giữa bảng cuối cùng và <w:sectPr> để không bị thừa trang trắng
+  const body = domDoc.getElementsByTagName('w:body')[0];
+  if (body) {
+    const sectPr = body.getElementsByTagName('w:sectPr')[0];
+    if (sectPr) {
+      let prevNode = sectPr.previousSibling;
+      while (prevNode && prevNode.nodeName === 'w:p') {
+        const text = prevNode.textContent ? prevNode.textContent.trim() : '';
+        const nodeToRemove = prevNode;
+        prevNode = prevNode.previousSibling;
+        if (text === '') {
+          body.removeChild(nodeToRemove);
+        } else {
+          break;
         }
       }
+      // Chèn 1 paragraph kích thước siêu nhỏ 1pt trước sectPr để Word hợp lệ mà không tạo trang trắng
+      const zeroP = domDoc.createElement('w:p');
+      const pPr = domDoc.createElement('w:pPr');
+      const spacing = domDoc.createElement('w:spacing');
+      spacing.setAttribute('w:before', '0');
+      spacing.setAttribute('w:after', '0');
+      spacing.setAttribute('w:line', '20');
+      spacing.setAttribute('w:lineRule', 'exact');
+      pPr.appendChild(spacing);
+      const rPr = domDoc.createElement('w:rPr');
+      const sz = domDoc.createElement('w:sz');
+      sz.setAttribute('w:val', '2');
+      rPr.appendChild(sz);
+      const szCs = domDoc.createElement('w:szCs');
+      szCs.setAttribute('w:val', '2');
+      rPr.appendChild(szCs);
+      pPr.appendChild(rPr);
+      zeroP.appendChild(pPr);
+      body.insertBefore(zeroP, sectPr);
     }
   }
 
@@ -626,7 +661,7 @@ export async function generateAndDownloadDocx(rawDossier: Dossier, rawTemplate?:
 
   const outFileName = dossier.docxFileName || `${dossier.code}_${isMau1a ? 'Mau_1a_To_trinh' : 'Mau_2a_Ke_hoach'}.docx`;
 
-  // === CÁCH 1: NẠP VÀ MAPPING TRỰC TIẾP VÀO FILE MẪU CHUẨN GỐC ===
+  // === CÁCH 1: ƯU TIÊN NẠP VÀ MAPPING TRỰC TIẾP DỮ LIỆU MỚI NHẤT VÀO FILE MẪU CHUẨN GỐC ===
   try {
     const templateUrl = isMau1a ? '/templates/mau_1a_chuan.docx' : '/templates/mau_2a_chuan.docx';
     const resp = await fetch(templateUrl);
@@ -642,8 +677,12 @@ export async function generateAndDownloadDocx(rawDossier: Dossier, rawTemplate?:
       const renderData = buildDocxRenderData(dossier, isMau1a);
       doc.render(renderData);
 
-      // Khóa phân trang & bảo vệ bảng chữ ký
-      applyPaginationAndSignatureProtection(doc.getZip());
+      // Khóa phân trang & bảo vệ bảng chữ ký (an toàn)
+      try {
+        applyPaginationAndSignatureProtection(doc.getZip());
+      } catch (xmlErr) {
+        console.warn('[generateAndDownloadDocx] Bỏ qua hậu xử lý XML:', xmlErr);
+      }
 
       const blob = doc.getZip().generate({
         type: 'blob',
@@ -655,7 +694,23 @@ export async function generateAndDownloadDocx(rawDossier: Dossier, rawTemplate?:
       return;
     }
   } catch (templateError) {
-    console.warn('[generateAndDownloadDocx] Lỗi tải mẫu docx chuẩn, chuyển sang bộ sinh programmatic:', templateError);
+    console.warn('[generateAndDownloadDocx] Lỗi tải mẫu docx chuẩn, thử tải từ server:', templateError);
+  }
+
+  // === CÁCH 2: NẾU KHÔNG NẠP ĐƯỢC TEMPLATE TĨNH, TẢI TỪ FILE ĐÃ LƯU TRÊN MÁY CHỦ ===
+  if (dossier.docx_file_url) {
+    try {
+      const serverResp = await fetch(dossier.docx_file_url);
+      if (serverResp.ok) {
+        const serverBlob = await serverResp.blob();
+        if (serverBlob.size > 1000) {
+          saveAs(serverBlob, outFileName);
+          return;
+        }
+      }
+    } catch (fetchErr) {
+      console.warn('[generateAndDownloadDocx] Không tải được file docx từ server, chuyển sang bộ sinh programmatic:', fetchErr);
+    }
   }
 
   // === CÁCH 2: FALLBACK PROGRAMMATIC DOCX NẾU KHÔNG CÓ KẾT NỐI TẢI TEMPLATE ===
@@ -914,7 +969,195 @@ export async function generateAndDownloadDocx(rawDossier: Dossier, rawTemplate?:
       pSubHeading('9.5. Dự trù kinh phí hội thảo:'),
       pContent(d.workshop_budget || 'Từ nguồn kinh phí của Trường theo quy chế chi tiêu nội bộ.'),
       pHeading('X. Quản lý rủi ro trong chuyển giao'),
-      pContent(d.risk_management || 'Tuân thủ chặt chẽ quy định an toàn y sinh và sở hữu trí tuệ của Trường.')
+      pContent(d.risk_management || 'Tuân thủ chặt chẽ quy định an toàn y sinh và sở hữu trí tuệ của Trường.'),
+      new Paragraph({ text: '', spacing: { before: 200 } }),
+      // Khối 1: Trưởng đơn vị nhận & giao
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: {
+          top: { style: BorderStyle.NONE },
+          bottom: { style: BorderStyle.NONE },
+          left: { style: BorderStyle.NONE },
+          right: { style: BorderStyle.NONE },
+          insideHorizontal: { style: BorderStyle.NONE },
+          insideVertical: { style: BorderStyle.NONE },
+        },
+        rows: [
+          new TableRow({
+            children: [
+              new TableCell({
+                width: { size: 50, type: WidthType.PERCENTAGE },
+                children: [
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: 'TRƯỞNG ĐƠN VỊ NHẬN', font: 'Times New Roman', size: 24, bold: true })],
+                  }),
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: '(Ký, ghi rõ họ tên)', font: 'Times New Roman', size: 20, italics: true })],
+                  }),
+                  new Paragraph({ text: '', spacing: { before: 500 } }),
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: d.receiver_manager || d.truong_don_vi_nhan || '..................................', font: 'Times New Roman', size: 24, bold: true })],
+                  }),
+                ],
+              }),
+              new TableCell({
+                width: { size: 50, type: WidthType.PERCENTAGE },
+                children: [
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: 'TRƯỞNG ĐƠN VỊ GIAO / CHỦ NHIỆM ĐỀ TÀI', font: 'Times New Roman', size: 24, bold: true })],
+                  }),
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: '(Ký, ghi rõ họ tên)', font: 'Times New Roman', size: 20, italics: true })],
+                  }),
+                  new Paragraph({ text: '', spacing: { before: 500 } }),
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: d.full_name || dossier.createdBy.name, font: 'Times New Roman', size: 24, bold: true })],
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+      new Paragraph({ text: '', spacing: { before: 160 } }),
+      // Khối 2: 3 Phòng ban
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: {
+          top: { style: BorderStyle.NONE },
+          bottom: { style: BorderStyle.NONE },
+          left: { style: BorderStyle.NONE },
+          right: { style: BorderStyle.NONE },
+          insideHorizontal: { style: BorderStyle.NONE },
+          insideVertical: { style: BorderStyle.NONE },
+        },
+        rows: [
+          new TableRow({
+            children: [
+              new TableCell({
+                width: { size: 33, type: WidthType.PERCENTAGE },
+                children: [
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: 'PHÒNG KH&CN', font: 'Times New Roman', size: 22, bold: true })],
+                  }),
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: '(Ký duyệt)', font: 'Times New Roman', size: 20, italics: true })],
+                  }),
+                  new Paragraph({ text: '', spacing: { before: 400 } }),
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: '..................................', font: 'Times New Roman', size: 20 })],
+                  }),
+                ],
+              }),
+              new TableCell({
+                width: { size: 33, type: WidthType.PERCENTAGE },
+                children: [
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: 'PHÒNG TCKT', font: 'Times New Roman', size: 22, bold: true })],
+                  }),
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: '(Ký duyệt)', font: 'Times New Roman', size: 20, italics: true })],
+                  }),
+                  new Paragraph({ text: '', spacing: { before: 400 } }),
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: '..................................', font: 'Times New Roman', size: 20 })],
+                  }),
+                ],
+              }),
+              new TableCell({
+                width: { size: 34, type: WidthType.PERCENTAGE },
+                children: [
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: 'VĂN PHÒNG', font: 'Times New Roman', size: 22, bold: true })],
+                  }),
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: '(Ký duyệt)', font: 'Times New Roman', size: 20, italics: true })],
+                  }),
+                  new Paragraph({ text: '', spacing: { before: 400 } }),
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: '..................................', font: 'Times New Roman', size: 20 })],
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+      new Paragraph({ text: '', spacing: { before: 160 } }),
+      // Khối 3: Nơi nhận & Hiệu trưởng
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: {
+          top: { style: BorderStyle.NONE },
+          bottom: { style: BorderStyle.NONE },
+          left: { style: BorderStyle.NONE },
+          right: { style: BorderStyle.NONE },
+          insideHorizontal: { style: BorderStyle.NONE },
+          insideVertical: { style: BorderStyle.NONE },
+        },
+        rows: [
+          new TableRow({
+            children: [
+              new TableCell({
+                width: { size: 50, type: WidthType.PERCENTAGE },
+                children: [
+                  new Paragraph({
+                    children: [new TextRun({ text: 'Nơi nhận:', font: 'Times New Roman', size: 22, bold: true, italics: true })],
+                  }),
+                  new Paragraph({
+                    children: [new TextRun({ text: '- Ban Giám Hiệu (để b/c);', font: 'Times New Roman', size: 19 })],
+                  }),
+                  new Paragraph({
+                    children: [new TextRun({ text: `- ${d.receiving_party || 'Bệnh viện Trường ĐH Y Dược Cần Thơ'};`, font: 'Times New Roman', size: 19 })],
+                  }),
+                  new Paragraph({
+                    children: [new TextRun({ text: '- VP, TCKT;', font: 'Times New Roman', size: 19 })],
+                  }),
+                  new Paragraph({
+                    children: [new TextRun({ text: '- TTDV&ĐTTNCXH;', font: 'Times New Roman', size: 19 })],
+                  }),
+                  new Paragraph({
+                    children: [new TextRun({ text: '- Lưu: VT, KHCN.', font: 'Times New Roman', size: 19 })],
+                  }),
+                ],
+              }),
+              new TableCell({
+                width: { size: 50, type: WidthType.PERCENTAGE },
+                children: [
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: 'HIỆU TRƯỞNG', font: 'Times New Roman', size: 24, bold: true })],
+                  }),
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: '(Ký, đóng dấu)', font: 'Times New Roman', size: 20, italics: true })],
+                  }),
+                  new Paragraph({ text: '', spacing: { before: 500 } }),
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    children: [new TextRun({ text: '..................................', font: 'Times New Roman', size: 22 })],
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      })
     );
   } else {
     // Generic

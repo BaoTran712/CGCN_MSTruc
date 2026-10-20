@@ -32,8 +32,8 @@ export const userService = {
 
     const found = await userRepository.findByEmail(cleanEmail);
     if (found) {
-      // Đảm bảo đồng bộ phân quyền chính xác
-      const correctRole = isAdmin ? 'ADMIN' : 'USER';
+      // Đảm bảo tôn trọng phân quyền đã được Admin gán
+      const correctRole = isAdmin ? 'ADMIN' : (found.role || 'USER');
       let needsSave = false;
       if (found.role !== correctRole) {
         found.role = correctRole;
@@ -47,7 +47,7 @@ export const userService = {
         found.avatar = extraData.avatar;
         needsSave = true;
       }
-      if (isAdmin) {
+      if (isAdmin && !found.department) {
         found.title = 'Quản trị viên Hệ thống';
         found.department = 'Phòng Khoa học Công nghệ';
         needsSave = true;

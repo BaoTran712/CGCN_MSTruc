@@ -41,6 +41,8 @@ export type FieldType =
   | 'CHECKBOX'
   | 'RADIO'
   | 'FILE'
+  | 'TEL'
+  | 'EMAIL'
   // Lowercase aliases
   | 'text'
   | 'textarea'
@@ -49,7 +51,9 @@ export type FieldType =
   | 'select'
   | 'checkbox'
   | 'radio'
-  | 'file';
+  | 'file'
+  | 'tel'
+  | 'email';
 
 export interface User {
   id: string;
@@ -63,6 +67,7 @@ export interface User {
   role: UserRole;
   avatarUrl?: string;
   avatar?: string;
+  token?: string;
 }
 
 export type UserProfile = User;
@@ -145,6 +150,7 @@ export interface AuditLog {
   action: AuditAction;
   fromStatus?: DossierStatus;
   toStatus?: DossierStatus;
+  notes?: string;
   metadata?: Record<string, any>;
   createdAt: string;
 }
@@ -239,12 +245,13 @@ export interface Application {
   templateTitle: string;
   templateCode: string;
   createdBy: User;
-  assignedManager: {
+  assignedManager?: {
     name: string;
     email: string;
     department: string;
   };
   createdAt: string;
+  updatedAt?: string;
   submittedAt?: string;
   reviewedAt?: string;
   approvedAt?: string;
@@ -256,6 +263,7 @@ export interface Application {
   reviewNotes?: string;
   review_notes?: string;
   department_name?: string;
+  departmentName?: string;
   docx_file_url?: string;
   docxFileUrl?: string;
   precheck_pdf_url?: string;
@@ -265,12 +273,19 @@ export interface Application {
   final_pdf_url?: string;
   finalPdfUrl?: string;
   decision_number?: string;
+  decisionNumber?: string;
   decision_date?: string;
+  decisionDate?: string;
   has_financial_implication?: boolean;
+  hasFinancialImplication?: boolean;
   khcn_signed?: boolean;
+  khcnSigned?: boolean;
   khtc_signed?: boolean;
+  khtcSigned?: boolean;
   bgh_signed?: boolean;
+  bghSigned?: boolean;
   evidence_files?: Array<{ name: string; url: string; size?: string }>;
+  evidenceFiles?: Array<{ name: string; url: string; size?: string }>;
   drive_folder_url?: string;
   emailLogs?: any[];
   generatedDriveFileId?: string;
@@ -278,10 +293,10 @@ export interface Application {
   finalSignedDriveFileId?: string;
   versions?: DossierVersion[];
   auditLogs?: AuditLog[];
-  timeline: ApplicationHistory[];
+  timeline?: ApplicationHistory[];
   syncedToSheets?: boolean;
   syncedAt?: string;
-  docxFileName: string;
+  docxFileName?: string;
   generatedDocument?: GeneratedDocument;
 }
 
@@ -306,8 +321,12 @@ export type ActiveNavTab =
   | 'templates'
   | 'create_dossier'
   | 'my_dossiers'
+  | 'my_applications'
   | 'pending_approval'
   | 'secretary_queue'
   | 'history_sheets'
+  | 'template_management'
+  | 'departments'
+  | 'users'
   | 'settings';
 

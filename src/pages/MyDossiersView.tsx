@@ -14,6 +14,8 @@ import {
 import { Dossier, UserProfile, ActiveNavTab } from '../types';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { generateAndDownloadDocx } from '../utils/docxExport';
+import { normalizeStatus } from '../services/workflowEngine';
+import { isAdminUser } from '../constants';
 
 interface MyDossiersViewProps {
   dossiers: Dossier[];
@@ -33,8 +35,17 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  // Chế độ kiểm thử: hiển thị toàn bộ hồ sơ để dễ dàng tra cứu, chỉnh sửa và kiểm tra luồng
-  const userDossiers = Array.isArray(dossiers) ? dossiers : [];
+  const isAdmin = isAdminUser(currentUser);
+
+  // Admin xem tất cả, User chỉ xem hồ sơ của mình
+  const allDossiers = Array.isArray(dossiers) ? dossiers : [];
+  const userDossiers = isAdmin
+    ? allDossiers
+    : allDossiers.filter(
+        (d) =>
+          d.createdBy?.id === currentUser?.id ||
+          d.createdBy?.email === currentUser?.email
+      );
 
   const filtered = userDossiers.filter((d) => {
     const matchSearch =
@@ -140,8 +151,13 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {filtered.map((dossier) => {
+                const norm = normalizeStatus(dossier.status);
+                const isOwner =
+                  dossier.createdBy?.id === currentUser?.id ||
+                  dossier.createdBy?.email === currentUser?.email;
+                // Chỉ chủ hồ sơ mới được chỉnh sửa khi bản nháp hoặc cần sửa đổi
                 const canEdit =
-                  dossier.status === 'draft' || dossier.status === 'changes_requested';
+                  isOwner && (norm === 'DRAFT' || norm === 'NEEDS_REVISION');
 
                 return (
                   <tr key={dossier.id} className="hover:bg-slate-50/80 transition-colors">

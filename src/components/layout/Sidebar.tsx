@@ -8,9 +8,11 @@ import {
   TableProperties,
   LogOut,
   FileSignature,
+  Users,
   X,
 } from 'lucide-react';
 import { ActiveNavTab, User } from '../../types';
+import { isAdminUser } from '../../constants';
 
 interface SidebarProps {
   activeTab: ActiveNavTab;
@@ -20,7 +22,6 @@ interface SidebarProps {
   myDossierCount: number;
   mobileOpen: boolean;
   onCloseMobile: () => void;
-  onLogout?: () => void;
   onSignOut?: () => void;
 }
 
@@ -32,7 +33,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   myDossierCount,
   mobileOpen,
   onCloseMobile,
-  onLogout,
   onSignOut,
 }) => {
   interface NavItem {
@@ -48,30 +48,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
     items: NavItem[];
   }
 
-  const isAdmin =
-    currentUser?.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com' ||
-    currentUser?.role === 'ADMIN' ||
-    currentUser?.role === 'admin';
+  const isAdmin = isAdminUser(currentUser);
 
   const navSections: NavSection[] = [
     {
-      title: 'Tổng quan',
+      title: 'Chung',
       items: [
         {
           id: 'dashboard',
-          label: 'Tổng quan hệ thống',
+          label: isAdmin ? 'Tổng quan hệ thống' : 'Tổng quan hồ sơ',
           icon: LayoutDashboard,
-        },
-        {
-          id: 'create_dossier',
-          label: 'Tạo hồ sơ CGCN',
-          icon: FilePlus,
-        },
-        {
-          id: 'my_dossiers',
-          label: 'Hồ sơ của tôi',
-          icon: FolderOpen,
-          badge: myDossierCount > 0 ? myDossierCount : undefined,
         },
         {
           id: 'templates',
@@ -80,6 +66,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
       ],
     },
+    // --- Mục chỉ dành cho User (Thầy/Cô) ---
+    ...(!isAdmin
+      ? [
+          {
+            title: 'Cán bộ / Giảng viên (Thầy / Cô)',
+            items: [
+              {
+                id: 'create_dossier' as ActiveNavTab,
+                label: 'Tạo hồ sơ CGCN',
+                icon: FilePlus,
+              },
+              {
+                id: 'my_dossiers' as ActiveNavTab,
+                label: 'Hồ sơ của tôi',
+                icon: FolderOpen,
+                badge: myDossierCount > 0 ? myDossierCount : undefined,
+              },
+            ],
+          },
+        ]
+      : []),
+    // --- Mục chỉ dành cho Admin ---
     ...(isAdmin
       ? [
           {
@@ -101,6 +109,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 id: 'history_sheets' as ActiveNavTab,
                 label: 'Audit Trail & Báo cáo BGH',
                 icon: TableProperties,
+              },
+              {
+                id: 'users' as ActiveNavTab,
+                label: 'Quản lý & Phân quyền User',
+                icon: Users,
               },
             ],
           },
@@ -199,25 +212,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ))}
         </div>
 
-        {/* Footer with Reset & Logout */}
-        <div className="p-3.5 space-y-1.5">
-          {onLogout && (
-            <button
-              type="button"
-              onClick={onLogout}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-slate-700 hover:text-blue-900 bg-white hover:bg-blue-50/80 rounded-lg border border-blue-200/80 shadow-2xs transition-all cursor-pointer"
-            >
-              <LogOut className="w-4 h-4 text-blue-600" />
-              <span>Làm mới phiên kiểm thử</span>
-            </button>
-          )}
+        {/* Footer with Logout */}
+        <div className="p-3.5">
           {onSignOut && (
             <button
               type="button"
               onClick={onSignOut}
-              className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50/80 rounded-lg transition-colors cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-rose-700 bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-lg shadow-2xs transition-colors cursor-pointer"
             >
-              <LogOut className="w-3.5 h-3.5" />
+              <LogOut className="w-3.5 h-3.5 text-rose-600" />
               <span>Đăng xuất</span>
             </button>
           )}

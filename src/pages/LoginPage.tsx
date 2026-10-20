@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import * as api from '../services/api';
 import { AlertCircle, Loader2 } from 'lucide-react';
+import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER } from '../constants';
 import logoUrl from '../assets/logo.png';
 
 declare global {
@@ -231,10 +232,65 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             )}
           </div>
 
+          {/* Divider */}
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-200" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-white px-2.5 text-slate-500 font-medium">Hoặc đăng nhập nhanh theo vai trò</span>
+            </div>
+          </div>
+
+          {/* Quick Role-based Login Buttons */}
+          <div className="space-y-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                onLoginSuccess(DEFAULT_CANBO_USER);
+              }}
+              className="w-full py-2.5 px-4 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-blue-900 text-xs font-semibold flex items-center justify-between transition-colors shadow-2xs cursor-pointer group"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
+                  👨‍🏫
+                </span>
+                <div className="text-left">
+                  <div className="font-bold text-slate-900">Thầy / Cô (Cán bộ - Giảng viên)</div>
+                  <div className="text-[11px] text-blue-700/90 font-normal">Quyền: Lập hồ sơ, xem hồ sơ cá nhân, ký Khoa & gửi thẩm định</div>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-blue-700 group-hover:translate-x-0.5 transition-transform shrink-0">
+                Vào ngay →
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onLoginSuccess(DEFAULT_DEV_USER);
+              }}
+              className="w-full py-2.5 px-4 rounded-xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 text-xs font-semibold flex items-center justify-between transition-colors shadow-2xs cursor-pointer group"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
+                  🛡️
+                </span>
+                <div className="text-left">
+                  <div className="font-bold text-slate-900">Quản trị viên (Admin - Phòng KH&CN)</div>
+                  <div className="text-[11px] text-emerald-700/90 font-normal">Quyền: Tiền kiểm hồ sơ, duyệt thể thức, điều phối ký số cấp Trường</div>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-emerald-700 group-hover:translate-x-0.5 transition-transform shrink-0">
+                Vào ngay →
+              </span>
+            </button>
+          </div>
+
           {/* Security Note */}
           <div className="pt-2 border-t border-slate-100 text-center">
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              Xác thực an toàn qua Google Identity Services (OAuth 2.0).
+              Hệ thống phân quyền độc lập theo 2 vai trò: Quản trị viên (Admin - Phòng KH&CN) & Cán bộ / Giảng viên (Thầy / Cô).
             </p>
           </div>
         </div>
