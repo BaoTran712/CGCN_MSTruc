@@ -1,0 +1,103 @@
+SYSTEM ROLE & OBJECTIVE
+Act as a Principal Document Engineering Architect and OpenXML Specialist. The objective is to refactor and fix the Web-Form-to-Word export module in this codebase so that exported Word documents (.docx) preserve 100% of the original template's page dimensions, margins, fonts, paragraph alignments, line spacings, table column widths, and signature blocks without any layout distortion, extra blank lines, or formatting corruption.
+CONTEXT & ROOT CAUSE DIAGNOSIS OF THE TEMPLATES
+The system maps web form data into Vietnamese administrative Word templates (specifically "Mẫu 1a-TT.CGCN- Tờ trình CG Tri thức.doc" and "Mẫu 2a-KH.CGCN -Ke hoach CGCN - Trong trường.docx" of Can Tho University of Medicine and Pharmacy). Forensic analysis of the templates reveals the exact root causes of the current export failures:
+
+Binary/Hybrid Format Conflict in Mẫu 1a: "Mẫu 1a-TT.CGCN- Tờ trình CG Tri thức.doc" is a legacy binary OLE2 Word 97-2003 document (MSWordDoc / Word.Document.8) edited with Kingsoft WPS Office (KSOProductBuildVer 1033-11.2.0.9396) containing embedded OpenXML theme fragments. Feeding a .doc file into an OpenXML engine or using lossy HTML/LibreOffice conversions destroys original margins and table layouts.
+
+Uncontrolled Table Autofit & HTML/Code Table Reconstruction: Dynamically rebuilding tables in code or failing to lock <w:tblLayout w:type="fixed"/> causes Word to trigger its "autofit" algorithm. In wide tables like Section 10.1 (6 columns: Stt, Công việc/Yếu tố rủi ro, P, S, R=PxS, Phân loại rủi ro) and Section 10.2 (7 columns: Stt, Yếu tố rủi ro, Biện pháp kiểm soát, Đơn vị phụ trách, Đơn vị phối hợp, Thời gian, Sản phẩm), long text crushes narrow columns and distorts table widths.
+
+Asymmetric Colspan Anomaly in Sections 9.1 & 9.2: In "Mẫu 2a-KH.CGCN", tables 9.1 (Chủ tọa) and 9.2 (Báo cáo viên) have <td colspan=2/> (<w:gridSpan w:val="2"/>) on column 1 in rows 1-2, but on column 2 in row 3 ( | <td colspan=2/>). Cloning rows without removing the mismatched row 3 corrupts <w:tblGrid> column alignment.
+
+Pre-allocated Blank Rows vs. Protected Signature Rows: Tables 8.1-8.3, 9.3 (5 blank rows), 9.4 (3 blank rows), 10.1 (4 blank rows), and 10.2 (3 blank rows) contain pre-drawn empty rows for manual typing. If not cleaned down to a single template loop row, they produce trailing blank rows. Conversely, the two signature tables at the bottom ("Trưởng đơn vị nhận / Trưởng đơn vị giao" and "Phòng KH&CN / Phòng TCKT / Văn Phòng") each have 4 blank rows that MUST BE PRESERVED for physical signatures and stamps.
+Conditional Block Gaps & Hardcoded Dots: Section IX ("IX. Hội thảo chuyển giao") is optional ("nếu không bỏ phần IX này"). Inline conditionals leave empty <w:p> paragraphs and blank gaps when Section IX is omitted. Additionally, hardcoded ellipsis/dots (…………) in 6.1 and 6.2 and multiple spaces in Số:           /KH- Khoa/Đơn vị cause text wrapping and misalignment if not properly replaced.
+MANDATORY EXECUTION PLAN FOR THE AGENT
+Step 1: Codebase Audit & Architecture Enforcement
+Locate all files responsible for receiving Web Form payloads, loading Word templates, mapping variables, and returning the generated Word file.
+
+Identify the current backend language and Word processing library (e.g., Node.js docxtemplater/docx, Python python-docx/docxtpl, PHP PHPWord, C# OpenXML SDK/DocxTemplater).
+
+REMOVE any logic that generates Word documents by converting HTML/CSS/Markdown to .docx, or that programmatically creates paragraphs and tables from scratch (e.g., add_table, HTMLModule, or custom table width arrays in pixels/percentages).
+
+Enforce the "Zero-Mutation Template Cloning" architecture: The original .docx template file must act as the immutable source of truth for all <w:sectPr> (page setup/margins), <w:tblPr>, <w:tblGrid>, <w:trPr>, <w:tcPr>, <w:pPr>, and <w:rPr> nodes.
+
+Step 2: Automated Template Sanitization & Normalization Script
+Write and execute a utility script in the project to normalize and verify the template files before they are used by the export module:
+
+Convert Legacy .doc to Strict .docx: If any template is still in .doc binary format (like Mẫu 1a-TT.CGCN- Tờ trình CG Tri thức.doc), convert it once into a strict ECMA-376 .docx archive while preserving exact A4 page dimensions and margins, or alert the developer if binary .doc is loaded at runtime.
+
+Heal Split XML Runs (Run Merging): Parse word/document.xml in the .docx templates, remove <w:proofErr> tags, and merge adjacent <w:r> elements that share identical <w:rPr> formatting whenever they split template tags (such as {...}, {{...}}, or ${...}).
+
+Fix Table Template Rows in Mẫu 2a-KH.CGCN:
+
+In tables 9.1 and 9.2, remove the asymmetric 3rd row ( | <td colspan=2/>) and keep exactly 1 clean template row for row looping where <w:gridSpan> sums match <w:tblGrid>.
+
+In data tables 8.1, 8.2, 8.3, 9.3, 9.4, 10.1, and 10.2, remove the extra pre-allocated blank rows so only the header row and 1 template loop row remain.
+
+DO NOT remove the 4 blank spacing rows inside the bottom signature tables ("Trưởng đơn vị nhận / Trưởng đơn vị giao" and "Phòng KH&CN / Phòng TCKT / Văn Phòng").
+
+Strip hardcoded instructional text in parentheses (e.g., (giới thiệu đôi nét về SPCGCN)) and hardcoded ellipsis (…………) in sections 6.1 and 6.2, replacing them cleanly with template placeholders.
+
+Step 3: Refactor the Data Pre-Processor & Template Engine Configuration
+Payload Sanitization Layer:
+Recursively sanitize the incoming Web Form JSON payload before passing it to the template engine: convert all null or undefined values to "" (empty string).
+
+Normalize all line breaks (\r\n or \r) to \n and strip accidental HTML tags if the frontend form sends rich text strings, unless explicitly mapped to native Word runs.
+
+For Số: {so_hieu}/KH-{ten_don_vi}, if so_hieu is empty, default to "      " (6 spaces) so manual numbering space is preserved without breaking the header table alignment.
+
+For dynamic table arrays (Sections 8.1–8.3, 9.1–9.4, 10.1, 10.2): auto-inject sequential stt (1, 2, 3...). In Section 10.1, automatically calculate r = Number(p) * Number(s) if p and s are provided.
+
+Empty Table Safeguard: In OpenXML, a <w:tbl> with zero <w:tr> rows is invalid and corrupts the document. If a visible table receives an empty array [] from the web form, inject a single fallback blank object [{ stt: "", ... }] so the table renders exactly 1 empty formatted row with original column widths intact.
+
+Engine Configuration:
+
+If Node.js (docxtemplater):javascript
+const doc = new Docxtemplater(zip, {
+paragraphLoop: true,
+linebreaks: true,
+nullGetter() {
+return "";
+},
+});
+
+If Python (docxtpl):
+Use {%p if co_hoi_thao %}...{%p endif %} for block conditionals (Section IX) and {%tr for row in rows %}...{%tr endfor %} for table row loops. Ensure single spaces after opening delimiters ({%p ) and before closing delimiters ( %}). Wrap multi-line strings safely so <w:pPr> is preserved.
+
+If PHP (PHPWord) or C# (OpenXML SDK):
+Clone <w:tr> nodes directly for table rows and remove the entire DOM range of Section IX when co_hoi_thao == false without leaving empty <w:p> nodes behind.
+
+Step 4: Implement the OpenXML Post-Processing Dimension Lock (Critical Step)
+Immediately after the template engine renders word/document.xml (and before zipping and returning the final .docx buffer), run a deterministic XML DOM post-processing pass on word/document.xml to guarantee zero layout shift:
+
+Lock All Table Widths & Column Grids:
+
+For every <w:tbl> element in word/document.xml, ensure <w:tblPr> exists and contains <w:tblLayout w:type="fixed"/> (overwrite if set to autofit).
+
+Verify that <w:tblGrid> and <w:gridCol w:w="..."/> values remain 100% identical to the original template's dxa measurements.
+
+Ensure every <w:tcPr> retains its original <w:tcW w:w="..." w:type="dxa"/> from the template row.
+
+Enforce Flexible Row Heights & Prevent Row Splitting:
+
+For every <w:tr> in data tables, ensure <w:trPr> contains <w:cantSplit/>.
+
+If <w:trHeight> is present in any data table row, set w:hRule="atLeast" (never "exact", which clips multi-line text).
+
+Protect Signature Blocks from Page Breaks:
+
+Locate the bottom signature tables containing "Trưởng đơn vị nhận", "Phòng KH&CN", and "HIỆU TRƯỞNG".
+Inject <w:cantSplit/> into every <w:trPr> and <w:keepNext/> into the <w:pPr> of the rows in these signature tables (except the very last row of the document) so the signature titles and their 4 blank signing rows never split across a page break.
+
+Step 5: Automated Verification & Regression Test
+Create and run an automated verification script that generates a sample output .docx with both full data (including multi-line text in 10.1/10.2) and partial data (with Section IX disabled co_hoi_thao = false), then parses the output XML to assert:
+
+<w:sectPr> (page size <w:pgSz> and margins <w:pgMar>) in the output .docx matches the template .docx byte-for-byte.
+
+Every <w:tbl> has <w:tblLayout w:type="fixed"/> and its <w:tblGrid> column count matches the sum of <w:gridSpan> in every <w:tr>.
+
+Zero occurrences of the literal text "undefined" or "null" exist in any <w:t> node.
+
+No unrendered template tags ({, }, {%, %}) remain in the output text.
+
+The 8 blank signature rows at the bottom of the document remain intact
