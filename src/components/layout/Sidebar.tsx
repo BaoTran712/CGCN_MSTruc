@@ -66,9 +66,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
       ],
     },
-    // --- Mục chỉ dành cho User (Thầy/Cô) ---
-    ...(!isAdmin
-      ? [
+    // --- Mục Hồ sơ cá nhân (Dành cho Cán bộ & Admin đều có thể tạo/xem hồ sơ) ---
+    ...([
           {
             title: 'Cán bộ / Giảng viên (Thầy / Cô)',
             items: [
@@ -85,8 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               },
             ],
           },
-        ]
-      : []),
+        ]),
     // --- Mục chỉ dành cho Admin ---
     ...(isAdmin
       ? [

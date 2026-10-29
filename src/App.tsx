@@ -66,10 +66,7 @@ function AppContent() {
     if (!isAdmin && ['pending_approval', 'secretary_queue', 'history_sheets', 'users'].includes(activeTab)) {
       setActiveTab('my_dossiers');
     }
-    // Admin không nên truy cập tab tạo hồ sơ / hồ sơ của tôi
-    if (isAdmin && ['create_dossier', 'my_dossiers'].includes(activeTab)) {
-      setActiveTab('pending_approval');
-    }
+    // Admin có toàn quyền truy cập tất cả các tab
   }, [currentUser, isAdmin, activeTab]);
 
   // If user is not authenticated, show Login page

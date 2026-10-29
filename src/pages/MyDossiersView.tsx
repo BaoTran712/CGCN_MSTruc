@@ -4,16 +4,12 @@ import {
   Filter,
   Eye,
   Edit,
-  Download,
-  Printer,
   FileText,
   AlertCircle,
   Plus,
-  ArrowRight,
 } from 'lucide-react';
 import { Dossier, UserProfile, ActiveNavTab } from '../types';
 import { StatusBadge } from '../components/common/StatusBadge';
-import { generateAndDownloadDocx } from '../utils/docxExport';
 import { normalizeStatus } from '../services/workflowEngine';
 import { isAdminUser } from '../constants';
 
@@ -51,43 +47,41 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
     const matchSearch =
       (d.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (d.templateTitle || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (d.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (d.templateCode || '').toLowerCase().includes(searchQuery.toLowerCase());
 
-    const st = (d.status || '').toUpperCase();
+    const st = normalizeStatus(d.status);
     if (statusFilter === 'all') return matchSearch;
     if (statusFilter === 'draft') return matchSearch && st === 'DRAFT';
     if (statusFilter === 'processing')
-      return matchSearch && ['NEW', 'SUBMITTED', 'UNDER_REVIEW', 'RESUBMITTED'].includes(st);
+      return matchSearch && st === 'NEW';
     if (statusFilter === 'changes')
-      return matchSearch && (st === 'NEEDS_REVISION' || st === 'CHANGES_REQUESTED' || st === 'RETURNED');
-    if (statusFilter === 'approved')
-      return matchSearch && ['PRECHECK_PASSED', 'FACULTY_SIGNED', 'SCHOOL_SIGNING', 'APPROVED', 'FOR_SIGNATURE', 'USER_SIGNED', 'SECRETARY_RECEIVED', 'COMPLETED'].includes(st);
+      return matchSearch && st === 'NEEDS_REVISION';
+    if (statusFilter === 'signing')
+      return matchSearch && (st === 'PRECHECK_PASSED' || st === 'FACULTY_SIGNED' || st === 'SCHOOL_SIGNING');
+    if (statusFilter === 'completed')
+      return matchSearch && st === 'COMPLETED';
 
     return matchSearch;
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-200">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[11px] font-semibold text-blue-900 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
-              CỔNG QUẢN LÝ HỒ SƠ
-            </span>
-          </div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
             Hồ sơ của tôi
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Theo dõi tiến độ thẩm định, xem phản hồi yêu cầu chỉnh sửa và tải file Word đã phê duyệt
+            Theo dõi tiến trình thẩm định, nhận xét của Phòng KH&CN và tiến độ ký số liên cấp
           </p>
         </div>
 
         <button
           type="button"
           onClick={() => onNavigate('create_dossier')}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-md shadow-2xs transition-colors cursor-pointer self-start sm:self-auto"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-lg shadow-2xs transition-colors cursor-pointer self-start sm:self-auto"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>Tạo hồ sơ mới</span>
@@ -95,7 +89,7 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs space-y-3">
+      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-3">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="relative w-full sm:w-80">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -103,27 +97,28 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm theo mã hồ sơ, tên biểu mẫu..."
-              className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-600 focus:border-blue-600 text-slate-900"
+              placeholder="Tìm theo mã hồ sơ, tên đề tài..."
+              className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-600 focus:border-blue-600 text-slate-900"
             />
           </div>
 
-          {/* Status Tabs */}
-          <div className="flex items-center gap-1 overflow-x-auto w-full sm:w-auto p-1 bg-slate-100 rounded-md text-xs">
+          {/* Status Tabs Tinh gọn */}
+          <div className="flex items-center gap-1 overflow-x-auto w-full sm:w-auto p-1 bg-slate-100 rounded-lg text-xs">
             {[
               { id: 'all', label: 'Tất cả' },
               { id: 'draft', label: 'Bản nháp' },
-              { id: 'processing', label: 'Đang xử lý' },
-              { id: 'changes', label: 'Cần sửa' },
-              { id: 'approved', label: 'Đã duyệt / Trình ký' },
+              { id: 'processing', label: 'Chờ tiền kiểm' },
+              { id: 'changes', label: 'Cần sửa đổi' },
+              { id: 'signing', label: 'Đang trình ký' },
+              { id: 'completed', label: 'Đã hoàn tất' },
             ].map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setStatusFilter(tab.id)}
-                className={`px-3 py-1 rounded text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                className={`px-3 py-1 rounded-md text-xs font-medium whitespace-nowrap transition-colors cursor-pointer ${
                   statusFilter === tab.id
-                    ? 'bg-white text-slate-900 font-semibold shadow-2xs'
+                    ? 'bg-white text-slate-900 font-bold shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -134,18 +129,16 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
         </div>
       </div>
 
-      {/* Applications Table */}
-      <div className="bg-white rounded-lg border border-slate-200 shadow-2xs overflow-hidden">
+      {/* Applications Table Tinh gọn 5 cột */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[11px]">
+            <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[11px]">
               <tr>
                 <th className="py-3 px-4">Mã hồ sơ</th>
-                <th className="py-3 px-4">Tên biểu mẫu</th>
-                <th className="py-3 px-4">Ngày tạo</th>
-                <th className="py-3 px-4">Ngày gửi</th>
-                <th className="py-3 px-4">Trạng thái</th>
-                <th className="py-3 px-4">Người xử lý</th>
+                <th className="py-3 px-4">Biểu mẫu & Nội dung</th>
+                <th className="py-3 px-4">Ngày nộp</th>
+                <th className="py-3 px-4">Trạng thái thẩm định</th>
                 <th className="py-3 px-4 text-right">Thao tác</th>
               </tr>
             </thead>
@@ -155,87 +148,82 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
                 const isOwner =
                   dossier.createdBy?.id === currentUser?.id ||
                   dossier.createdBy?.email === currentUser?.email;
-                // Chỉ chủ hồ sơ mới được chỉnh sửa khi bản nháp hoặc cần sửa đổi
                 const canEdit =
-                  isOwner && (norm === 'DRAFT' || norm === 'NEEDS_REVISION');
+                  norm === 'DRAFT' || norm === 'NEEDS_REVISION' || isOwner;
 
                 return (
                   <tr key={dossier.id} className="hover:bg-slate-50/80 transition-colors">
                     {/* Code */}
-                    <td className="py-3.5 px-4 font-mono font-bold text-blue-700 whitespace-nowrap">
+                    <td className="py-3 px-4 font-mono font-bold text-blue-700 whitespace-nowrap">
                       {dossier.code}
                     </td>
 
-                    {/* Template */}
-                    <td className="py-3.5 px-4 font-medium text-slate-900 max-w-[240px]">
-                      <div className="truncate">{dossier.templateTitle}</div>
-                      <div className="text-[11px] text-slate-400 font-mono">{dossier.templateCode}</div>
-                    </td>
-
-                    {/* Created Date */}
-                    <td className="py-3.5 px-4 font-mono text-[11px] text-slate-500 whitespace-nowrap">
-                      {new Date(dossier.createdAt).toLocaleDateString('vi-VN')}
+                    {/* Template & Title */}
+                    <td className="py-3 px-4 max-w-[320px]">
+                      <div className="font-semibold text-slate-900 truncate">
+                        {dossier.title || dossier.templateTitle}
+                      </div>
+                      <div className="text-[11px] text-slate-400 font-mono truncate mt-0.5">
+                        {dossier.templateTitle} ({dossier.templateCode})
+                      </div>
                     </td>
 
                     {/* Submitted Date */}
-                    <td className="py-3.5 px-4 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                    <td className="py-3 px-4 font-mono text-[11px] text-slate-500 whitespace-nowrap">
                       {dossier.submittedAt ? (
                         new Date(dossier.submittedAt).toLocaleDateString('vi-VN')
                       ) : (
-                        <span className="text-slate-400 italic">Chưa gửi</span>
+                        <span className="text-slate-400 italic">Bản nháp</span>
                       )}
                     </td>
 
                     {/* Status badge */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
+                    <td className="py-3 px-4 whitespace-nowrap">
                       <div className="space-y-1">
                         <StatusBadge status={dossier.status} />
-                        {dossier.status === 'changes_requested' && (
+                        {norm === 'NEEDS_REVISION' && (
                           <div className="flex items-center gap-1 text-[11px] text-rose-600 font-semibold">
                             <AlertCircle className="w-3 h-3" />
-                            <span>Cần sửa</span>
+                            <span>Có yêu cầu sửa</span>
                           </div>
                         )}
                       </div>
                     </td>
 
-                    {/* Reviewer */}
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      <div className="text-slate-800 font-medium">{dossier.assignedManager?.name || 'Phòng KH&CN'}</div>
-                      <div className="text-[11px] text-slate-400">{dossier.assignedManager?.department || 'Trường ĐH Y Dược Cần Thơ'}</div>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                    {/* Actions Tinh gọn */}
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
                       <div className="inline-flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => onSelectDossier(dossier)}
-                          className="px-2.5 py-1 text-slate-700 hover:text-blue-700 hover:bg-blue-50 border border-slate-200 rounded transition-colors"
-                          title="Xem chi tiết & Tiến trình"
+                          className="inline-flex items-center gap-1 px-3 py-1 text-slate-700 hover:text-blue-700 hover:bg-blue-50 border border-slate-200 rounded-lg font-medium transition-colors cursor-pointer"
+                          title="Xem chi tiết văn bản & tiến trình"
                         >
-                          Xem
+                          <Eye className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Chi tiết</span>
                         </button>
 
-                        {canEdit && (
+                        {norm === 'NEEDS_REVISION' ? (
                           <button
                             type="button"
                             onClick={() => onEditDraft(dossier)}
-                            className="px-2.5 py-1 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded font-medium transition-colors"
-                            title="Chỉnh sửa bản nháp / Sửa theo yêu cầu"
+                            className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                            title="Mở form chỉnh sửa hồ sơ bị trả về"
                           >
-                            Sửa
+                            <Edit className="w-3.5 h-3.5" />
+                            <span>Sửa ngay</span>
                           </button>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => generateAndDownloadDocx(dossier)}
-                          className="p-1.5 text-slate-600 hover:text-emerald-700 hover:bg-emerald-50 rounded transition-colors"
-                          title="Tải file Word .docx"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </button>
+                        ) : canEdit && norm === 'DRAFT' ? (
+                          <button
+                            type="button"
+                            onClick={() => onEditDraft(dossier)}
+                            className="inline-flex items-center gap-1 px-3 py-1 text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg font-medium transition-colors cursor-pointer"
+                            title="Mở form chỉnh sửa bản nháp"
+                          >
+                            <Edit className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Sửa</span>
+                          </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>

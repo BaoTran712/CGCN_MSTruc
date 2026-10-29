@@ -28,7 +28,20 @@ DROP TABLE IF EXISTS `departments`;
 DROP TABLE IF EXISTS `users`;
 SET FOREIGN_KEY_CHECKS = 1;
 
--- 2.1. Bảng Người dùng / Cán bộ / Admin (users)
+-- 2.1. Bảng Danh mục Đơn vị / Khoa / Phòng ban (departments)
+CREATE TABLE `departments` (
+  `id` VARCHAR(50) NOT NULL,
+  `code` VARCHAR(50) NOT NULL COMMENT 'Mã đơn vị: khoa_y, khoa_duoc, khcn...',
+  `name` VARCHAR(150) NOT NULL COMMENT 'Tên đơn vị đầy đủ',
+  `dean_name` VARCHAR(150) NULL COMMENT 'Trưởng đơn vị',
+  `email` VARCHAR(150) NULL,
+  `phone` VARCHAR(50) NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_dept_code` (`code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Danh mục Đơn vị / Khoa / Phòng ban CTUMP';
+
+-- 2.2. Bảng Người dùng / Cán bộ / Admin (users)
 CREATE TABLE `users` (
   `id` VARCHAR(50) NOT NULL,
   `email` VARCHAR(150) NOT NULL,
@@ -70,6 +83,7 @@ CREATE TABLE `dossiers` (
   `template_id` VARCHAR(50) NOT NULL COMMENT 'Loại biểu mẫu CGCN',
   `department_name` VARCHAR(150) NULL,
   `status` ENUM(
+    'DRAFT',           -- Bản nháp đang soạn thảo
     'NEW',             -- Bước 1-2: Mới nộp, chờ Admin tiền kiểm
     'NEEDS_REVISION',  -- Bước 2: Admin yêu cầu sửa đổi/chưa duyệt
     'PRECHECK_PASSED', -- Bước 2-4: Admin duyệt hợp lệ, hệ thống xuất PDF chuẩn
@@ -92,7 +106,7 @@ CREATE TABLE `dossiers` (
   `bgh_signed` TINYINT(1) DEFAULT 0 COMMENT '1: Hiệu trưởng (BGH) đã ký',
   `review_notes` TEXT NULL COMMENT 'Nhận xét chi tiết của Admin tiền kiểm',
   `drive_folder_url` VARCHAR(500) DEFAULT 'https://drive.google.com/drive/folders/1UZfnO_hY9LshjsaHH6btODtWgii0Vv8-?usp=drive_link',
-  `submitted_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `submitted_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   `reviewed_at` TIMESTAMP NULL,
   `completed_at` TIMESTAMP NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -102,6 +116,8 @@ CREATE TABLE `dossiers` (
   KEY `fk_dossier_user` (`user_id`),
   KEY `fk_dossier_tmpl` (`template_id`),
   KEY `idx_dossier_status` (`status`),
+  KEY `idx_dossier_user_status` (`user_id`, `status`),
+  KEY `idx_dossier_created` (`created_at`),
   CONSTRAINT `fk_dossier_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT,
   CONSTRAINT `fk_dossier_tmpl` FOREIGN KEY (`template_id`) REFERENCES `document_templates` (`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Hồ sơ Chuyển giao công nghệ';
@@ -121,84 +137,41 @@ CREATE TABLE `dossier_versions` (
   CONSTRAINT `fk_ver_dossier` FOREIGN KEY (`dossier_id`) REFERENCES `dossiers` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Lịch sử phiên bản chỉnh sửa hồ sơ';
 
--- 2.6. Bảng Dự án / Hồ sơ Chuyển giao công nghệ (transfer_projects)
-CREATE TABLE `transfer_projects` (
-  `id` VARCHAR(50) NOT NULL,
-  `code` VARCHAR(50) NOT NULL COMMENT 'Mã định danh tra cứu: CGCN-YYYY-XXXX',
-  `title` VARCHAR(255) NOT NULL,
-  `user_id` VARCHAR(50) NOT NULL COMMENT 'Cán bộ khởi tạo hồ sơ',
-  `template_id` VARCHAR(50) DEFAULT '1a-TT.CGCN' COMMENT 'Loại biểu mẫu áp dụng',
-  `department_name` VARCHAR(150) NULL,
-  `status` ENUM(
-    'DRAFT',
-    'NEW',
-    'NEEDS_REVISION',
-    'PRECHECK_PASSED',
-    'FACULTY_SIGNED',
-    'SCHOOL_SIGNING',
-    'COMPLETED',
-    'CANCELLED'
-  ) NOT NULL DEFAULT 'NEW',
-  `form_data` JSON NULL COMMENT 'Dữ liệu nhập từ Web Form',
-  `docx_file_url` VARCHAR(255) NULL COMMENT 'Đường dẫn file Word bản thảo đã mapping',
-  `precheck_pdf_url` VARCHAR(255) NULL COMMENT 'Đường dẫn file PDF đã khóa layout',
-  `dean_signed_pdf_url` VARCHAR(255) NULL COMMENT 'Đường dẫn file PDF đã có chữ ký số Trưởng khoa',
-  `final_pdf_url` VARCHAR(255) NULL COMMENT 'Đường dẫn file PDF có chữ ký số Ban Giám hiệu',
-  `has_financial_implication` TINYINT(1) DEFAULT 0,
-  `khcn_signed` TINYINT(1) DEFAULT 0,
-  `khtc_signed` TINYINT(1) DEFAULT 0,
-  `bgh_signed` TINYINT(1) DEFAULT 0,
-  `decision_number` VARCHAR(100) NULL,
-  `decision_date` VARCHAR(50) NULL,
-  `review_notes` TEXT NULL,
-  `submitted_at` TIMESTAMP NULL,
-  `reviewed_at` TIMESTAMP NULL,
-  `completed_at` TIMESTAMP NULL,
-  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_project_code` (`code`),
-  KEY `idx_project_user` (`user_id`),
-  KEY `idx_project_status` (`status`),
-  CONSTRAINT `fk_project_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Hồ sơ dự án chuyển giao công nghệ';
-
--- 2.7. Bảng Tệp đính kèm & Minh chứng (attachments)
+-- 2.6. Bảng Tệp đính kèm & Minh chứng (attachments)
 CREATE TABLE `attachments` (
   `id` VARCHAR(50) NOT NULL,
-  `project_id` VARCHAR(50) NOT NULL,
+  `dossier_id` VARCHAR(50) NOT NULL COMMENT 'Mã hồ sơ CGCN',
   `file_name` VARCHAR(255) NOT NULL,
   `file_path` VARCHAR(255) NOT NULL,
   `file_url` VARCHAR(255) NOT NULL,
-  `file_type` VARCHAR(50) NOT NULL DEFAULT 'evidence' COMMENT 'dean_signed_pdf, evidence, docx, final_pdf',
+  `file_type` VARCHAR(50) NOT NULL DEFAULT 'evidence' COMMENT 'faculty_signed_pdf, evidence, docx, final_pdf',
   `file_size` VARCHAR(50) NULL,
   `uploaded_by` VARCHAR(50) NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `idx_attach_project` (`project_id`),
-  CONSTRAINT `fk_attach_project` FOREIGN KEY (`project_id`) REFERENCES `transfer_projects` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tệp đính kèm và tài liệu minh chứng của dự án';
+  KEY `idx_attach_dossier` (`dossier_id`),
+  CONSTRAINT `fk_attach_dossier` FOREIGN KEY (`dossier_id`) REFERENCES `dossiers` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Tệp đính kèm và tài liệu minh chứng của hồ sơ';
 
--- 2.8. Bảng Nhật ký xử lý & Lưu vết lịch sử (audit_logs) - Audit Trail
+-- 2.7. Bảng Nhật ký xử lý & Lưu vết lịch sử (audit_logs) - Audit Trail
 CREATE TABLE `audit_logs` (
   `id` VARCHAR(50) NOT NULL,
-  `project_id` VARCHAR(50) NULL COMMENT 'Mã dự án chuyển giao công nghệ',
-  `dossier_id` VARCHAR(50) NULL COMMENT 'Mã hồ sơ (tương thích ngược)',
+  `dossier_id` VARCHAR(50) NOT NULL COMMENT 'Mã hồ sơ CGCN',
   `actor_id` VARCHAR(50) NOT NULL,
   `actor_name` VARCHAR(150) NOT NULL,
   `actor_role` VARCHAR(50) NOT NULL,
-  `action` VARCHAR(50) NOT NULL COMMENT 'CREATE, SUBMIT, PRECHECK_REJECT, PRECHECK_APPROVE, UPLOAD_FACULTY_SIGN, SCHOOL_SIGN, COMPLETE',
+  `action` VARCHAR(50) NOT NULL COMMENT 'CREATE, SAVE_DRAFT, SUBMIT, PRECHECK_REJECT, PRECHECK_APPROVE, UPLOAD_FACULTY_SIGN, SCHOOL_SIGN, COMPLETE',
   `from_status` VARCHAR(50) NULL,
   `to_status` VARCHAR(50) NULL,
   `notes` TEXT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `fk_audit_dossier` (`dossier_id`),
-  KEY `idx_audit_project` (`project_id`),
-  KEY `idx_audit_created` (`created_at`)
+  KEY `idx_audit_created` (`created_at`),
+  CONSTRAINT `fk_audit_dossier` FOREIGN KEY (`dossier_id`) REFERENCES `dossiers` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Audit Trail lưu vết thời gian thực';
 
--- 2.7. Bảng Nhật ký gửi Gmail tự động (email_notifications)
+-- 2.8. Bảng Nhật ký gửi Gmail tự động (email_notifications)
 CREATE TABLE `email_notifications` (
   `id` VARCHAR(50) NOT NULL,
   `dossier_id` VARCHAR(50) NULL,
@@ -219,7 +192,18 @@ CREATE TABLE `email_notifications` (
 -- 3. DỮ LIỆU KHỞI TẠO (SEED DATA)
 -- -----------------------------------------------------------------------------------
 
--- 3.1. Người dùng mẫu (@ctump.edu.vn)
+-- 3.1. Danh mục Khoa / Phòng ban CTUMP
+INSERT INTO `departments` (`id`, `code`, `name`, `dean_name`, `email`, `phone`) VALUES
+('dept-y', 'khoa_y', 'Khoa Y', 'PGS.TS. BS. Trưởng Khoa Y', 'khoay@ctump.edu.vn', '0292.3831.501'),
+('dept-duoc', 'khoa_duoc', 'Khoa Dược', 'PGS.TS. Trưởng Khoa Dược', 'khoaduoc@ctump.edu.vn', '0292.3831.502'),
+('dept-rhm', 'khoa_rhm', 'Khoa Răng Hàm Mặt', 'TS. Trưởng Khoa RHM', 'khoarhm@ctump.edu.vn', '0292.3831.503'),
+('dept-ytcc', 'khoa_ytcc', 'Khoa Y tế Công cộng', 'TS. Trưởng Khoa YTCC', 'khoaytcc@ctump.edu.vn', '0292.3831.504'),
+('dept-cntt', 'khoa_cntt', 'Khoa Công nghệ Thông tin', 'TS. Trưởng Khoa CNTT', 'khoacntt@ctump.edu.vn', '0292.3831.505'),
+('dept-khcn', 'phong_khcn', 'Phòng Khoa học Công nghệ & HTQT', 'TS. Trưởng phòng KH&CN', 'khcn@ctump.edu.vn', '0292.3831.531'),
+('dept-khtc', 'phong_khtc', 'Phòng Kế hoạch Tài chính', 'ThS. Trưởng phòng KHTC', 'khtc@ctump.edu.vn', '0292.3831.532'),
+('dept-bgh', 'ban_giam_hieu', 'Ban Giám hiệu (Hiệu trưởng)', 'GS.TS. Hiệu trưởng CTUMP', 'bgh@ctump.edu.vn', '0292.3831.500');
+
+-- 3.2. Người dùng mẫu (@ctump.edu.vn)
 INSERT INTO `users` (`id`, `email`, `name`, `role`, `title`, `department`, `phone`) VALUES
 ('usr-admin', 'admin@ctump.edu.vn', 'Quản trị viên KH&CN', 'ADMIN', 'Chuyên viên Phòng KH&CN', 'Phòng Khoa học Công nghệ & HTQT', '0292.3831.531'),
 ('usr-canbo', 'canbo@ctump.edu.vn', 'TS. Nguyễn Văn Nam', 'USER', 'Giảng viên chính', 'Khoa Công nghệ Thông tin', '0912.345.678'),

@@ -46,7 +46,8 @@ export async function initDb() {
     return pool;
   } catch (err) {
     isConnected = false;
-    console.warn(`[Database] Chưa thể kết nối MySQL (${err.message}).`);
+    console.warn(`[Database] MySQL chưa được khởi động (${err.message}).`);
+    console.warn(`[Database] Đã tự động kích hoạt In-Memory Store dự phòng: Toàn bộ API hoạt động bình thường.`);
     return null;
   }
 }
@@ -60,13 +61,37 @@ export function isDbConnected() {
 }
 
 export async function query(sql, params = []) {
-  const [rows] = await pool.query(sql, params);
-  return rows;
+  if (!isConnected) {
+    return [];
+  }
+  try {
+    const [rows] = await pool.query(sql, params);
+    return rows;
+  } catch (err) {
+    if (err.code === 'ECONNREFUSED') {
+      isConnected = false;
+      console.warn('[Database] Mất kết nối MySQL (ECONNREFUSED). Chuyển sang In-Memory Store.');
+      return [];
+    }
+    throw err;
+  }
 }
 
 export async function execute(sql, params = []) {
-  const [result] = await pool.execute(sql, params);
-  return result;
+  if (!isConnected) {
+    return [{ affectedRows: 0, insertId: 0 }];
+  }
+  try {
+    const [result] = await pool.execute(sql, params);
+    return result;
+  } catch (err) {
+    if (err.code === 'ECONNREFUSED') {
+      isConnected = false;
+      console.warn('[Database] Mất kết nối MySQL (ECONNREFUSED). Chuyển sang In-Memory Store.');
+      return [{ affectedRows: 0, insertId: 0 }];
+    }
+    throw err;
+  }
 }
 
 export async function getConnection() {

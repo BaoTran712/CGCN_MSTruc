@@ -82,6 +82,9 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
     } else if ((!template || !template.id || !template.fields || template.fields.length === 0) && safeTemplates.length > 0) {
       setTemplate(safeTemplates[0]);
     }
+    if (editingDossier && editingDossier.formData) {
+      setFormData({ ...editingDossier.formData });
+    }
   }, [initialTemplate, editingDossier, safeTemplates]);
 
   // Form values state
@@ -513,9 +516,70 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
                     </span>
                   </div>
 
-                  <div className="p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  <div className="p-4 sm:p-5 space-y-3">
+                    {/* Tích chọn điều kiện theo đặc tả Cô Trúc: Hội thảo */}
+                    {sectionName.includes('Hội thảo') && (
+                      <div className="p-3 bg-blue-50/70 rounded-lg border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.co_hoi_thao !== false && formData.has_workshop !== false}
+                            onChange={(e) => {
+                              const val = e.target.checked;
+                              handleInputChange('co_hoi_thao', val);
+                              handleInputChange('has_workshop', val);
+                            }}
+                            className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                          />
+                          <span className="text-xs font-bold text-blue-900">
+                            Có tổ chức hội thảo kèm theo không?
+                          </span>
+                        </label>
+                        <span className="text-[11px] font-medium text-blue-700">
+                          {formData.co_hoi_thao === false || formData.has_workshop === false
+                            ? '✓ Sẽ tự động ẩn/xóa đoạn Hội thảo khi xuất file Word'
+                            : '• Đoạn Hội thảo sẽ xuất hiện trong file Word'}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Tích chọn điều kiện theo đặc tả Cô Trúc: Kinh phí */}
+                    {sectionName.includes('Kinh phí') && (
+                      <div className="p-3 bg-blue-50/70 rounded-lg border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.co_kinh_phi !== false && formData.has_funding !== false}
+                            onChange={(e) => {
+                              const val = e.target.checked;
+                              handleInputChange('co_kinh_phi', val);
+                              handleInputChange('has_funding', val);
+                              if (!val) {
+                                handleInputChange('transfer_cost', '0');
+                                handleInputChange('funding_source', 'Không thu phí (kinh phí hoạt động Nhà trường)');
+                              }
+                            }}
+                            className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                          />
+                          <span className="text-xs font-bold text-blue-900">
+                            Có phát sinh kinh phí chuyển giao không?
+                          </span>
+                        </label>
+                        <span className="text-[11px] font-medium text-blue-700">
+                          {formData.co_kinh_phi === false || formData.has_funding === false
+                            ? '✓ Mặc định: Không thu phí (sử dụng kinh phí trường)'
+                            : '• Có phát sinh kinh phí thực hiện'}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                     {fieldsInSection.map((field) => {
                       const fKey = field.name || field.key || field.id;
+                      // Tự động ẩn các trường hội thảo khi không chọn có hội thảo
+                      const isWorkshopHidden = (formData.co_hoi_thao === false || formData.has_workshop === false) &&
+                        (fKey.includes('workshop') || field.label.toLowerCase().includes('hội thảo'));
+                      if (isWorkshopHidden) return null;
                       const isTimeRangeField =
                         fKey === 'transfer_time' ||
                         fKey === 'transfer_date' ||
@@ -829,6 +893,7 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
                         </div>
                       );
                     })}
+                    </div>
                   </div>
                 </div>
               );

@@ -1,18 +1,15 @@
 import React, { useState } from 'react';
 import {
-  TableProperties,
   History,
   Download,
   RefreshCw,
-  ExternalLink,
-  CheckCircle2,
-  Send,
   Search,
   FileSpreadsheet,
-  Layers,
-  Code2,
+  Shield,
+  FileText,
 } from 'lucide-react';
 import { Dossier, GoogleSheetRow } from '../types';
+import { StatusBadge } from '../components/common/StatusBadge';
 
 interface ProcessingHistoryViewProps {
   sheetRows: GoogleSheetRow[];
@@ -28,7 +25,6 @@ export const ProcessingHistoryView: React.FC<ProcessingHistoryViewProps> = ({
   const [activeTab, setActiveTab] = useState<'sheets' | 'audit'>('sheets');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
-  const [showWebhookPayload, setShowWebhookPayload] = useState(false);
 
   const handleManualSync = () => {
     setIsSyncing(true);
@@ -74,48 +70,58 @@ export const ProcessingHistoryView: React.FC<ProcessingHistoryViewProps> = ({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `DocuGov_GoogleSheets_Export_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute(
+      'download',
+      `Bao_Cao_Ho_So_CGCN_CTUMP_${new Date().toISOString().slice(0, 10)}.csv`
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // Filter sheet rows
+  // Lọc dữ liệu sheet
   const filteredRows = sheetRows.filter(
     (r) =>
-      r.dossierCode.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.templateTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.creatorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      r.department.toLowerCase().includes(searchQuery.toLowerCase())
+      (r.dossierCode || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (r.templateTitle || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (r.creatorName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (r.department || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // All audit logs across dossiers
-  const allAuditLogs = dossiers.flatMap((d) =>
-    (d.timeline || []).map((t) => ({
-      ...t,
-      dossierCode: d.code,
-      templateTitle: d.templateTitle,
-    }))
-  ).sort((a, b) => (b.timestamp > a.timestamp ? 1 : -1));
+  // Tất cả Audit Logs được tổng hợp từ danh sách dossiers
+  const allAuditLogs = dossiers
+    .flatMap((d) =>
+      (d.auditLogs || []).map((a) => ({
+        ...a,
+        dossierCode: d.code,
+        templateTitle: d.templateTitle,
+      }))
+    )
+    .sort((a, b) => (new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+
+  const filteredLogs = allAuditLogs.filter(
+    (log) =>
+      (log.dossierCode || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (log.actorName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (log.action || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (log.notes || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+    <div className="space-y-5">
+      {/* 1. Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-200">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-[11px] font-semibold text-blue-900 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
-              LƯU TRỮ VĂN BẢN TRUNG TÂM
-            </span>
-            <span className="text-xs text-slate-500 font-mono">
-              Google Sheets API & n8n Engine
+            <span className="text-[11px] font-bold text-blue-900 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+              LƯU TRỮ & KIỂM TOÁN VĂN BẢN TRƯỜNG
             </span>
           </div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            Lịch sử Xử lý & Google Sheets Quản trị
+            Audit Trail & Báo cáo Tổng hợp Ban Giám hiệu
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Dữ liệu hồ sơ sau khi chuyển trạng thái "Trình ký" được đồng bộ tự động vào bảng tính trung tâm phục vụ tra cứu và lưu trữ lâu dài
+            Dữ liệu đồng bộ tự động từ hệ thống hồ sơ phục vụ công tác thanh tra, kiểm toán số và báo cáo định kỳ
           </p>
         </div>
 
@@ -124,212 +130,178 @@ export const ProcessingHistoryView: React.FC<ProcessingHistoryViewProps> = ({
             type="button"
             onClick={handleManualSync}
             disabled={isSyncing}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-md transition-colors shadow-2xs cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors shadow-2xs cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${isSyncing ? 'animate-spin' : ''}`} />
-            <span>{isSyncing ? 'Đang đồng bộ...' : 'Đồng bộ lại'}</span>
+            <span>{isSyncing ? 'Đang cập nhật...' : 'Đồng bộ lại'}</span>
           </button>
 
           <button
             type="button"
             onClick={handleExportCSV}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-md transition-colors shadow-2xs cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-lg transition-colors shadow-2xs cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Xuất CSV</span>
+            <span>Xuất file Excel / CSV</span>
           </button>
         </div>
       </div>
 
-      {/* View Switcher Tabs */}
-      <div className="flex items-center justify-between border-b border-slate-200">
-        <div className="flex items-center gap-2">
+      {/* 2. Switcher Tabs & Search */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-white rounded-xl border border-slate-200 shadow-2xs">
+        <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-lg text-xs font-semibold">
           <button
             type="button"
             onClick={() => setActiveTab('sheets')}
-            className={`inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
+            className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'sheets'
-                ? 'border-blue-700 text-blue-800'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
+                ? 'bg-white text-blue-900 font-bold shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            <span>Bảng tính Google Sheets ({sheetRows.length} bản ghi)</span>
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Bảng tính Tổng hợp ({sheetRows.length} bản ghi)</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('audit')}
-            className={`inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
+            className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'audit'
-                ? 'border-blue-700 text-blue-800'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
+                ? 'bg-white text-blue-900 font-bold shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <History className="w-4 h-4 text-slate-500" />
-            <span>Nhật ký luân chuyển hồ sơ</span>
+            <Shield className="w-3.5 h-3.5 text-blue-600" />
+            <span>Nhật ký Kiểm toán (Audit Logs) ({allAuditLogs.length})</span>
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowWebhookPayload(!showWebhookPayload)}
-          className="text-xs text-slate-500 hover:text-slate-800 inline-flex items-center gap-1 font-mono cursor-pointer"
-        >
-          <Code2 className="w-3.5 h-3.5" />
-          <span>{showWebhookPayload ? 'Ẩn Webhook' : 'Xem Webhook JSON'}</span>
-        </button>
+        <div className="relative w-full sm:w-80">
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Tìm theo mã hồ sơ, tên cán bộ, đơn vị..."
+            className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-600 focus:border-blue-600 text-slate-900"
+          />
+        </div>
       </div>
 
-      {/* Optional Webhook JSON schema preview */}
-      {showWebhookPayload && (
-        <div className="p-4 bg-slate-900 rounded-lg text-slate-200 text-xs font-mono space-y-2 border border-slate-800">
-          <div className="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-2">
-            <span>Payload gửi tới n8n / Google Sheets API webhook:</span>
-            <span className="text-[11px] text-emerald-400">POST /webhook/dossier-for-signature</span>
-          </div>
-          <pre className="overflow-x-auto text-[11px] leading-relaxed text-emerald-300">
-            {JSON.stringify(sheetRows[0] || {}, null, 2)}
-          </pre>
-        </div>
-      )}
-
-      {/* ================= TAB 1: GOOGLE SHEETS SIMULATION ================= */}
+      {/* ================= TAB 1: BẢNG TÍNH GOOGLE SHEETS ================= */}
       {activeTab === 'sheets' && (
-        <div className="space-y-4">
-          {/* Google Sheets header */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3 bg-white rounded-lg border border-slate-200 shadow-2xs">
-            <div className="flex items-center gap-2 text-xs text-slate-800">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-              <span className="font-semibold">Bảng tính liên kết:</span>
-              <span className="font-mono text-slate-700 font-medium">
-                [Hệ thống] Danh mục Hồ sơ Trình ký Năm 2026 (HoSoTrinhKy)
-              </span>
-            </div>
-
-            <div className="relative w-full sm:w-72">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Lọc dữ liệu sheet..."
-                className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-600 focus:border-blue-600 text-slate-900"
-              />
-            </div>
-          </div>
-
-          {/* SpreadSheet Table container */}
-          <div className="bg-white rounded-lg border border-slate-200 shadow-2xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead className="bg-slate-100 border-b border-slate-200 text-slate-700 font-semibold text-[11px]">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-700 font-semibold text-[11px] uppercase">
+                <tr>
+                  <th className="py-2.5 px-3 border-r border-slate-200 w-10 text-center text-slate-400">#</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">Mã hồ sơ</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">Tên biểu mẫu</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">Cán bộ đề nghị</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">Đơn vị</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">Ngày nộp</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">Trạng thái</th>
+                  <th className="py-2.5 px-3 text-center">Đồng bộ CSDL</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-800 text-[11px]">
+                {filteredRows.length === 0 ? (
                   <tr>
-                    <th className="py-2.5 px-3 border-r border-slate-200 w-10 text-center text-slate-400">#</th>
-                    <th className="py-2.5 px-3 border-r border-slate-200">Mã hồ sơ</th>
-                    <th className="py-2.5 px-3 border-r border-slate-200">Tên biểu mẫu Word</th>
-                    <th className="py-2.5 px-3 border-r border-slate-200">Người tạo</th>
-                    <th className="py-2.5 px-3 border-r border-slate-200">Đơn vị</th>
-                    <th className="py-2.5 px-3 border-r border-slate-200">Ngày tạo</th>
-                    <th className="py-2.5 px-3 border-r border-slate-200">Ngày gửi</th>
-                    <th className="py-2.5 px-3 border-r border-slate-200">Ngày duyệt</th>
-                    <th className="py-2.5 px-3 border-r border-slate-200">Trạng thái</th>
-                    <th className="py-2.5 px-3 border-r border-slate-200">Người duyệt</th>
-                    <th className="py-2.5 px-3 border-r border-slate-200">Thời gian cập nhật</th>
-                    <th className="py-2.5 px-3 text-center">Đồng bộ</th>
+                    <td colSpan={8} className="py-12 px-4 text-center text-slate-400">
+                      Không tìm thấy bản ghi nào phù hợp
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 text-slate-800 font-mono text-[11px]">
-                  {filteredRows.map((row, idx) => (
-                    <tr key={row.dossierCode} className="hover:bg-emerald-50/40 transition-colors">
-                      <td className="py-2 px-3 border-r border-slate-200 text-center text-slate-400 bg-slate-50 font-sans">
+                ) : (
+                  filteredRows.map((row, idx) => (
+                    <tr key={row.dossierCode || idx} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-2.5 px-3 border-r border-slate-100 text-center text-slate-400 font-mono">
                         {idx + 1}
                       </td>
-                      <td className="py-2 px-3 border-r border-slate-200 font-bold text-blue-700 whitespace-nowrap">
+                      <td className="py-2.5 px-3 border-r border-slate-100 font-mono font-bold text-blue-700 whitespace-nowrap">
                         {row.dossierCode}
                       </td>
-                      <td className="py-2 px-3 border-r border-slate-200 font-sans font-medium text-slate-900 whitespace-nowrap max-w-xs truncate">
+                      <td className="py-2.5 px-3 border-r border-slate-100 font-medium text-slate-900 max-w-[240px] truncate">
                         {row.templateTitle}
                       </td>
-                      <td className="py-2 px-3 border-r border-slate-200 font-sans whitespace-nowrap">
+                      <td className="py-2.5 px-3 border-r border-slate-100 whitespace-nowrap">
                         {row.creatorName}
                       </td>
-                      <td className="py-2 px-3 border-r border-slate-200 font-sans text-slate-600 whitespace-nowrap">
+                      <td className="py-2.5 px-3 border-r border-slate-100 whitespace-nowrap text-slate-600">
                         {row.department}
                       </td>
-                      <td className="py-2 px-3 border-r border-slate-200 whitespace-nowrap text-slate-600">
-                        {row.createdAt}
+                      <td className="py-2.5 px-3 border-r border-slate-100 font-mono text-slate-500 whitespace-nowrap">
+                        {row.submittedAt ? new Date(row.submittedAt).toLocaleDateString('vi-VN') : '—'}
                       </td>
-                      <td className="py-2 px-3 border-r border-slate-200 whitespace-nowrap text-slate-600">
-                        {row.submittedAt}
+                      <td className="py-2.5 px-3 border-r border-slate-100 whitespace-nowrap">
+                        <span className="font-semibold text-slate-700">{row.status}</span>
                       </td>
-                      <td className="py-2 px-3 border-r border-slate-200 whitespace-nowrap text-slate-600">
-                        {row.approvedAt}
-                      </td>
-                      <td className="py-2 px-3 border-r border-slate-200 font-sans whitespace-nowrap">
-                        <span className="font-semibold text-sky-800 bg-sky-50 px-2 py-0.5 rounded border border-sky-200">
-                          {row.status}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 border-r border-slate-200 font-sans whitespace-nowrap">
-                        {row.reviewerName}
-                      </td>
-                      <td className="py-2 px-3 border-r border-slate-200 text-slate-500 whitespace-nowrap">
-                        {row.updatedAt}
-                      </td>
-                      <td className="py-2 px-3 text-center whitespace-nowrap font-sans">
-                        <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 font-medium">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>{row.syncStatus}</span>
+                      <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                          {row.syncStatus || 'Đã đồng bộ MySQL'}
                         </span>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {filteredRows.length === 0 && (
-              <div className="text-center py-10 text-slate-500 text-xs">
-                Chưa có hồ sơ nào ở trạng thái "Trình ký" được đồng bộ.
-              </div>
-            )}
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* ================= TAB 2: AUDIT LOG ================= */}
+      {/* ================= TAB 2: NHẬT KÝ KIỂM TOÁN (AUDIT TRAIL) ================= */}
       {activeTab === 'audit' && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-4">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-            Dòng sự kiện luân chuyển toàn hệ thống
-          </h3>
-
-          <div className="divide-y divide-slate-100">
-            {allAuditLogs.map((log, index) => (
-              <div key={index} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded text-[11px]">
-                      {log.dossierCode}
-                    </span>
-                    <span className="font-semibold text-slate-900">{log.title}</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    {log.templateTitle} · Thực hiện bởi: <span className="text-slate-700 font-medium">{log.actor}</span> ({log.role})
-                  </p>
-                  {log.comment && (
-                    <p className="text-[11px] italic text-amber-800 bg-amber-50/60 p-1.5 rounded mt-1 border border-amber-200">
-                      "{log.comment}"
-                    </p>
-                  )}
-                </div>
-
-                <div className="font-mono text-[11px] text-slate-400 whitespace-nowrap self-start sm:self-auto">
-                  {log.timestamp}
-                </div>
-              </div>
-            ))}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-700 font-semibold text-[11px] uppercase">
+                <tr>
+                  <th className="py-2.5 px-3 border-r border-slate-200 w-10 text-center text-slate-400">#</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">Thời gian</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">Mã hồ sơ</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">Người thực hiện</th>
+                  <th className="py-2.5 px-3 border-r border-slate-200">Hành động</th>
+                  <th className="py-2.5 px-3">Ghi chú chi tiết</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-800 text-[11px]">
+                {filteredLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 px-4 text-center text-slate-400">
+                      Chưa có nhật ký kiểm toán nào
+                    </td>
+                  </tr>
+                ) : (
+                  filteredLogs.map((log, idx) => (
+                    <tr key={log.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-2.5 px-3 border-r border-slate-100 text-center text-slate-400 font-mono">
+                        {idx + 1}
+                      </td>
+                      <td className="py-2.5 px-3 border-r border-slate-100 font-mono text-slate-500 whitespace-nowrap">
+                        {log.createdAt ? new Date(log.createdAt).toLocaleString('vi-VN') : '—'}
+                      </td>
+                      <td className="py-2.5 px-3 border-r border-slate-100 font-mono font-bold text-blue-700 whitespace-nowrap">
+                        {log.dossierCode}
+                      </td>
+                      <td className="py-2.5 px-3 border-r border-slate-100 whitespace-nowrap">
+                        <div className="font-semibold text-slate-900">{log.actorName}</div>
+                        <div className="text-[10px] text-slate-400 uppercase font-mono">{log.actorRole}</div>
+                      </td>
+                      <td className="py-2.5 px-3 border-r border-slate-100 whitespace-nowrap">
+                        <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                          {log.action}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-600 max-w-md">
+                        {log.notes || '—'}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

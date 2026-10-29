@@ -80,7 +80,7 @@ export const setAuthToken = (token?: string | null): void => {
  */
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 2000);
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   const token = getAuthToken();
   const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};

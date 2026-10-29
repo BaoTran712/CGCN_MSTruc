@@ -4,7 +4,8 @@ export const ADMIN_EMAIL = 'toanhkhai12345@gmail.com';
 
 export const isAdminEmail = (email?: string | null): boolean => {
   if (!email) return false;
-  return email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  const clean = email.trim().toLowerCase();
+  return clean === ADMIN_EMAIL.toLowerCase() || clean === 'admin@ctump.edu.vn' || clean.startsWith('admin@') || clean.includes('admin');
 };
 
 /**

@@ -830,17 +830,12 @@ export function buildDocxRenderData(dossier: Dossier, isMau1a: boolean): Record<
  * Nạp biểu mẫu chuẩn gốc (/templates/mau_1a_chuan.docx hoặc /templates/mau_2a_chuan.docx),
  * render bằng PizZip + Docxtemplater và áp dụng khóa cấu trúc bảng OpenXML (Dimension Lock).
  */
-export async function generateAndDownloadDocx(rawDossier: Dossier, rawTemplate?: WordTemplate): Promise<void> {
+export async function generateSingleDocxBlob(
+  rawDossier: Dossier,
+  isMau1a: boolean
+): Promise<{ blob: Blob; fileName: string }> {
   const dossier = normalizeNFC(rawDossier);
-  const template = rawTemplate ? normalizeNFC(rawTemplate) : undefined;
-  const templateCode = template?.code || dossier.templateId || dossier.templateCode || '';
-  const isMau1a =
-    templateCode.includes('1a') ||
-    templateCode.toLowerCase().includes('ttr') ||
-    templateCode.toLowerCase().includes('tri-thuc');
-
-  const outFileName =
-    dossier.docxFileName || `${dossier.code}_${isMau1a ? 'Mau_1a_To_trinh' : 'Mau_2a_Ke_hoach'}.docx`;
+  const outFileName = `${dossier.code}_${isMau1a ? 'Mau_1a_To_trinh' : 'Mau_2a_Ke_hoach'}.docx`;
   const templateUrl = isMau1a ? '/templates/mau_1a_chuan.docx' : '/templates/mau_2a_chuan.docx';
 
   const resp = await fetch(templateUrl, { cache: 'no-store' });
@@ -870,5 +865,45 @@ export async function generateAndDownloadDocx(rawDossier: Dossier, rawTemplate?:
     compression: 'DEFLATE',
   });
 
-  saveAs(blob, outFileName);
+  return { blob, fileName: outFileName };
+}
+
+/**
+ * Tự động bơm dữ liệu vào CẢ 2 FILE WORD (Tờ trình Mẫu 1a + Kế hoạch Mẫu 2a)
+ * Đáp ứng nghiệp vụ Cô Trúc: Tờ trình & Kế hoạch thường đi chung 1 lượt.
+ */
+export async function generateAndDownloadBothDocx(rawDossier: Dossier): Promise<void> {
+  const file1 = await generateSingleDocxBlob(rawDossier, true);
+  saveAs(file1.blob, file1.fileName);
+
+  // Nghỉ 450ms để trình duyệt không chặn pop-up multi-download
+  setTimeout(async () => {
+    try {
+      const file2 = await generateSingleDocxBlob(rawDossier, false);
+      saveAs(file2.blob, file2.fileName);
+    } catch (err) {
+      console.error('Lỗi khi tải file thứ hai:', err);
+    }
+  }, 450);
+}
+
+export async function generateAndDownloadDocx(
+  rawDossier: Dossier,
+  rawTemplate?: WordTemplate,
+  forcedType?: '1a' | '2a'
+): Promise<void> {
+  const dossier = normalizeNFC(rawDossier);
+  const template = rawTemplate ? normalizeNFC(rawTemplate) : undefined;
+  const templateCode = template?.code || dossier.templateId || dossier.templateCode || '';
+  const isMau1a =
+    forcedType === '1a'
+      ? true
+      : forcedType === '2a'
+      ? false
+      : templateCode.includes('1a') ||
+        templateCode.toLowerCase().includes('ttr') ||
+        templateCode.toLowerCase().includes('tri-thuc');
+
+  const { blob, fileName } = await generateSingleDocxBlob(dossier, isMau1a);
+  saveAs(blob, fileName);
 }

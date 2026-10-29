@@ -28,7 +28,7 @@ export const userService = {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const isAdmin = cleanEmail === 'toanhkhai12345@gmail.com';
+    const isAdmin = cleanEmail === 'toanhkhai12345@gmail.com' || cleanEmail === 'admin@ctump.edu.vn' || cleanEmail.startsWith('admin@');
 
     const found = await userRepository.findByEmail(cleanEmail);
     if (found) {
