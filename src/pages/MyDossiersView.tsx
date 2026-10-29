@@ -224,7 +224,7 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
                             className="px-2.5 py-1 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded font-medium transition-colors"
                             title="Chỉnh sửa bản nháp / Sửa theo yêu cầu"
                           >
-                            Chỉnh sửa
+                            Sửa
                           </button>
                         )}
 

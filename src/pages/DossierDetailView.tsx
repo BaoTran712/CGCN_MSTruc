@@ -223,7 +223,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
           )}
 
           {/* BƯỚC 1: Sửa đổi khi có yêu cầu (Chỉ chủ hồ sơ - User) */}
-          {isNeedsRevision && isOwner && !isAdmin && (
+          {isNeedsRevision && !isAdmin && (
             <button
               type="button"
               onClick={() => onEditDossier(currentDossier)}
@@ -361,7 +361,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
           <div className="p-3 bg-white rounded border border-rose-200 font-medium italic text-rose-900">
             "{currentDossier.review_notes || currentDossier.reviewNotes || currentDossier.returnReason || 'Cần bổ sung, chỉnh sửa nội dung hồ sơ theo thông báo.'}"
           </div>
-          {isOwner && !isAdmin && (
+          {!isAdmin && (
             <div className="pt-1">
               <button
                 type="button"
