@@ -1,123 +1,248 @@
-                         ┌─────────────────────────┐
-                         │       THẦY / CÔ          │
-                         └────────────┬────────────┘
+================================================================================
+          SƠ ĐỒ QUY TRÌNH HỒ SƠ CHUYỂN GIAO CÔNG NGHỆ (CGCN)
+                    (ĐÃ LOẠI BỎ n8n RA KHỎI FLOW)
+================================================================================
+
+Tài liệu này mô tả 2 phương án quy trình đề xuất sau khi loại bỏ hoàn toàn n8n:
+  - PHƯƠNG ÁN 1: Tự động hóa trực tiếp bằng Google Apps Script (GAS) tích hợp sẵn
+                 trong Google Form & Google Sheets (Không cần máy chủ n8n).
+  - PHƯƠNG ÁN 2: Chuyển đổi toàn diện lên Nền tảng Web Portal CTUMP DocuGov
+                 (Web Form + REST API + MySQL 8.0+ + Google Drive API).
+
+────────────────────────────────────────────────────────────────────────────────
+PHƯƠNG ÁN 1: GOOGLE FORM + GOOGLE SHEETS + GOOGLE APPS SCRIPT (ĐÃ BỎ n8n)
+────────────────────────────────────────────────────────────────────────────────
+* Điểm cải tiến so với luồng cũ:
+  - Bỏ hoàn toàn "n8n Schedule Trigger": Không còn độ trễ do quét định kỳ 5-15 phút.
+  - Sử dụng Google Apps Script Event Trigger (onFormSubmit): Kích hoạt tức thì (real-time)
+    ngay khi Thầy/Cô gửi biểu mẫu.
+  - Tự động sinh mã tra cứu CGCN-XXXXXX, cập nhật Google Sheet và gửi Email xác nhận
+    trực tiếp thông qua dịch vụ MailApp / GmailApp của Google.
+
+                          ┌─────────────────────────┐
+                          │       THẦY / CÔ         │
+                          │   (Cán bộ / Giảng viên) │
+                          └────────────┬────────────┘
+                                       │
+                                       │ 1. Nộp hồ sơ mới
+                                       ▼
+                          ┌─────────────────────────┐
+                          │      GOOGLE FORM 1      │
+                          │  Biểu mẫu nộp hồ sơ CGCN│
+                          └────────────┬────────────┘
+                                       │
+                                       │ Tự động ghi dòng mới
+                                       ▼
+                          ┌─────────────────────────┐
+                          │      GOOGLE SHEETS      │
+                          │ Câu trả lời biểu mẫu 1  │
+                          └────────────┬────────────┘
+                                       │
+                                       │ Kích hoạt tức thì (Real-time)
+                                       ▼
+                          ┌─────────────────────────┐
+                          │   GOOGLE APPS SCRIPT    │
+                          │  (Trigger onFormSubmit) │
+                          └────────────┬────────────┘
+                                       │
+                                       ▼
+                               ┌──────────────┐
+                               │  Kiểm tra    │
+                               │ Mã tra cứu?  │
+                               └──────┬───────┘
                                       │
-                                      ▼
-                         ┌─────────────────────────┐
-                         │     GOOGLE FORM 1        │
-                         │   Nộp hồ sơ CGCN         │
-                         └────────────┬────────────┘
-                                      │
-                                      ▼
-                         ┌─────────────────────────┐
-                         │  GOOGLE SHEETS           │
-                         │ Câu trả lời biểu mẫu 1  │
-                         └────────────┬────────────┘
-                                      │
-                                      ▼
-                         ┌─────────────────────────┐
-                         │      n8n                 │
-                         │ Schedule Trigger         │
-                         └────────────┬────────────┘
-                                      │
-                                      ▼
-                         ┌─────────────────────────┐
-                         │ Get row(s) in sheet      │
-                         └────────────┬────────────┘
-                                      │
-                                      ▼
-                              ┌──────────────┐
-                              │      If      │
-                              │ Có mã tra cứu│
-                              │     chưa?    │
-                              └──────┬───────┘
-                                     │
-                    ┌────────────────┴────────────────┐
-                    │                                 │
-                  CHƯA                                CÓ
-                    │                                 │
-                    ▼                                 ▼
-          ┌───────────────────┐              ┌──────────────────┐
-          │ Code JavaScript   │              │      If5         │
-          │ Tạo mã CGCN-XXXXXX│              │ Đã hợp lệ chưa?  │
-          └─────────┬─────────┘              └────────┬─────────┘
-                    │                                  │
-                    ▼                         ┌────────┴────────┐
-          ┌───────────────────┐               │                 │
-          │ Update row        │             ĐÃ HỢP LỆ       CHƯA
-          │ Mã tra cứu        │               │                 │
-          │ Chưa kiểm tra     │               │                 ▼
-          │ Tiếp nhận yêu cầu │               │               If6
-          └─────────┬─────────┘               │                 │
-                    │                         │                 ▼
-                    ▼                         │                If7
-          ┌───────────────────┐               │                 │
-          │ Send a message    │               │          ┌──────┴──────┐
-          │ Email tiếp nhận   │               │          │             │
-          └─────────┬─────────┘               │         OK          KHÔNG OK
-                    │                         │          │             │
-                    └──────────────┐          │          ▼             ▼
-                                   │          │      Update8        If8
-                                   │          │     Đã hợp lệ         │
-                                   │          │                        ▼
-                                   │          │                       If9
-                                   │          │                        │
-                                   │          │               ┌────────┴────────┐
-                                   │          │               │                 │
-                                   │          │          Đã gửi mail        Chưa gửi
-                                   │          │               │                 │
-                                   │          │               │                 ▼
-                                   │          │               │            Send message2
-                                   │          │               │            Email bổ sung
-                                   │          │               │                 │
-                                   │          │               │                 ▼
-                                   │          │               │            Update sheet3
-                                   │          │               │            Chờ bổ sung
-                                   │          │               │                 │
-                                   │          │               │                 ▼
-                                   │          │               │           Append lịch sử
-                                   │          │               │
-                                   │          └───────────────┴─────────────────┐
-                                   │                                            │
-                                   ▼                                            ▼
-                         ┌─────────────────────┐                    ┌─────────────────────┐
-                         │ Theo dõi tiến độ    │                    │ NGƯỜI DÙNG          │
-                         │ Trạng thái dự án    │                    │ bổ sung hồ sơ       │
-                         └─────────────────────┘                    └──────────┬──────────┘
-                                                                                │
-                                                                                ▼
-                                                                   ┌────────────────────────┐
-                                                                   │ GOOGLE FORM 2          │
-                                                                   │ Bổ sung / chỉnh sửa    │
-                                                                   └───────────┬────────────┘
-                                                                               │
-                                                                               ▼
-                                                                   ┌────────────────────────┐
-                                                                   │ Get row(s) in sheet1   │
-                                                                   │ Câu trả lời biểu mẫu 2 │
-                                                                   └───────────┬────────────┘
-                                                                               │
-                                                                               ▼
-                                                                             If3
-                                                                               │
-                                                                    Chưa xử lý │
-                                                                               ▼
-                                                                             If4
-                                                                    ┌──────────┴─────────┐
-                                                                    │                    │
-                                                              Tờ trình              Kế hoạch
-                                                                    │                    │
-                                                                    ▼                    ▼
-                                                              Update sheet2       Update sheet5
-                                                                    │                    │
-                                                                    ▼                    ▼
-                                                              Update sheet4       Update sheet6
-                                                                    │                    │
-                                                                    └─────────┬──────────┘
-                                                                              │
-                                                                              ▼
-                                                                   Chờ kiểm tra lại
-                                                                              │
-                                                                              ▼
-                                                                    QUAY LẠI VÒNG
-                                                                    KIỂM TRA HỒ SƠ
+                     ┌────────────────┴────────────────┐
+                     │                                 │
+                [ CHƯA CÓ ]                        [ ĐÃ CÓ ]
+                     │                                 │
+                     ▼                                 ▼
+           ┌───────────────────┐              ┌──────────────────┐
+           │ Code Apps Script  │              │ CÁN BỘ TIỀN KIỂM │
+           │ Sinh mã tự động:  │              │ (Cô Trúc/Admin)  │
+           │   CGCN-XXXXXX     │              │  Kiểm tra hồ sơ  │
+           └─────────┬─────────┘              └────────┬─────────┘
+                     │                                 │
+                     ▼                                 │
+           ┌───────────────────┐                       │
+           │ Cập nhật Sheet:   │                       │
+           │ - Cột Mã tra cứu  │                       │
+           │ - TT: Tiếp nhận   │                       │
+           │ - Chưa kiểm tra   │                       │
+           └─────────┬─────────┘                       │
+                     │                                 │
+                     ▼                                 │
+           ┌───────────────────┐                       │
+           │ Gửi Email tự động │                       │
+           │ (Gmail Service):  │                       │
+           │ Email xác nhận    │                       │
+           │ kèm Mã tra cứu    │                       │
+           └─────────┬─────────┘                       │
+                     │                                 │
+                     ▼                                 ▼
+           ┌───────────────────┐             ┌────────────────────┐
+           │ THEO DÕI TIẾN ĐỘ  │             │ Đánh giá hồ sơ:    │
+           │ (Trạng thái dự án)│             │ Hợp lệ hay không?  │
+           └───────────────────┘             └─────────┬──────────┘
+                                                       │
+                                      ┌────────────────┴────────────────┐
+                                      │                                 │
+                                  [ HỢP LỆ ]                     [ CHƯA HỢP LỆ ]
+                                      │                           (Cần bổ sung)
+                                      ▼                                 │
+                            ┌───────────────────┐                       ▼
+                            │ Cập nhật Sheet:   │             ┌───────────────────┐
+                            │ - Đã duyệt hợp lệ │             │ Cập nhật Sheet:   │
+                            │ - Chốt phiên bản  │             │ - TT: Chờ bổ sung │
+                            │ - Tạo/gửi file PDF│             │ - Nhập nhận xét/  │
+                            │   để trình ký     │             │   nội dung cần sửa│
+                            └─────────┬─────────┘             └─────────┬─────────┘
+                                      │                                 │
+                                      ▼                                 ▼
+                            ┌───────────────────┐             ┌───────────────────┐
+                            │ GIAI ĐOẠN KÝ SỐ   │             │ Gửi Email tự động │
+                            │ CẤP KHOA & TRƯỜNG │             │ (Kèm chi tiết cần │
+                            │ (Theo quy trình   │             │  sửa & link Form2)│
+                            │  trình ký số v2)  │             │  sửa & link Form2)│
+                            └───────────────────┘             └─────────┬─────────┘
+                                                                        │
+                                                                        ▼
+                                                              ┌───────────────────┐
+                                                              │    NGƯỜI DÙNG     │
+                                                              │ (Bổ sung hồ sơ)   │
+                                                              └─────────┬─────────┘
+                                                                        │
+                                                                        │ 2. Điền thông tin bổ sung
+                                                                        ▼
+                                                              ┌───────────────────┐
+                                                              │   GOOGLE FORM 2   │
+                                                              │ Bổ sung/chỉnh sửa │
+                                                              └─────────┬─────────┘
+                                                                        │
+                                                                        │ Ghi nhận phản hồi
+                                                                        ▼
+                                                              ┌───────────────────┐
+                                                              │   GOOGLE SHEETS   │
+                                                              │ Câu trả lời Form 2│
+                                                              └─────────┬─────────┘
+                                                                        │
+                                                                        │ Trigger onFormSubmit
+                                                                        ▼
+                                                              ┌───────────────────┐
+                                                              │   APPS SCRIPT     │
+                                                              │ (Khớp Mã tra cứu, │
+                                                              │  cập nhật Tờ trình│
+                                                              │  Kế hoạch mới,    │
+                                                              │  đổi trạng thái)  │
+                                                              └─────────┬─────────┘
+                                                                        │
+                                                                        ▼
+                                                              ┌───────────────────┐
+                                                              │ Cập nhật Sheet 1: │
+                                                              │ "Chờ kiểm tra lại"│
+                                                              │ (Ghi log lịch sử) │
+                                                              └─────────┬─────────┘
+                                                                        │
+                                                                        ▼
+                                                              ┌───────────────────┐
+                                                              │   QUAY LẠI VÒNG   │
+                                                              │  KIỂM TRA HỒ SƠ   │
+                                                              └───────────────────┘
+
+────────────────────────────────────────────────────────────────────────────────
+PHƯƠNG ÁN 2: CHUYỂN ĐỔI TOÀN DIỆN LÊN NỀN TẢNG WEB PORTAL (DOCUGOV V2.0)
+────────────────────────────────────────────────────────────────────────────────
+* Điểm vượt trội:
+  - Loại bỏ hoàn toàn cả n8n và Google Form 1, Form 2 rời rạc.
+  - Người dùng điền trực tiếp trên Web Form chuẩn hóa, hỗ trợ Xem trước file Word (.docx)
+    đã điền dữ liệu tự động theo đúng mẫu chuẩn của Trường (Mẫu 1a, Mẫu 2a).
+  - Cán bộ tiền kiểm (Cô Trúc) duyệt trực tiếp trên Web Dashboard; yêu cầu bổ sung
+    ngay trên từng trường thông tin mà không cần nhập liệu phân tán qua nhiều Google Sheet.
+
+  [ THẦY / CÔ ]
+        │
+        │ Đăng nhập Email trường & Điền Web Form
+        ▼
+  [ WEB APPLICATION (FRONTEND REACT) ]
+        │
+        │ Gọi REST API (POST /api/dossiers)
+        ▼
+  [ BACKEND REST API SERVICE (NODEJS/EXPRESS) ]
+        ├─► Tự động sinh mã CGCN-XXXXXX
+        ├─► Ánh xạ dữ liệu vào file Word mẫu (.docx)
+        ├─► Lưu trữ metadata vào Database (MySQL)
+        ├─► Upload file lưu trữ lên Google Drive API
+        └─► Gửi Email thông báo tiếp nhận qua SMTP / Gmail API
+        │
+        ▼
+  [ ADMIN DASHBOARD (CÔ TRÚC TIỀN KIỂM) ]
+        │
+        ├──► [ YÊU CẦU BỔ SUNG ]:
+        │       - Nhập nhận xét trực tiếp trên hệ thống
+        │       - Hệ thống tự tạo phiên bản (Version snapshot)
+        │       - Gửi email thông báo cho Thầy/Cô mở lại hồ sơ sửa trực tiếp
+        │       - Thầy/Cô nộp lại -> Hồ sơ tự chuyển về "Chờ kiểm tra lại"
+        │
+        └──► [ DUYỆT HỢP LỆ ]:
+                - Khóa dữ liệu phiên bản đã duyệt
+                - Tự động sinh file PDF chuẩn từ bản Word
+                - Gửi email thông báo cho Thầy/Cô tải PDF
+                - Chuyển sang Bước ký số cấp Khoa / Bộ môn
+                - Trình ký số cấp Trường (Phòng KH&CN, KHTC, BGH/Hiệu trưởng)
+                - Lưu trữ Quyết định và Đóng hồ sơ COMPLETED.
+
+────────────────────────────────────────────────────────────────────────────────
+BẢNG SO SÁNH: GIỮ n8n VS. LOẠI BỎ n8n
+────────────────────────────────────────────────────────────────────────────────
+
+TIÊU CHÍ              CÓ n8n (CŨ)                      LOẠI BỎ n8n (MỚI)
+--------------------------------------------------------------------------------
+1. Hạ tầng máy chủ    Bắt buộc duy trì server VPS      Không cần máy chủ n8n.
+                      hoặc Docker container riêng      Dùng Google Apps Script tích hợp
+                      để host n8n (chi phí & rủi ro).  hoặc Backend Node.js có sẵn.
+
+2. Độ trễ xử lý       Bị trễ theo chu kỳ quét          Xử lý thời gian thực (Real-time)
+                      (Schedule Trigger 5 - 15 phút).  ngay khi người dùng thao tác.
+
+3. Điểm lỗi (SPOF)    Nếu container n8n sập hoặc       Loại bỏ mắt xích trung gian n8n.
+                      webhook timeout, toàn bộ         Độ ổn định cao hơn, giảm nguy cơ
+                      luồng xử lý bị gián đoạn.        mất dữ liệu form.
+
+4. Bảo trì & Quản trị Phải theo dõi các workflow n8n   Mã nguồn logic tập trung trong
+                      rời rạc, token hết hạn.          Apps Script hoặc mã nguồn Backend.
+
+5. Trải nghiệm User   Nhận phản hồi chậm sau vài phút  Nhận mã tra cứu và email xác nhận
+                      do phải chờ n8n kích hoạt.       ngay lập tức sau khi nhấn gửi.
+
+────────────────────────────────────────────────────────────────────────────────
+MÃ MERMAID DIAGRAM (DÙNG ĐỂ RENDER TRỰC QUAN NẾU CẦN)
+────────────────────────────────────────────────────────────────────────────────
+
+```mermaid
+flowchart TD
+    User([Thầy / Cô]) -->|1. Nộp hồ sơ| Form1[Google Form 1 / Web Form]
+    Form1 -->|Lưu kết quả| Sheet1[(Google Sheets / DB)]
+    
+    subgraph TuDongHoa [Bộ Xử Lý Tự Động (Apps Script / Backend API)]
+        Trigger[Kích hoạt Trigger tức thì] --> CheckCode{Đã có Mã tra cứu?}
+        CheckCode -->|Chưa có| GenCode[Tạo mã CGCN-XXXXXX]
+        GenCode --> UpdateSheet1[Cập nhật Sheet: Mã + Trạng thái Tiếp nhận]
+        UpdateSheet1 --> SendMail1[Gửi Email xác nhận tiếp nhận]
+        CheckCode -->|Đã có| Review[Cán bộ tiền kiểm tra hồ sơ]
+    end
+
+    Sheet1 --> Trigger
+    SendMail1 --> Tracking[Theo dõi tiến độ]
+
+    Review --> CheckValid{Hồ sơ hợp lệ?}
+    CheckValid -->|Hợp lệ| Approve[Đã hợp lệ -> Tạo PDF chuẩn]
+    Approve --> SignPhase[Chuyển sang giai đoạn Trình ký Khoa & Trường]
+
+    CheckValid -->|Chưa hợp lệ| RequestRevision[Cập nhật Sheet: Chờ bổ sung]
+    RequestRevision --> SendMailRevise[Gửi Email yêu cầu bổ sung kèm link Form 2]
+    SendMailRevise --> UserFix[Người dùng bổ sung thông tin]
+    UserFix --> Form2[Google Form 2 / Cập nhật Web Form]
+    Form2 --> TriggerForm2[Trigger xử lý bổ sung]
+    TriggerForm2 --> UpdateData[Cập nhật Tờ trình/Kế hoạch mới & Chờ kiểm tra lại]
+    UpdateData --> Review
+```
+================================================================================

@@ -190,12 +190,13 @@ export const dossierService = {
     const nextStatus = targetStatus || (dossier.status === 'DRAFT' ? 'DRAFT' : 'NEW');
     const isSubmitting = nextStatus === 'NEW';
 
-    // Lưu phiên bản lịch sử
-    const versionCount = 2;
+    // Lưu phiên bản lịch sử — lấy số phiên bản tiếp theo từ DB
+    const existingVersions = await dossierRepository.countVersions(id);
+    const nextVersionNumber = existingVersions + 1;
     await dossierRepository.saveVersion({
       id: `ver-${Date.now()}`,
       dossierId: id,
-      versionNumber: versionCount,
+      versionNumber: nextVersionNumber,
       formData: formData,
       editedById: user?.id || 'usr-canbo',
       editedByName: user?.name || 'Cán bộ',

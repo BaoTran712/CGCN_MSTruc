@@ -3,7 +3,7 @@ import { Toast, ToastMessage } from '../components/common/Toast';
 
 interface ToastContextValue {
   toastMessage: ToastMessage | null;
-  showToast: (text: string, type?: 'success' | 'info') => void;
+  showToast: (text: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
 }
 
 const ToastContext = createContext<ToastContextValue | undefined>(undefined);
@@ -11,7 +11,7 @@ const ToastContext = createContext<ToastContextValue | undefined>(undefined);
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toastMessage, setToastMessage] = useState<ToastMessage | null>(null);
 
-  const showToast = useCallback((text: string, type: 'success' | 'info' = 'success') => {
+  const showToast = useCallback((text: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
     setToastMessage({ text, type });
     const timer = setTimeout(() => {
       setToastMessage(null);

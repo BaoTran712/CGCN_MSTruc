@@ -95,7 +95,7 @@ export const dossierRepository = {
       dossier.bgh_signed ? 1 : 0,
       dossier.review_notes || null,
       dossier.drive_folder_url || null,
-      dossier.submitted_at || new Date(),
+      dossier.submitted_at ?? null,
       dossier.created_at || new Date(),
     ]);
 
@@ -121,9 +121,18 @@ export const dossierRepository = {
 
     if (updates.length === 0) return this.findById(id);
 
-    values.push(id);
-    await execute(`UPDATE dossiers SET ${updates.join(', ')} WHERE id = ?`, values);
+    values.push(id, id);
+    await execute(`UPDATE dossiers SET ${updates.join(', ')} WHERE id = ? OR code = ?`, values);
     return this.findById(id);
+  },
+
+  // Đếm số phiên bản hiện có của một hồ sơ
+  async countVersions(dossierId) {
+    const rows = await query(
+      `SELECT COUNT(*) as total FROM dossier_versions WHERE dossier_id = ?`,
+      [dossierId]
+    );
+    return Number(rows[0]?.total || 0);
   },
 
   // Lưu bản ghi lịch sử phiên bản khi sửa form

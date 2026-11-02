@@ -3,9 +3,8 @@ import {
   ActiveNavTab,
   Application,
   DocumentTemplate,
-  UserRole,
 } from './types';
-import { isAdminEmail } from './constants';
+import { isAdminUser } from './constants';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { DossierProvider, useDossiers } from './contexts/DossierContext';
@@ -23,10 +22,11 @@ import {
   ProcessingHistoryView,
   SettingsView,
   LoginPage,
+  UsersView,
 } from './pages';
 
 function AppContent() {
-  const { currentUser, login, logout, resetDevUser, switchRole } = useAuth();
+  const { currentUser, login, logout } = useAuth();
   const { showToast } = useToast();
   const {
     templates,
@@ -57,12 +57,18 @@ function AppContent() {
   const [templateForCreation, setTemplateForCreation] = useState<DocumentTemplate | null>(null);
   const [templateDetailModal, setTemplateDetailModal] = useState<DocumentTemplate | null>(null);
 
-  const isAdmin = isAdminEmail(currentUser?.email);
+  const isAdmin = isAdminUser(currentUser);
 
-  // Chặn người dùng thông thường truy cập các tab đặc quyền Admin
+  // Chặn người dùng truy cập các tab không phù hợp với vai trò
   useEffect(() => {
-    if (currentUser && !isAdmin && ['pending_approval', 'secretary_queue', 'history_sheets'].includes(activeTab)) {
-      setActiveTab('dashboard');
+    if (!currentUser) return;
+    // User không được truy cập tab Admin
+    if (!isAdmin && ['pending_approval', 'secretary_queue', 'history_sheets', 'users'].includes(activeTab)) {
+      setActiveTab('my_dossiers');
+    }
+    // Admin không nên truy cập tab tạo hồ sơ / hồ sơ của tôi
+    if (isAdmin && ['create_dossier', 'my_dossiers'].includes(activeTab)) {
+      setActiveTab('pending_approval');
     }
   }, [currentUser, isAdmin, activeTab]);
 
@@ -72,13 +78,13 @@ function AppContent() {
       <LoginPage
         onLoginSuccess={(user) => {
           login(user);
-          const isUserAdmin = isAdminEmail(user.email);
+          const isUserAdmin = isAdminUser(user);
           if (isUserAdmin) {
             setActiveTab('pending_approval');
           } else {
             setActiveTab('my_dossiers');
           }
-          showToast(`Đăng nhập thành công: ${user.name} (${user.email})!`);
+          showToast(`Đăng nhập thành công: ${user.name}!`);
         }}
       />
     );
@@ -136,12 +142,20 @@ function AppContent() {
   const handleReturnDossier = async (dossierId: string, reason: string) => {
     try {
       const returned = await returnDossier(dossierId, reason, currentUser);
-      if (selectedDossier?.id === returned.id) {
+      if (
+        selectedDossier &&
+        (selectedDossier.id === returned.id ||
+          selectedDossier.code === returned.code ||
+          selectedDossier.id === dossierId ||
+          selectedDossier.code === dossierId)
+      ) {
         setSelectedDossier(returned);
       }
-      showToast(`Đã trả lại hồ sơ ${returned.code} kèm lý do.`);
-    } catch (err) {
+      showToast(`Đã trả lại hồ sơ ${returned.code} (Yêu cầu chỉnh sửa bổ sung).`);
+    } catch (err: any) {
       console.error('Error returning application:', err);
+      showToast(err.message || 'Lỗi khi trả lại hồ sơ', 'error');
+      throw err;
     }
   };
 
@@ -202,23 +216,6 @@ function AppContent() {
     }
   };
 
-  const handleSwitchUserRole = (targetRole: UserRole) => {
-    const updatedUser = switchRole(targetRole);
-    const roleKey = String(targetRole).toUpperCase();
-    if (roleKey === 'ADMIN') {
-      setActiveTab('pending_approval');
-      showToast(`Đã chuyển tài khoản: ${updatedUser.name} (Admin duy nhất - ${updatedUser.email})`, 'info');
-    } else {
-      setActiveTab('my_dossiers');
-      showToast(`Đã chuyển tài khoản: ${updatedUser.name} (Cán bộ trường - ${updatedUser.email})`, 'info');
-    }
-  };
-
-  const handleResetDevSession = () => {
-    resetDevUser();
-    showToast('Đã làm mới phiên làm việc kiểm thử.', 'info');
-  };
-
   const handleSignOut = () => {
     logout();
     showToast('Đã đăng xuất khỏi hệ thống.', 'info');
@@ -230,16 +227,24 @@ function AppContent() {
   const handleAdminPrecheck = async (dossierId: string, isValid: boolean, reviewNotes?: string) => {
     try {
       const updated = await adminPrecheck(dossierId, isValid, reviewNotes, currentUser);
-      if (selectedDossier?.id === updated.id) {
+      if (
+        selectedDossier &&
+        (selectedDossier.id === updated.id ||
+          selectedDossier.code === updated.code ||
+          selectedDossier.id === dossierId ||
+          selectedDossier.code === dossierId)
+      ) {
         setSelectedDossier(updated);
       }
       if (isValid) {
         showToast(`Đã duyệt hợp lệ thể thức hồ sơ ${updated.code} và xuất file PDF chuẩn.`);
       } else {
-        showToast(`Đã gửi yêu cầu bổ sung chỉnh sửa hồ sơ ${updated.code} qua Gmail.`);
+        showToast(`Đã trả lại hồ sơ ${updated.code} (Yêu cầu chỉnh sửa bổ sung).`);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error in admin precheck:', err);
+      showToast(err.message || 'Lỗi khi xử lý tiền kiểm hồ sơ', 'error');
+      throw err;
     }
   };
 
@@ -302,9 +307,7 @@ function AppContent() {
       currentUser={currentUser}
       pendingCount={pendingCount}
       myDossierCount={myDossierCount}
-      onLogout={handleResetDevSession}
       onSignOut={handleSignOut}
-      onSwitchUserRole={handleSwitchUserRole}
     >
       {isLoading ? (
         <LoadingSpinner />
@@ -404,6 +407,13 @@ function AppContent() {
                 await refreshSheetRows();
                 showToast('Đã làm mới dữ liệu từ API Google Sheets!');
               }}
+            />
+          )}
+
+          {activeTab === 'users' && isAdmin && (
+            <UsersView
+              currentUser={currentUser}
+              onNavigate={setActiveTab}
             />
           )}
 

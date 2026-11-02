@@ -19,6 +19,7 @@ import {
   Download,
 } from 'lucide-react';
 import { WordDocumentPreview } from '../components/document/WordDocumentPreview';
+import { TimeRangePicker, DocumentNumberInput, DepartmentSelect, LocationSelect } from '../components/common';
 import { generateAndDownloadDocx } from '../utils/docxExport';
 import { normalizeNFC } from '../utils/textUtils';
 import { OFFICIAL_TEMPLATES } from '../constants';
@@ -88,21 +89,23 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
     if (editingDossier && editingDossier.formData) {
       return { ...editingDossier.formData };
     }
-    // Default values from user profile and template
+    // Seed defaults: user profile fields + field.defaultValue from template
+    const activeTemplate = (initialTemplate
+      ? safeTemplates.find((t) => t.id === initialTemplate.id) || initialTemplate
+      : safeTemplates[0] || OFFICIAL_TEMPLATES[0]);
     const defaults: Record<string, any> = {
-      full_name: currentUser.name,
-      department: currentUser.department,
-      phone: currentUser.phone,
-      position: currentUser.title,
+      full_name: currentUser.name || '',
+      department: currentUser.department || '',
+      phone: currentUser.phone || '',
+      position: currentUser.title || '',
     };
-    if (template && template.fields && Array.isArray(template.fields)) {
-      template.fields.forEach((f) => {
-        const key = f.name || f.key || f.id;
-        if (f.defaultValue !== undefined) {
-          defaults[key] = f.defaultValue;
-        }
-      });
-    }
+    // Pre-fill any field that has a defaultValue
+    (activeTemplate?.fields || []).forEach((f) => {
+      const key = f.name || f.key || f.id;
+      if (f.defaultValue !== undefined && f.defaultValue !== '' && defaults[key] === undefined) {
+        defaults[key] = f.defaultValue;
+      }
+    });
     return defaults;
   });
 
@@ -115,19 +118,18 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
     if (found) {
       setTemplate(found);
       const defaults: Record<string, any> = {
-        full_name: currentUser.name,
-        department: currentUser.department,
-        phone: currentUser.phone,
-        position: currentUser.title,
+        full_name: currentUser.name || '',
+        department: currentUser.department || '',
+        phone: currentUser.phone || '',
+        position: currentUser.title || '',
       };
-      if (found.fields && Array.isArray(found.fields)) {
-        found.fields.forEach((f) => {
-          const key = f.name || f.key || f.id;
-          if (f.defaultValue !== undefined) {
-            defaults[key] = f.defaultValue;
-          }
-        });
-      }
+      // Pre-fill field.defaultValue for new template
+      (found.fields || []).forEach((f) => {
+        const key = f.name || f.key || f.id;
+        if (f.defaultValue !== undefined && f.defaultValue !== '' && defaults[key] === undefined) {
+          defaults[key] = f.defaultValue;
+        }
+      });
       setFormData(defaults);
       setErrors({});
     }
@@ -158,22 +160,100 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
     handleInputChange(fieldName, nextList);
   };
 
-  // Validation
+  // Helper kiểm tra định dạng số điện thoại Việt Nam hợp lệ
+  const isValidVietnamesePhone = (phoneStr: string): boolean => {
+    if (!phoneStr) return true;
+    const clean = phoneStr.replace(/[\s.\-()]/g, '');
+    // Di động: 10 số đầu 03, 05, 07, 08, 09 (hoặc +84); Cố định: 10-11 số đầu 02 (ví dụ Cần Thơ 0292)
+    const phoneRegex = /^(0|\+84)(2\d{8,9}|[35789]\d{8})$/;
+    return phoneRegex.test(clean);
+  };
+
+  // Helper kiểm tra email công vụ CTUMP (@ctump.edu.vn)
+  const isValidCtumpEmail = (emailStr: string): boolean => {
+    if (!emailStr) return true;
+    const clean = emailStr.trim().toLowerCase();
+    // Chấp nhận đuôi @ctump.edu.vn hoặc subdomain @*.ctump.edu.vn, đồng thời hỗ trợ email admin dev thử nghiệm
+    const isCtump = clean.endsWith('@ctump.edu.vn') || clean.endsWith('.ctump.edu.vn') || clean === 'toanhkhai12345@gmail.com';
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return isCtump && emailRegex.test(clean);
+  };
+
+  // Validation with auto-scroll to first invalid field
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
     if (template && template.fields) {
       for (const field of template.fields) {
         const key = field.name || field.key || field.id;
+        const val = formData[key];
+
+        const isPhone =
+          key === 'phone' ||
+          field.type === 'tel' ||
+          field.id?.includes('phone') ||
+          /điện thoại/i.test(field.label);
+
+        const isEmail =
+          key === 'email' ||
+          field.type === 'email' ||
+          field.id?.includes('email') ||
+          /email|thư điện tử/i.test(field.label);
+
+        // 1. Kiểm tra trường bắt buộc
         if (field.required) {
-          const val = formData[key];
           if (val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0)) {
             newErrors[key] = `${field.label} là trường bắt buộc`;
+          }
+        }
+
+        // 2. Ép điều kiện số điện thoại hợp lệ
+        if (isPhone && val && typeof val === 'string' && val.trim() !== '') {
+          if (!isValidVietnamesePhone(val)) {
+            newErrors[key] = 'Số điện thoại không hợp lệ (Cần 10 số di động 03/05/07/08/09 hoặc số bàn 02, ví dụ: 0912.345.678 hoặc 0292.3831.531)';
+          }
+        }
+
+        // 3. Ép điều kiện email công vụ CTUMP (@ctump.edu.vn)
+        if (isEmail && val && typeof val === 'string' && val.trim() !== '') {
+          if (!isValidCtumpEmail(val)) {
+            newErrors[key] = 'Email liên hệ phải có đuôi trường @ctump.edu.vn (Ví dụ: canbo@ctump.edu.vn)';
+          }
+        }
+
+        // 4. Ép điều kiện số văn bản / số tờ trình (Bắt buộc phải có số thứ tự)
+        const isDocNumber =
+          key === 'proposal_number' ||
+          key === 'plan_code' ||
+          field.wordPlaceholder === '{{so_to_trinh}}' ||
+          field.wordPlaceholder === '{{so_ke_hoach}}' ||
+          field.id === 'f-1a-proposal-number' ||
+          field.id === 'f-2a-plan-code';
+
+        if (isDocNumber && field.required) {
+          const str = String(val || '').trim();
+          const numPart = str.split('/')[0]?.trim();
+          if (!numPart || numPart === '...' || /^\.+$/.test(numPart)) {
+            newErrors[key] = `Vui lòng nhập số của ${field.label.toLowerCase()} (bắt buộc, ví dụ: 15)`;
           }
         }
       }
     }
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+
+    const errorKeys = Object.keys(newErrors);
+    if (errorKeys.length > 0) {
+      const firstKey = errorKeys[0];
+      setTimeout(() => {
+        const el = document.getElementById(`field-${firstKey}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          const input = el.querySelector('input, select, textarea') as HTMLElement;
+          if (input) input.focus();
+        }
+      }, 50);
+      return false;
+    }
+    return true;
   };
 
   // Construct draft dossier
@@ -287,20 +367,22 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
         </div>
       </div>
 
-      {/* Save Draft notification message */}
+      {/* Save Draft / Auto-fill notification message */}
       {saveSuccessMsg && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Check className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{saveSuccessMsg}</span>
           </div>
-          <button
-            type="button"
-            onClick={() => onNavigate('my_dossiers')}
-            className="font-semibold text-emerald-900 hover:underline"
-          >
-            Đến Hồ sơ của tôi &rarr;
-          </button>
+          {saveSuccessMsg.includes('Lưu bản nháp') && (
+            <button
+              type="button"
+              onClick={() => onNavigate('my_dossiers')}
+              className="font-semibold text-emerald-900 hover:underline cursor-pointer"
+            >
+              Đến Hồ sơ của tôi &rarr;
+            </button>
+          )}
         </div>
       )}
 
@@ -377,22 +459,24 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
               <p className="text-xs text-slate-600 max-w-2xl">{template.description}</p>
             </div>
 
-            {/* Template Selector dropdown */}
-            <div className="w-full md:w-64 shrink-0">
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                Đổi biểu mẫu khác:
-              </label>
-              <select
-                value={template.id}
-                onChange={(e) => handleTemplateChange(e.target.value)}
-                className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-md bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-600 focus:border-blue-600"
-              >
-                {safeTemplates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    [{t.code}] {t.title}
-                  </option>
-                ))}
-              </select>
+            {/* Template Selector dropdown & Quick Fill button */}
+            <div className="w-full md:w-auto shrink-0 flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
+              <div className="w-full md:w-64">
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Đổi biểu mẫu khác:
+                </label>
+                <select
+                  value={template.id}
+                  onChange={(e) => handleTemplateChange(e.target.value)}
+                  className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-md bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-600 focus:border-blue-600"
+                >
+                  {safeTemplates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      [{t.code}] {t.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -432,13 +516,66 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
                   <div className="p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-3.5">
                     {fieldsInSection.map((field) => {
                       const fKey = field.name || field.key || field.id;
-                      const isFullWidth = field.type === 'textarea' || field.type === 'checkbox';
+                      const isTimeRangeField =
+                        fKey === 'transfer_time' ||
+                        fKey === 'transfer_date' ||
+                        field.wordPlaceholder === '{{thoi_gian}}' ||
+                        field.id === 'f-1a-transfer-time' ||
+                        field.id === 'f-2a-transfer-date';
+
+                      const isDocNumberField =
+                        fKey === 'proposal_number' ||
+                        fKey === 'plan_code' ||
+                        field.wordPlaceholder === '{{so_to_trinh}}' ||
+                        field.wordPlaceholder === '{{so_ke_hoach}}' ||
+                        field.id === 'f-1a-proposal-number' ||
+                        field.id === 'f-2a-plan-code';
+
+                      const isDepartmentField =
+                        fKey === 'department' ||
+                        field.wordPlaceholder === '{{don_vi_uppercase}}' ||
+                        field.id === 'f-1a-department' ||
+                        field.id === 'f-2a-department';
+
+                      const isLocationField =
+                        fKey === 'transfer_location' ||
+                        fKey === 'transfer_place' ||
+                        field.wordPlaceholder === '{{dia_diem}}' ||
+                        field.id === 'f-1a-transfer-location' ||
+                        field.id === 'f-2a-transfer-location' ||
+                        /địa điểm/i.test(field.label);
+
+                      const isPhoneField =
+                        fKey === 'phone' ||
+                        field.type === 'tel' ||
+                        field.id === 'f-1a-phone' ||
+                        field.id === 'f-2a-phone' ||
+                        /điện thoại/i.test(field.label);
+
+                      const isEmailField =
+                        fKey === 'email' ||
+                        field.type === 'email' ||
+                        field.id === 'f-1a-email' ||
+                        field.id === 'f-2a-email' ||
+                        /email|thư điện tử/i.test(field.label);
+
+                      const isFullWidth =
+                        field.type === 'textarea' ||
+                        field.type === 'checkbox' ||
+                        isTimeRangeField ||
+                        isDocNumberField ||
+                        isLocationField;
                       const hasError = !!errors[fKey];
 
                       return (
                         <div
                           key={field.id}
-                          className={`space-y-1 ${isFullWidth ? 'md:col-span-2' : ''}`}
+                          id={`field-${fKey}`}
+                          className={`space-y-1 p-2 rounded-lg transition-colors ${
+                            hasError
+                              ? 'bg-rose-50/60 ring-1 ring-rose-300'
+                              : ''
+                          } ${isFullWidth ? 'md:col-span-2' : ''}`}
                         >
                           <div className="flex items-center justify-between">
                             <label className="block text-xs font-semibold text-slate-700">
@@ -452,130 +589,233 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
                             )}
                           </div>
 
-                          {/* Field rendering by type */}
-                          {field.type === 'text' && (
-                            <input
-                              type="text"
-                              value={formData[fKey] || ''}
-                              onChange={(e) => handleInputChange(fKey, e.target.value)}
-                              placeholder={field.placeholder || `Nhập ${field.label.toLowerCase()}`}
-                              className={`w-full px-3 py-1.5 text-xs border rounded-md text-slate-900 focus:outline-none focus:ring-1 ${
-                                hasError
-                                  ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500'
-                                  : 'border-slate-300 focus:ring-blue-600 focus:border-blue-600'
-                              }`}
-                            />
-                          )}
-
-                          {field.type === 'number' && (
-                            <input
-                              type="number"
-                              value={formData[fKey] ?? ''}
-                              onChange={(e) => handleInputChange(fKey, e.target.value)}
-                              placeholder={field.placeholder || '0'}
-                              className={`w-full px-3 py-1.5 text-xs font-mono border rounded-md text-slate-900 focus:outline-none focus:ring-1 ${
-                                hasError
-                                  ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500'
-                                  : 'border-slate-300 focus:ring-blue-600 focus:border-blue-600'
-                              }`}
-                            />
-                          )}
-
-                          {field.type === 'date' && (
-                            <input
-                              type="date"
-                              value={formData[fKey] || ''}
-                              onChange={(e) => handleInputChange(fKey, e.target.value)}
-                              className={`w-full px-3 py-1.5 text-xs font-mono border rounded-md text-slate-900 focus:outline-none focus:ring-1 ${
-                                hasError
-                                  ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500'
-                                  : 'border-slate-300 focus:ring-blue-600 focus:border-blue-600'
-                              }`}
-                            />
-                          )}
-
-                          {field.type === 'select' && (
-                            <select
-                              value={formData[fKey] || ''}
-                              onChange={(e) => handleInputChange(fKey, e.target.value)}
-                              className={`w-full px-3 py-1.5 text-xs border rounded-md bg-white text-slate-900 focus:outline-none focus:ring-1 ${
-                                hasError
-                                  ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500'
-                                  : 'border-slate-300 focus:ring-blue-600 focus:border-blue-600'
-                              }`}
-                            >
-                              <option value="">-- Chọn {field.label.toLowerCase()} --</option>
-                              {field.options?.map((opt) => (
-                                <option key={opt} value={opt}>
-                                  {opt}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-
-                          {field.type === 'radio' && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
-                              {field.options?.map((opt) => (
-                                <label
-                                  key={opt}
-                                  className={`flex items-center gap-2 p-2 rounded-md border text-xs cursor-pointer transition-colors ${
-                                    formData[fKey] === opt
-                                      ? 'border-blue-600 bg-blue-50/60 text-blue-900 font-medium'
-                                      : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                          {/* Field rendering by type (exclusive conditional rendering) */}
+                          {(() => {
+                            if (isTimeRangeField) {
+                              return (
+                                <TimeRangePicker
+                                  value={formData[fKey] || ''}
+                                  onChange={(val) => handleInputChange(fKey, val)}
+                                  placeholder={field.placeholder || 'Ví dụ: Từ tháng 10/2026 đến tháng 12/2026'}
+                                  hasError={hasError}
+                                />
+                              );
+                            }
+                            if (isDocNumberField) {
+                              return (
+                                <DocumentNumberInput
+                                  value={formData[fKey] || ''}
+                                  onChange={(val) => handleInputChange(fKey, val)}
+                                  docType={fKey === 'plan_code' || field.wordPlaceholder === '{{so_ke_hoach}}' ? 'KH' : 'TTr'}
+                                  currentDepartment={formData.department || currentUser.department || ''}
+                                  hasError={hasError}
+                                  placeholderNumber="15"
+                                />
+                              );
+                            }
+                            if (isDepartmentField) {
+                              return (
+                                <DepartmentSelect
+                                  id={`field-input-${fKey}`}
+                                  value={formData[fKey] || ''}
+                                  onChange={(val) => handleInputChange(fKey, val)}
+                                  hasError={hasError}
+                                  placeholder="-- Chọn Đơn vị / Khoa / Bộ môn trình --"
+                                />
+                              );
+                            }
+                            if (isLocationField) {
+                              return (
+                                <LocationSelect
+                                  id={`field-input-${fKey}`}
+                                  value={formData[fKey] || ''}
+                                  onChange={(val) => handleInputChange(fKey, val)}
+                                  hasError={hasError}
+                                  placeholder="-- Chọn địa điểm chuyển giao --"
+                                />
+                              );
+                            }
+                            if (isPhoneField) {
+                              return (
+                                <input
+                                  type="tel"
+                                  value={formData[fKey] || ''}
+                                  onChange={(e) => {
+                                    // Chỉ cho phép nhập số, dấu +, dấu chấm, gạch ngang, khoảng trắng
+                                    const sanitized = e.target.value.replace(/[^0-9+\s.\-()]/g, '');
+                                    handleInputChange(fKey, sanitized);
+                                  }}
+                                  onBlur={() => {
+                                    if (formData[fKey] && !isValidVietnamesePhone(String(formData[fKey]))) {
+                                      setErrors((prev) => ({
+                                        ...prev,
+                                        [fKey]: 'Số điện thoại không hợp lệ (Ví dụ: 0912.345.678 hoặc 0292.3831.531)',
+                                      }));
+                                    }
+                                  }}
+                                  placeholder={field.placeholder || 'Ví dụ: 0912.345.678'}
+                                  maxLength={15}
+                                  className={`w-full px-3 py-1.5 text-xs font-mono border rounded-md text-slate-900 focus:outline-none focus:ring-1 ${
+                                    hasError
+                                      ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500 bg-rose-50/20'
+                                      : 'border-slate-300 focus:ring-blue-600 focus:border-blue-600'
+                                  }`}
+                                />
+                              );
+                            }
+                            if (isEmailField) {
+                              return (
+                                <input
+                                  type="email"
+                                  value={formData[fKey] || ''}
+                                  onChange={(e) => handleInputChange(fKey, e.target.value)}
+                                  onBlur={() => {
+                                    if (formData[fKey] && !isValidCtumpEmail(String(formData[fKey]))) {
+                                      setErrors((prev) => ({
+                                        ...prev,
+                                        [fKey]: 'Email liên hệ phải có đuôi trường @ctump.edu.vn (Ví dụ: canbo@ctump.edu.vn)',
+                                      }));
+                                    }
+                                  }}
+                                  placeholder={field.placeholder || 'Ví dụ: canbo@ctump.edu.vn'}
+                                  className={`w-full px-3 py-1.5 text-xs font-mono border rounded-md text-slate-900 focus:outline-none focus:ring-1 ${
+                                    hasError
+                                      ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500 bg-rose-50/20'
+                                      : 'border-slate-300 focus:ring-blue-600 focus:border-blue-600'
+                                  }`}
+                                />
+                              );
+                            }
+                            if (field.type === 'number') {
+                              return (
+                                <input
+                                  type="number"
+                                  value={formData[fKey] ?? ''}
+                                  onChange={(e) => handleInputChange(fKey, e.target.value)}
+                                  placeholder={field.placeholder || '0'}
+                                  className={`w-full px-3 py-1.5 text-xs font-mono border rounded-md text-slate-900 focus:outline-none focus:ring-1 ${
+                                    hasError
+                                      ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500'
+                                      : 'border-slate-300 focus:ring-blue-600 focus:border-blue-600'
+                                  }`}
+                                />
+                              );
+                            }
+                            if (field.type === 'date') {
+                              return (
+                                <input
+                                  type="date"
+                                  value={formData[fKey] || ''}
+                                  onChange={(e) => handleInputChange(fKey, e.target.value)}
+                                  className={`w-full px-3 py-1.5 text-xs font-mono border rounded-md text-slate-900 focus:outline-none focus:ring-1 ${
+                                    hasError
+                                      ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500'
+                                      : 'border-slate-300 focus:ring-blue-600 focus:border-blue-600'
+                                  }`}
+                                />
+                              );
+                            }
+                            if (field.type === 'select') {
+                              return (
+                                <select
+                                  value={formData[fKey] || ''}
+                                  onChange={(e) => handleInputChange(fKey, e.target.value)}
+                                  className={`w-full px-3 py-1.5 text-xs border rounded-md bg-white text-slate-900 focus:outline-none focus:ring-1 ${
+                                    hasError
+                                      ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500'
+                                      : 'border-slate-300 focus:ring-blue-600 focus:border-blue-600'
                                   }`}
                                 >
-                                  <input
-                                    type="radio"
-                                    name={fKey}
-                                    checked={formData[fKey] === opt}
-                                    onChange={() => handleInputChange(fKey, opt)}
-                                    className="text-blue-600"
-                                  />
-                                  <span>{opt}</span>
-                                </label>
-                              ))}
-                            </div>
-                          )}
-
-                          {field.type === 'checkbox' && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
-                              {field.options?.map((opt) => {
-                                const checked = Array.isArray(formData[fKey]) && formData[fKey].includes(opt);
-                                return (
-                                  <label
-                                    key={opt}
-                                    className={`flex items-center gap-2 p-2 rounded-md border text-xs cursor-pointer transition-colors ${
-                                      checked
-                                        ? 'border-blue-600 bg-blue-50/60 text-blue-900 font-medium'
-                                        : 'border-slate-200 text-slate-700 hover:bg-slate-50'
-                                    }`}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={() => handleCheckboxToggle(fKey, opt)}
-                                      className="text-blue-600 rounded"
-                                    />
-                                    <span>{opt}</span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          )}
-
-                          {field.type === 'textarea' && (
-                            <textarea
-                              rows={3}
-                              value={formData[fKey] || ''}
-                              onChange={(e) => handleInputChange(fKey, e.target.value)}
-                              placeholder={field.placeholder || `Nhập ${field.label.toLowerCase()}...`}
-                              className={`w-full px-3 py-1.5 text-xs border rounded-md text-slate-900 focus:outline-none focus:ring-1 ${
-                                hasError
-                                  ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500'
-                                  : 'border-slate-300 focus:ring-blue-600 focus:border-blue-600'
-                              }`}
-                            />
-                          )}
+                                  <option value="">-- Chọn {field.label.toLowerCase()} --</option>
+                                  {field.options?.map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </select>
+                              );
+                            }
+                            if (field.type === 'radio') {
+                              return (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+                                  {field.options?.map((opt) => (
+                                    <label
+                                      key={opt}
+                                      className={`flex items-center gap-2 p-2 rounded-md border text-xs cursor-pointer transition-colors ${
+                                        formData[fKey] === opt
+                                          ? 'border-blue-600 bg-blue-50/60 text-blue-900 font-medium'
+                                          : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      <input
+                                        type="radio"
+                                        name={fKey}
+                                        checked={formData[fKey] === opt}
+                                        onChange={() => handleInputChange(fKey, opt)}
+                                        className="text-blue-600"
+                                      />
+                                      <span>{opt}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              );
+                            }
+                            if (field.type === 'checkbox') {
+                              return (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+                                  {field.options?.map((opt) => {
+                                    const checked = Array.isArray(formData[fKey]) && formData[fKey].includes(opt);
+                                    return (
+                                      <label
+                                        key={opt}
+                                        className={`flex items-center gap-2 p-2 rounded-md border text-xs cursor-pointer transition-colors ${
+                                          checked
+                                            ? 'border-blue-600 bg-blue-50/60 text-blue-900 font-medium'
+                                            : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                                        }`}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={() => handleCheckboxToggle(fKey, opt)}
+                                          className="text-blue-600 rounded"
+                                        />
+                                        <span>{opt}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            }
+                            if (field.type === 'textarea') {
+                              return (
+                                <textarea
+                                  rows={3}
+                                  value={formData[fKey] || ''}
+                                  onChange={(e) => handleInputChange(fKey, e.target.value)}
+                                  placeholder={field.placeholder || `Nhập ${field.label.toLowerCase()}...`}
+                                  className={`w-full px-3 py-1.5 text-xs border rounded-md text-slate-900 focus:outline-none focus:ring-1 ${
+                                    hasError
+                                      ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500'
+                                      : 'border-slate-300 focus:ring-blue-600 focus:border-blue-600'
+                                  }`}
+                                />
+                              );
+                            }
+                            return (
+                              <input
+                                type="text"
+                                value={formData[fKey] || ''}
+                                onChange={(e) => handleInputChange(fKey, e.target.value)}
+                                placeholder={field.placeholder || `Nhập ${field.label.toLowerCase()}`}
+                                className={`w-full px-3 py-1.5 text-xs border rounded-md text-slate-900 focus:outline-none focus:ring-1 ${
+                                  hasError
+                                    ? 'border-rose-400 focus:ring-rose-500 focus:border-rose-500'
+                                    : 'border-slate-300 focus:ring-blue-600 focus:border-blue-600'
+                                }`}
+                              />
+                            );
+                          })()}
 
                           {field.helpText && (
                             <p className="text-[11px] text-slate-500">{field.helpText}</p>
@@ -595,12 +835,27 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
             })}
           </div>
 
+          {/* Validation Error Alert Box if any errors exist */}
+          {Object.keys(errors).length > 0 && (
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-lg flex items-start sm:items-center gap-2.5 text-xs text-rose-900 shadow-2xs">
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5 sm:mt-0" />
+              <div>
+                <p className="font-bold text-rose-950">
+                  Chưa thể chuyển bước: Còn {Object.keys(errors).length} trường thông tin bắt buộc chưa điền!
+                </p>
+                <p className="text-[11px] text-rose-700 mt-0.5">
+                  Hệ thống đã tự động cuộn đến vị trí trường còn thiếu (viền đỏ). Vui lòng điền đầy đủ các thông tin cần thiết để tiếp tục.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Step 1 Actions Footer */}
-          <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-200">
             <button
               type="button"
               onClick={handleSaveDraft}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-md transition-colors cursor-pointer"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-md transition-colors cursor-pointer"
             >
               <Save className="w-3.5 h-3.5 text-slate-500" />
               <span>Lưu nháp</span>
@@ -609,7 +864,7 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
             <button
               type="button"
               onClick={handleNextToReview}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-800 hover:bg-blue-900 rounded-md shadow-2xs transition-colors cursor-pointer"
+              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-blue-800 hover:bg-blue-900 rounded-md shadow-2xs transition-colors cursor-pointer"
             >
               <span>Tiếp tục: Kiểm tra dữ liệu</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -742,11 +997,11 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
                 <Send className="w-5 h-5" />
               </div>
               <h2 className="text-base font-bold text-slate-900">
-                Sẵn sàng gửi hồ sơ kiểm tra
+                Sẵn sàng gửi hồ sơ tới Quản trị viên
               </h2>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Hồ sơ của đồng chí sẽ được chuyển trực tiếp tới hộp thư chờ duyệt của người quản lý:{' '}
-                <strong>{template.manager}</strong> ({template.category}).
+                Hồ sơ của Thầy/Cô sẽ được chuyển trực tiếp tới hàng đợi tiền kiểm của{' '}
+                <strong>Quản trị viên (Phòng Khoa học &amp; Công nghệ)</strong> để thẩm định thể thức và phê duyệt.
               </p>
             </div>
 
@@ -762,11 +1017,15 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
               </div>
               <div className="flex justify-between py-1 border-b border-slate-200">
                 <span className="text-slate-500">Người nộp hồ sơ:</span>
-                <span className="text-slate-900 font-medium">{currentUser.name}</span>
+                <span className="text-slate-900 font-medium">{currentUser.name} (Thầy / Cô)</span>
               </div>
               <div className="flex justify-between py-1">
+                <span className="text-slate-500">Người phê duyệt:</span>
+                <span className="font-semibold text-emerald-800">Quản trị viên (Phòng KH&amp;CN)</span>
+              </div>
+              <div className="flex justify-between py-1 border-t border-slate-200">
                 <span className="text-slate-500">Trạng thái sau khi gửi:</span>
-                <span className="font-semibold text-amber-800">Chờ duyệt</span>
+                <span className="font-semibold text-amber-800">Chờ Admin duyệt (Tiền kiểm)</span>
               </div>
             </div>
 
@@ -774,7 +1033,7 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
               <div className="flex items-start gap-2">
                 <ShieldCheck className="w-4 h-4 text-blue-700 shrink-0 mt-0.5" />
                 <p>
-                  Sau khi gửi, đồng chí có thể theo dõi tiến độ thẩm định, xem yêu cầu chỉnh sửa (nếu có), hoặc tải file Word đã phê duyệt bất kỳ lúc nào tại mục <strong>"Hồ sơ của tôi"</strong>.
+                  Sau khi Thầy/Cô gửi nộp, Quản trị viên sẽ tiến hành tiền kiểm. Thầy/Cô có thể theo dõi tiến độ thẩm định, xem phản hồi hoặc tải file Word bất kỳ lúc nào tại mục <strong>"Hồ sơ của tôi"</strong>.
                 </p>
               </div>
             </div>

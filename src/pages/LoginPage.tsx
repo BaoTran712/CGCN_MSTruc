@@ -3,6 +3,7 @@ import { User } from '../types';
 import * as api from '../services/api';
 import { isAdminEmail } from '../constants';
 import { AlertCircle, Loader2 } from 'lucide-react';
+import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER } from '../constants';
 import logoUrl from '../assets/logo.png';
 
 declare global {
@@ -270,65 +271,113 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             )}
           </div>
 
-          {/* Đăng nhập nhanh cho mạng Wi-Fi / Cùng phòng */}
-          <div className="relative my-2">
+          {/* Divider */}
+          <div className="relative my-4">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-slate-200" />
             </div>
-            <div className="relative flex justify-center text-[11px] uppercase">
-              <span className="bg-white px-2 text-slate-400">Hoặc</span>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-white px-2.5 text-slate-500 font-medium">Hoặc đăng nhập nhanh theo vai trò</span>
             </div>
           </div>
 
-          {!showManual ? (
+          {/* Quick Role-based Login Buttons */}
+          <div className="space-y-2.5">
             <button
               type="button"
-              onClick={() => setShowManual(true)}
-              className="w-full text-xs text-blue-600 hover:text-blue-800 font-medium py-1 text-center transition-colors hover:underline cursor-pointer"
+              onClick={() => {
+                onLoginSuccess(DEFAULT_CANBO_USER);
+              }}
+              className="w-full py-2.5 px-4 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-blue-900 text-xs font-semibold flex items-center justify-between transition-colors shadow-2xs cursor-pointer group"
             >
-              Đăng nhập bằng Email (Dành cho điện thoại / mạng Wi-Fi)
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
+                  👨‍🏫
+                </span>
+                <div className="text-left">
+                  <div className="font-bold text-slate-900">Thầy / Cô (Cán bộ - Giảng viên)</div>
+                  <div className="text-[11px] text-blue-700/90 font-normal">Quyền: Lập hồ sơ, xem hồ sơ cá nhân, ký Khoa & gửi thẩm định</div>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-blue-700 group-hover:translate-x-0.5 transition-transform shrink-0">
+                Vào ngay →
+              </span>
             </button>
-          ) : (
-            <form onSubmit={handleManualEmailLogin} className="space-y-3 w-full pt-1">
-              <div>
-                <label className="block text-[11.5px] font-semibold text-slate-700 mb-1">
-                  Địa chỉ Email của bạn
-                </label>
-                <input
-                  type="email"
-                  required
-                  placeholder="vd: canbo.khoay@gmail.com"
-                  value={manualEmail}
-                  onChange={(e) => setManualEmail(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
-                />
+
+            <button
+              type="button"
+              onClick={() => {
+                onLoginSuccess(DEFAULT_DEV_USER);
+              }}
+              className="w-full py-2.5 px-4 rounded-xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 text-xs font-semibold flex items-center justify-between transition-colors shadow-2xs cursor-pointer group"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
+                  🛡️
+                </span>
+                <div className="text-left">
+                  <div className="font-bold text-slate-900">Quản trị viên (Admin - Phòng KH&CN)</div>
+                  <div className="text-[11px] text-emerald-700/90 font-normal">Quyền: Tiền kiểm hồ sơ, duyệt thể thức, điều phối ký số cấp Trường</div>
+                </div>
               </div>
-              <div>
-                <label className="block text-[11.5px] font-semibold text-slate-700 mb-1">
-                  Họ và Tên (tùy chọn)
-                </label>
-                <input
-                  type="text"
-                  placeholder="vd: TS. Nguyễn Văn Nam"
-                  value={manualName}
-                  onChange={(e) => setManualName(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
-                />
-              </div>
+              <span className="text-[11px] font-bold text-emerald-700 group-hover:translate-x-0.5 transition-transform shrink-0">
+                Vào ngay →
+              </span>
+            </button>
+          </div>
+
+          {/* Đăng nhập nhanh cho mạng Wi-Fi / Cùng phòng */}
+          <div className="pt-1">
+            {!showManual ? (
               <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-xs transition-colors shadow-xs cursor-pointer"
+                type="button"
+                onClick={() => setShowManual(true)}
+                className="w-full text-xs text-slate-600 hover:text-blue-600 font-medium py-1.5 text-center transition-colors cursor-pointer"
               >
-                {isLoading ? 'Đang vào...' : 'Vào hệ thống'}
+                ✉️ Nhập Email bất kỳ để thử nghiệm nhận mail thật
               </button>
-            </form>
-          )}
+            ) : (
+              <form onSubmit={handleManualEmailLogin} className="space-y-2.5 w-full pt-2 border-t border-slate-100">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Địa chỉ Email nhận thông báo
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="vd: canbo.khoay@gmail.com"
+                    value={manualEmail}
+                    onChange={(e) => setManualEmail(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Họ và Tên (tùy chọn)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="vd: TS. Nguyễn Văn Nam"
+                    value={manualName}
+                    onChange={(e) => setManualName(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-1.5 rounded-lg text-xs transition-colors shadow-xs cursor-pointer"
+                >
+                  {isLoading ? 'Đang vào...' : 'Vào hệ thống bằng Email này'}
+                </button>
+              </form>
+            )}
+          </div>
 
           {/* Security Note */}
           <div className="pt-2 border-t border-slate-100 text-center">
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              Xác thực an toàn qua Google Identity Services (OAuth 2.0).
+              Hệ thống phân quyền độc lập theo 2 vai trò: Quản trị viên (Admin - Phòng KH&CN) & Cán bộ / Giảng viên (Thầy / Cô).
             </p>
           </div>
         </div>

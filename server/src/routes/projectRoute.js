@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { projectController } from '../controllers/projectController.js';
 import { uploadDeanSigned, uploadProjectFiles } from '../config/multer.js';
+import { requireAuth, requireAdmin } from '../middlewares/authMiddleware.js';
 
 const router = Router();
 
@@ -8,36 +9,36 @@ const router = Router();
  * 1. POST /api/projects
  * Tiếp nhận form từ React -> mapping Word -> lưu DB (transfer_projects, attachments, audit_logs)
  */
-router.post('/', uploadProjectFiles, projectController.create);
+router.post('/', requireAuth, uploadProjectFiles, projectController.create);
 
 /**
  * 2. GET /api/projects
  * Lấy danh sách hồ sơ chuyển giao công nghệ
  */
-router.get('/', projectController.getAll);
+router.get('/', requireAuth, projectController.getAll);
 
 /**
  * 3. GET /api/projects/:id
  * Lấy chi tiết hồ sơ và timeline log cho component dossiers & timeline
  */
-router.get('/:id', projectController.getById);
+router.get('/:id', requireAuth, projectController.getById);
 
 /**
  * 4. POST /api/projects/:id/review
  * Admin duyệt hoặc yêu cầu sửa
  */
-router.post('/:id/review', projectController.review);
+router.post('/:id/review', requireAuth, requireAdmin, projectController.review);
 
 /**
  * 5. POST /api/projects/:id/upload-dean-signed
  * Cán bộ upload PDF ký Khoa (multer lưu vào server/uploads/pdf/)
  */
-router.post('/:id/upload-dean-signed', uploadDeanSigned, projectController.uploadDeanSigned);
+router.post('/:id/upload-dean-signed', requireAuth, uploadDeanSigned, projectController.uploadDeanSigned);
 
 /**
  * 6. POST /api/projects/:id/complete
  * Admin đóng hồ sơ
  */
-router.post('/:id/complete', projectController.complete);
+router.post('/:id/complete', requireAuth, requireAdmin, projectController.complete);
 
 export default router;

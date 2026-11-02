@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Edit3, X, Save, History, FileText } from 'lucide-react';
 import { Application, DocumentTemplate } from '../../types';
 import { normalizeNFC } from '../../utils/textUtils';
+import { TimeRangePicker, DocumentNumberInput } from '../common';
 
 interface ManagerEditDossierModalProps {
   dossier: Application | null;
@@ -94,6 +95,51 @@ export const ManagerEditDossierModal: React.FC<ManagerEditDossierModalProps> = (
               {fields.map((field) => {
                 const key = field.name || field.key || field.id;
                 const value = formData[key] !== undefined ? formData[key] : '';
+                const isTimeRangeField =
+                  key === 'transfer_time' ||
+                  key === 'transfer_date' ||
+                  field.wordPlaceholder === '{{thoi_gian}}' ||
+                  field.id === 'f-1a-transfer-time' ||
+                  field.id === 'f-2a-transfer-date';
+
+                if (isTimeRangeField) {
+                  return (
+                    <div key={field.id} className="md:col-span-2 space-y-1">
+                      <label className="block text-xs font-semibold text-slate-800">
+                        {field.label}
+                      </label>
+                      <TimeRangePicker
+                        value={String(value || '')}
+                        onChange={(newVal) => handleFieldChange(key, newVal)}
+                        placeholder="Ví dụ: Từ tháng 10/2026 đến tháng 12/2026"
+                      />
+                    </div>
+                  );
+                }
+
+                const isDocNumberField =
+                  key === 'proposal_number' ||
+                  key === 'plan_code' ||
+                  field.wordPlaceholder === '{{so_to_trinh}}' ||
+                  field.wordPlaceholder === '{{so_ke_hoach}}' ||
+                  field.id === 'f-1a-proposal-number' ||
+                  field.id === 'f-2a-plan-code';
+
+                if (isDocNumberField) {
+                  return (
+                    <div key={field.id} className="md:col-span-2 space-y-1">
+                      <label className="block text-xs font-semibold text-slate-800">
+                        {field.label}
+                      </label>
+                      <DocumentNumberInput
+                        value={String(value || '')}
+                        onChange={(newVal) => handleFieldChange(key, newVal)}
+                        docType={key === 'plan_code' || field.wordPlaceholder === '{{so_ke_hoach}}' ? 'KH' : 'TTr'}
+                        currentDepartment={formData.department || ''}
+                      />
+                    </div>
+                  );
+                }
 
                 if (field.type === 'textarea' || field.fieldType === 'TEXTAREA') {
                   return (

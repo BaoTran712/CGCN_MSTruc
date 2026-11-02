@@ -119,7 +119,19 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const returnDossier = useCallback(
     async (dossierId: string, reason: string, user: User): Promise<Application> => {
       const returned = await api.returnApplication(dossierId, reason, user);
-      setDossiers((prev) => prev.map((d) => (d.id === returned.id ? returned : d)));
+      setDossiers((prev) => {
+        const found = prev.some(
+          (d) => d.id === returned.id || d.code === returned.code || d.id === dossierId || d.code === dossierId
+        );
+        if (found) {
+          return prev.map((d) =>
+            d.id === returned.id || d.code === returned.code || d.id === dossierId || d.code === dossierId
+              ? returned
+              : d
+          );
+        }
+        return [returned, ...prev];
+      });
       return returned;
     },
     []
@@ -194,7 +206,19 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const adminPrecheck = useCallback(
     async (id: string, isValid: boolean, reviewNotes?: string, adminUser?: User): Promise<Application> => {
       const updated = await api.adminPrecheck(id, isValid, reviewNotes, adminUser);
-      setDossiers((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+      setDossiers((prev) => {
+        const found = prev.some(
+          (d) => d.id === updated.id || d.code === updated.code || d.id === id || d.code === id
+        );
+        if (found) {
+          return prev.map((d) =>
+            d.id === updated.id || d.code === updated.code || d.id === id || d.code === id
+              ? updated
+              : d
+          );
+        }
+        return [updated, ...prev];
+      });
       return updated;
     },
     []
@@ -245,7 +269,7 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const pendingCount = useMemo(
     () =>
       dossiers.filter((d) =>
-        ['NEW', 'SUBMITTED', 'submitted', 'under_review', 'resubmitted', 'RESUBMITTED'].includes(d.status)
+        ['NEW', 'NEEDS_REVISION', 'RESUBMITTED', 'FACULTY_SIGNED', 'SCHOOL_SIGNING'].includes(d.status)
       ).length,
     [dossiers]
   );
