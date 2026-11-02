@@ -28,6 +28,7 @@ import { AuditLogViewer } from '../components/dossiers/AuditLogViewer';
 import { VersionHistoryViewer } from '../components/dossiers/VersionHistoryViewer';
 import { EmailLogViewer } from '../components/dossiers/EmailLogViewer';
 import { ReturnDossierModal } from '../components/modals/ReturnDossierModal';
+import { isAdminEmail } from '../constants';
 import { ManagerEditDossierModal } from '../components/modals/ManagerEditDossierModal';
 import { UploadFacultySignedModal } from '../components/modals/UploadFacultySignedModal';
 import { CompleteDecisionModal } from '../components/modals/CompleteDecisionModal';
@@ -85,7 +86,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
 
   const normalized = normalizeStatus(dossier.status);
   const isAdmin =
-    currentUser.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com' ||
+    isAdminEmail(currentUser.email) ||
     currentUser.role === 'ADMIN' ||
     currentUser.role === 'admin';
 

@@ -64,12 +64,16 @@ async function main() {
   console.log(tables.map(t => Object.values(t)[0]));
 
   const [usersCount] = await conn.query('SELECT COUNT(*) as count FROM users');
+  const [dossiersCount] = await conn.query('SELECT COUNT(*) as count FROM dossiers');
+  const [templatesCount] = await conn.query('SELECT COUNT(*) as count FROM document_templates');
   const [projectsCount] = await conn.query('SELECT COUNT(*) as count FROM transfer_projects');
   const [attachmentsCount] = await conn.query('SELECT COUNT(*) as count FROM attachments');
   const [auditLogsCount] = await conn.query('SELECT COUNT(*) as count FROM audit_logs');
 
   console.log(`[InitDB] Data stats:`);
   console.log(` - users: ${usersCount[0].count}`);
+  console.log(` - document_templates: ${templatesCount[0].count}`);
+  console.log(` - dossiers: ${dossiersCount[0].count}`);
   console.log(` - transfer_projects: ${projectsCount[0].count}`);
   console.log(` - attachments: ${attachmentsCount[0].count}`);
   console.log(` - audit_logs: ${auditLogsCount[0].count}`);

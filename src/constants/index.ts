@@ -1,10 +1,16 @@
 import { User } from '../types';
 
-export const ADMIN_EMAIL = 'toanhkhai12345@gmail.com';
+export const ADMIN_EMAILS = [
+  'toanhkhai12345@gmail.com',
+  'heykagvip@gmail.com',
+];
+
+export const ADMIN_EMAIL = 'heykagvip@gmail.com';
 
 export const isAdminEmail = (email?: string | null): boolean => {
   if (!email) return false;
-  return email.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  const clean = email.trim().toLowerCase();
+  return ADMIN_EMAILS.some((adm) => adm.toLowerCase() === clean);
 };
 
 export const DEFAULT_DEV_USER: User = {

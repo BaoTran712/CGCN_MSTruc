@@ -5,6 +5,7 @@ import {
   DocumentTemplate,
   UserRole,
 } from './types';
+import { isAdminEmail } from './constants';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { DossierProvider, useDossiers } from './contexts/DossierContext';
@@ -56,9 +57,7 @@ function AppContent() {
   const [templateForCreation, setTemplateForCreation] = useState<DocumentTemplate | null>(null);
   const [templateDetailModal, setTemplateDetailModal] = useState<DocumentTemplate | null>(null);
 
-  const isAdmin = Boolean(
-    currentUser?.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com'
-  );
+  const isAdmin = isAdminEmail(currentUser?.email);
 
   // Chặn người dùng thông thường truy cập các tab đặc quyền Admin
   useEffect(() => {
@@ -73,8 +72,7 @@ function AppContent() {
       <LoginPage
         onLoginSuccess={(user) => {
           login(user);
-          const isUserAdmin =
-            user.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com';
+          const isUserAdmin = isAdminEmail(user.email);
           if (isUserAdmin) {
             setActiveTab('pending_approval');
           } else {

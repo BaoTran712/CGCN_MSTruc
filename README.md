@@ -19,7 +19,7 @@ node server/scripts/run_init.js
 npm run dev:all
 # hoặc: npm start
 ```
-- **Backend API**: `http://localhost:5000` (Kiểm tra trạng thái: `http://localhost:5000/api/status`)
+- **Backend API**: `http://localhost:5001` (Kiểm tra trạng thái: `http://localhost:5001/api/status`)
 - **Frontend Client**: `http://localhost:3000`
 
 ### Hoặc khởi động riêng lẻ từng phần:
@@ -33,7 +33,7 @@ npm run dev:all
 ## Phân Quyền & Tài Khoản Đăng Nhập
 
 Hệ thống phân quyền theo tài khoản Gmail (`http://localhost:3000`):
-- **Quản trị viên (Admin duy nhất)**: `toanhkhai12345@gmail.com`
+- **Quản trị viên (Admin)**: `heykagvip@gmail.com` hoặc `toanhkhai12345@gmail.com`
   - *Quyền hạn*: Xem toàn bộ hồ sơ, tiền kiểm hồ sơ, yêu cầu chỉnh sửa/phê duyệt, quản lý trình ký và kết nối Google Sheets.
 - **Cán bộ / Giảng viên (User)**: Bất kỳ địa chỉ Gmail nào khác (ví dụ: `canbo@gmail.com` hoặc `user.test@gmail.com`)
   - *Quyền hạn*: Tạo hồ sơ trực tuyến từ biểu mẫu Word, xem và chỉnh sửa bản nháp, theo dõi tiến độ hồ sơ cá nhân.

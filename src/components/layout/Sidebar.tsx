@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { ActiveNavTab, User } from '../../types';
+import { isAdminEmail } from '../../constants';
 
 interface SidebarProps {
   activeTab: ActiveNavTab;
@@ -49,7 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }
 
   const isAdmin =
-    currentUser?.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com' ||
+    isAdminEmail(currentUser?.email) ||
     currentUser?.role === 'ADMIN' ||
     currentUser?.role === 'admin';
 

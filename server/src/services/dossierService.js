@@ -92,11 +92,13 @@ export const dossierService = {
     if (!isDraft) {
       await emailService.sendEmail({
         dossierId: id,
+        dossierCode: code,
         recipientEmail: user?.email || 'canbo@ctump.edu.vn',
         recipientName: user?.name || 'Thầy/Cô',
         subject: `[CTUMP DocuGov] Tiếp nhận thành công hồ sơ ${code}`,
         content: `Kính gửi Thầy/Cô ${user?.name || 'Cán bộ'},\n\nHồ sơ CGCN của Thầy/Cô đã được nộp thành công và cấp mã định danh: ${code}.\nChuyên viên Phòng KH&CN đang tiến hành tiền kiểm thể thức văn bản.\n\nTrân trọng,\nPhòng Khoa học Công nghệ & HTQT`,
         stepName: 'Bước 1: Tiếp nhận hồ sơ',
+        actionUrl: `${config.appUrl}`,
       });
     }
 
@@ -132,11 +134,13 @@ export const dossierService = {
 
       await emailService.sendEmail({
         dossierId: id,
-        recipientEmail: dossier.createdBy?.email || 'canbo@ctump.edu.vn',
-        recipientName: dossier.createdBy?.name || 'Thầy/Cô',
+        dossierCode: dossier.code,
+        recipientEmail: dossier.createdBy?.email || user?.email || 'canbo@ctump.edu.vn',
+        recipientName: dossier.createdBy?.name || user?.name || 'Thầy/Cô',
         subject: `[CTUMP DocuGov] Yêu cầu chỉnh sửa bổ sung hồ sơ ${dossier.code}`,
-        content: `Kính gửi Thầy/Cô ${dossier.createdBy?.name},\n\nHồ sơ CGCN mã ${dossier.code} qua quá trình tiền kiểm có nội dung cần điều chỉnh:\n"${reviewNotes}"\n\nVui lòng đăng nhập hệ thống CTUMP DocuGov để cập nhật lại thông tin Web Form.\n\nTrân trọng,\nPhòng Khoa học Công nghệ & HTQT`,
+        content: `Kính gửi Thầy/Cô ${dossier.createdBy?.name || 'Cán bộ'},\n\nHồ sơ CGCN mã ${dossier.code} qua quá trình tiền kiểm có nội dung cần điều chỉnh:\n"${reviewNotes}"\n\nVui lòng đăng nhập hệ thống CTUMP DocuGov để cập nhật lại thông tin Web Form.\n\nTrân trọng,\nPhòng Khoa học Công nghệ & HTQT`,
         stepName: 'Bước 2: Yêu cầu bổ sung',
+        actionUrl: `${config.appUrl}`,
       });
 
       return updated;
@@ -165,11 +169,13 @@ export const dossierService = {
 
       await emailService.sendEmail({
         dossierId: id,
+        dossierCode: dossier.code,
         recipientEmail: dossier.createdBy?.email || 'canbo@ctump.edu.vn',
         recipientName: dossier.createdBy?.name || 'Thầy/Cô',
         subject: `[CTUMP DocuGov] Hồ sơ ${dossier.code} đã được duyệt hợp lệ - Tải PDF để xin chữ ký số Trưởng Khoa`,
         content: `Kính gửi Thầy/Cô ${dossier.createdBy?.name},\n\nHồ sơ CGCN mã ${dossier.code} đã đạt chuẩn thể thức và được duyệt hợp lệ.\nHệ thống đã tự động xuất bản file PDF chuẩn (đã khóa layout để bảo đảm tính bất biến khi ký số).\n\nThầy/Cô vui lòng tải file PDF từ liên kết bên dưới và tiến hành xin chữ ký số của Trưởng Khoa / Lãnh đạo đơn vị:\nFile PDF: ${pdfRes.fileUrl}\n\nSau khi ký số đủ cấp Khoa, Thầy/Cô vui lòng truy cập lại hệ thống để tải lên bản đã ký kèm minh chứng.\n\nTrân trọng,\nPhòng Khoa học Công nghệ & HTQT`,
         stepName: 'Bước 4: Xuất bản PDF chuẩn',
+        actionUrl: `${config.appUrl}`,
       });
 
       return updated;
@@ -249,13 +255,15 @@ export const dossierService = {
       notes: `Cán bộ tải lên bản PDF đã ký số cấp Khoa kèm ${evidenceFiles?.length || 0} tài liệu minh chứng. Chuyển hồ sơ vào luồng trình ký cấp Trường.`,
     });
 
-    await sendEmailNotification({
+    await emailService.sendEmail({
       dossierId: id,
-      recipientEmail: 'admin@ctump.edu.vn',
+      dossierCode: dossier.code,
+      recipientEmail: config.adminEmail || 'toanhkhai12345@gmail.com',
       recipientName: 'Quản trị viên KH&CN',
       subject: `[CTUMP DocuGov] Hồ sơ ${dossier.code} đã hoàn tất chữ ký số cấp Khoa`,
-      content: `Kính gửi Admin Phòng KH&CN,\n\nHồ sơ CGCN ${dossier.code} của cán bộ ${dossier.createdBy?.name} đã được tải lên bản PDF ký số cấp Khoa và các tài liệu minh chứng hợp lệ.\nVui lòng vào hàng đợi phê duyệt để cập nhật tiến độ trình ký cấp Trường.\n\nTrân trọng.`,
+      content: `Kính gửi Admin Phòng KH&CN,\n\nHồ sơ CGCN ${dossier.code} của cán bộ ${dossier.createdBy?.name || 'Giảng viên'} đã được tải lên bản PDF ký số cấp Khoa và các tài liệu minh chứng hợp lệ.\nVui lòng vào hàng đợi phê duyệt để cập nhật tiến độ trình ký cấp Trường.\n\nTrân trọng.`,
       stepName: 'Bước 6: Nộp minh chứng & Ký cấp Khoa',
+      actionUrl: `${config.appUrl}`,
     });
 
     return updated;
@@ -322,11 +330,13 @@ export const dossierService = {
 
     await emailService.sendEmail({
       dossierId: id,
+      dossierCode: dossier.code,
       recipientEmail: dossier.createdBy?.email || 'canbo@ctump.edu.vn',
       recipientName: dossier.createdBy?.name || 'Thầy/Cô',
       subject: `[CTUMP DocuGov] Quyết định CGCN ${updated.decision_number} đã được ban hành chính thức`,
-      content: `Kính gửi Thầy/Cô ${dossier.createdBy?.name},\n\nHồ sơ CGCN mã ${dossier.code} đã hoàn tất toàn bộ quy trình trình ký liên cấp và được Hiệu trưởng ký ban hành Quyết định số ${updated.decision_number}.\nHồ sơ đã được lưu trữ vĩnh viễn trên kho số Google Drive của Nhà trường.\n\nChúc mừng Thầy/Cô!\nTrân trọng,\nPhòng Khoa học Công nghệ & HTQT`,
+      content: `Kính gửi Thầy/Cô ${dossier.createdBy?.name || 'Cán bộ'},\n\nHồ sơ CGCN mã ${dossier.code} đã hoàn tất toàn bộ quy trình trình ký liên cấp và được Hiệu trưởng ký ban hành Quyết định số ${updated.decision_number}.\nHồ sơ đã được lưu trữ vĩnh viễn trên kho số Google Drive của Nhà trường.\n\nChúc mừng Thầy/Cô!\nTrân trọng,\nPhòng Khoa học Công nghệ & HTQT`,
       stepName: 'Bước 8: Ban hành Quyết định & Đóng hồ sơ',
+      actionUrl: `${config.appUrl}`,
     });
 
     return updated;

@@ -18,6 +18,7 @@ import { Dossier, WordTemplate, UserProfile, ActiveNavTab } from '../types';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { generateAndDownloadDocx } from '../utils/docxExport';
 import { normalizeStatus } from '../services/workflowEngine';
+import { isAdminEmail } from '../constants';
 
 interface DashboardViewProps {
   dossiers: Dossier[];
@@ -47,7 +48,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const recentDossiers = safeDossiers.slice(0, 6);
 
   const isManager =
-    currentUser.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com' ||
+    isAdminEmail(currentUser.email) ||
     currentUser.role === 'manager' ||
     currentUser.role === 'admin' ||
     currentUser.role === 'ADMIN';

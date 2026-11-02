@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import * as api from '../services/api';
+import { isAdminEmail } from '../constants';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
 
@@ -22,7 +23,45 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGisReady, setIsGisReady] = useState(false);
+  const [showManual, setShowManual] = useState(false);
+  const [manualEmail, setManualEmail] = useState('');
+  const [manualName, setManualName] = useState('');
   const googleBtnRef = useRef<HTMLDivElement>(null);
+
+  const handleManualEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = manualEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setErrorMsg('Vui lòng nhập địa chỉ email hợp lệ.');
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg('');
+
+    try {
+      const name = manualName.trim() || cleanEmail.split('@')[0];
+      const isAdmin = isAdminEmail(cleanEmail);
+      let user: User;
+      try {
+        user = await api.login(cleanEmail, { name });
+      } catch (err) {
+        user = {
+          id: `usr-${Date.now()}`,
+          name: name,
+          email: cleanEmail,
+          role: isAdmin ? 'ADMIN' : 'USER',
+          title: isAdmin ? 'Quản trị viên Hệ thống' : 'Cán bộ / Giảng viên',
+          department: isAdmin ? 'Phòng Khoa học Công nghệ' : 'Trường Đại học Y Dược Cần Thơ',
+        };
+      }
+      onLoginSuccess(user);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Đăng nhập thất bại');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Xử lý phản hồi xác thực từ Google Identity Services
   const handleGoogleCredentialResponse = async (response: any) => {
@@ -54,7 +93,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         throw new Error('Google không cung cấp địa chỉ email.');
       }
 
-      const isAdmin = email === 'toanhkhai12345@gmail.com';
+      const isAdmin = isAdminEmail(email);
 
       // Gửi thông tin về backend API để lưu/cập nhật vào CSDL MySQL
       let user: User;
@@ -213,7 +252,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             {isLoading ? (
               <div className="flex items-center justify-center gap-2.5 py-3 text-xs text-blue-700 font-medium">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Đang xác thực thông tin tài khoản Google...</span>
+                <span>Đang xác thực thông tin tài khoản...</span>
               </div>
             ) : (
               <div className="w-full flex flex-col items-center justify-center">
@@ -230,6 +269,61 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               </div>
             )}
           </div>
+
+          {/* Đăng nhập nhanh cho mạng Wi-Fi / Cùng phòng */}
+          <div className="relative my-2">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-200" />
+            </div>
+            <div className="relative flex justify-center text-[11px] uppercase">
+              <span className="bg-white px-2 text-slate-400">Hoặc</span>
+            </div>
+          </div>
+
+          {!showManual ? (
+            <button
+              type="button"
+              onClick={() => setShowManual(true)}
+              className="w-full text-xs text-blue-600 hover:text-blue-800 font-medium py-1 text-center transition-colors hover:underline cursor-pointer"
+            >
+              Đăng nhập bằng Email (Dành cho điện thoại / mạng Wi-Fi)
+            </button>
+          ) : (
+            <form onSubmit={handleManualEmailLogin} className="space-y-3 w-full pt-1">
+              <div>
+                <label className="block text-[11.5px] font-semibold text-slate-700 mb-1">
+                  Địa chỉ Email của bạn
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="vd: canbo.khoay@gmail.com"
+                  value={manualEmail}
+                  onChange={(e) => setManualEmail(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
+                />
+              </div>
+              <div>
+                <label className="block text-[11.5px] font-semibold text-slate-700 mb-1">
+                  Họ và Tên (tùy chọn)
+                </label>
+                <input
+                  type="text"
+                  placeholder="vd: TS. Nguyễn Văn Nam"
+                  value={manualName}
+                  onChange={(e) => setManualName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-xs transition-colors shadow-xs cursor-pointer"
+              >
+                {isLoading ? 'Đang vào...' : 'Vào hệ thống'}
+              </button>
+            </form>
+          )}
 
           {/* Security Note */}
           <div className="pt-2 border-t border-slate-100 text-center">

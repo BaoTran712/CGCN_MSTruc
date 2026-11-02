@@ -16,7 +16,7 @@ import {
   Notification as NotificationItem,
 } from '../types';
 import { API_BASE_URL, API_ENDPOINTS } from '../config/api.config';
-import { OFFICIAL_TEMPLATES } from '../constants';
+import { OFFICIAL_TEMPLATES, isAdminEmail } from '../constants';
 
 export { API_BASE_URL };
 
@@ -343,7 +343,7 @@ export async function login(
   extraData?: { name?: string; avatar?: string; googleId?: string }
 ): Promise<User> {
   const cleanEmail = (email || '').trim().toLowerCase();
-  const isAdmin = cleanEmail === 'toanhkhai12345@gmail.com';
+  const isAdmin = isAdminEmail(cleanEmail);
 
   try {
     const res = await fetch(`${API_BASE_URL}/users/login`, {

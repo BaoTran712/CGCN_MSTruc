@@ -9,6 +9,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { User, UserRole, ActiveNavTab } from '../../types';
+import { isAdminEmail } from '../../constants';
 import logoUrl from '../../assets/logo.png';
 
 interface HeaderProps {
@@ -105,14 +106,14 @@ export const Header: React.FC<HeaderProps> = ({
                 <p className="text-[11px] font-mono text-slate-500">{currentUser.email}</p>
                 <span
                   className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-semibold border ${
-                    currentUser.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com' ||
+                    isAdminEmail(currentUser.email) ||
                     currentUser.role === 'ADMIN' ||
                     currentUser.role === 'admin'
                       ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                       : 'bg-blue-50 text-blue-800 border-blue-200'
                   }`}
                 >
-                  {currentUser.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com' ||
+                  {isAdminEmail(currentUser.email) ||
                   currentUser.role === 'ADMIN' ||
                   currentUser.role === 'admin'
                     ? 'Quản trị viên (Admin)'

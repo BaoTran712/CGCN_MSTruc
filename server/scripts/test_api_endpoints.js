@@ -5,7 +5,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const BASE_URL = 'http://localhost:5000/api';
+const PORT = process.env.PORT || '5001';
+const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}/api`;
 
 async function testAll() {
   console.log('=== TEST BẮT ĐẦU: KIỂM THỬ 5 API ENDPOINTS THEO YÊU CẦU ===\n');
