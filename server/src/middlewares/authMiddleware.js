@@ -68,9 +68,13 @@ export function requireAdmin(req, res, next) {
     return ApiResponse.error('Chưa xác thực.', 401).send(res);
   }
 
+  const email = req.user.email?.trim().toLowerCase() || '';
+  const ADMIN_EMAILS = ['toanhkhai12345@gmail.com', 'tranthibaotran.2k@gmail.com', 'admin@ctump.edu.vn'];
   const isAdmin =
     req.user.role === 'ADMIN' ||
-    req.user.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com';
+    ADMIN_EMAILS.includes(email) ||
+    email.startsWith('admin@') ||
+    email.includes('admin');
 
   if (!isAdmin) {
     return ApiResponse.error('Bạn không có quyền truy cập chức năng này. Chỉ Admin mới được phép.', 403).send(res);

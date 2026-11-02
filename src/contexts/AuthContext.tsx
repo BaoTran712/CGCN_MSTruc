@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { User, UserRole } from '../types';
-import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER, AUTH_STORAGE_KEY } from '../constants';
+import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER, AUTH_STORAGE_KEY, isAdminUser } from '../constants';
 import { setAuthToken } from '../services/api';
 
 interface AuthContextValue {
@@ -77,10 +77,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const isAdmin = useMemo(() => {
-    if (!currentUser) return false;
-    if (currentUser.role === 'ADMIN') return true;
-    if (currentUser.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com') return true;
-    return false;
+    return isAdminUser(currentUser);
   }, [currentUser]);
 
   const value = useMemo(

@@ -1,11 +1,21 @@
 import { User } from '../types';
 
+export const ADMIN_EMAILS = [
+  'toanhkhai12345@gmail.com',
+  'tranthibaotran.2k@gmail.com',
+  'admin@ctump.edu.vn',
+];
+
 export const ADMIN_EMAIL = 'toanhkhai12345@gmail.com';
 
 export const isAdminEmail = (email?: string | null): boolean => {
   if (!email) return false;
   const clean = email.trim().toLowerCase();
-  return clean === ADMIN_EMAIL.toLowerCase() || clean === 'admin@ctump.edu.vn' || clean.startsWith('admin@') || clean.includes('admin');
+  return (
+    ADMIN_EMAILS.some((adm) => adm.toLowerCase() === clean) ||
+    clean.startsWith('admin@') ||
+    clean.includes('admin')
+  );
 };
 
 /**

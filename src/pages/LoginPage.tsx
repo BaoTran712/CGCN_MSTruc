@@ -14,7 +14,7 @@ import {
   Shield,
   UserCheck,
 } from 'lucide-react';
-import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER, ADMIN_EMAIL } from '../constants';
+import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER, ADMIN_EMAIL, isAdminEmail } from '../constants';
 import logoUrl from '../assets/logo.png';
 
 declare global {
@@ -89,10 +89,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       }
 
       // Xác định quyền Admin hoặc Cán bộ
-      const isAdmin =
-        cleanEmail === ADMIN_EMAIL.toLowerCase() ||
-        cleanEmail === 'admin@ctump.edu.vn' ||
-        cleanEmail.includes('admin');
+      const isAdmin = isAdminEmail(cleanEmail);
 
       // Tên hiển thị dự phòng dựa trên email
       let displayName = isAdmin ? 'Quản trị viên KH&CN' : 'Cán bộ / Giảng viên';
@@ -175,7 +172,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         throw new Error('Google không cung cấp địa chỉ email.');
       }
 
-      const isAdmin = gEmail === ADMIN_EMAIL.toLowerCase();
+      const isAdmin = isAdminEmail(gEmail);
 
       let user: User;
       try {
