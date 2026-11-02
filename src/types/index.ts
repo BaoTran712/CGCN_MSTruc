@@ -278,12 +278,9 @@ export interface Application {
   decisionDate?: string;
   has_financial_implication?: boolean;
   hasFinancialImplication?: boolean;
-  khcn_signed?: boolean;
-  khcnSigned?: boolean;
-  khtc_signed?: boolean;
-  khtcSigned?: boolean;
-  bgh_signed?: boolean;
-  bghSigned?: boolean;
+  current_step?: number;
+  has_workshop?: number | boolean;
+  has_budget?: number | boolean;
   evidence_files?: Array<{ name: string; url: string; size?: string }>;
   evidenceFiles?: Array<{ name: string; url: string; size?: string }>;
   drive_folder_url?: string;

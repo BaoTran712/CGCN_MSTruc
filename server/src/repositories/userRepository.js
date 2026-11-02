@@ -1,81 +1,102 @@
-import { query, execute } from '../utils/db.js';
+import { query, execute } from '../config/database.js';
 import { UserModel } from '../models/userModel.js';
 
 export const userRepository = {
-  // Lấy tất cả người dùng
   async findAll() {
     const rows = await query(`
-      SELECT u.id, u.name, u.email, u.role, u.title, u.department, u.phone, u.avatar,
-             u.created_at, u.updated_at
+      SELECT
+        u.*,
+        dept.code AS department_code,
+        dept.name AS department_name
       FROM users u
-      ORDER BY u.role DESC, u.name ASC
+      LEFT JOIN departments dept ON u.department_id = dept.id
+      ORDER BY u.role DESC, u.full_name ASC
     `);
 
     return rows.map((r) => UserModel.fromRow(r).toObject());
   },
 
-  // Tìm người dùng theo Email
   async findByEmail(email) {
-    const rows = await query(`
-      SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1
-    `, [email]);
+    const rows = await query(
+      `
+      SELECT
+        u.*,
+        dept.code AS department_code,
+        dept.name AS department_name
+      FROM users u
+      LEFT JOIN departments dept ON u.department_id = dept.id
+      WHERE LOWER(u.email) = LOWER(?)
+      LIMIT 1
+      `,
+      [email]
+    );
 
     if (!rows || rows.length === 0) return null;
     return UserModel.fromRow(rows[0]).toObject();
   },
 
-  // Tìm theo ID
   async findById(id) {
-    const rows = await query(`
-      SELECT * FROM users WHERE id = ? LIMIT 1
-    `, [id]);
+    const rows = await query(
+      `
+      SELECT
+        u.*,
+        dept.code AS department_code,
+        dept.name AS department_name
+      FROM users u
+      LEFT JOIN departments dept ON u.department_id = dept.id
+      WHERE u.id = ?
+      LIMIT 1
+      `,
+      [id]
+    );
 
     if (!rows || rows.length === 0) return null;
     return UserModel.fromRow(rows[0]).toObject();
   },
 
-  // Tạo người dùng mới
   async create(user) {
-    await execute(`
-      INSERT INTO users (id, email, name, role, title, department, phone, avatar)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      user.id,
-      user.email,
-      user.name,
-      user.role || 'USER',
-      user.title || 'Cán bộ / Giảng viên',
-      user.department || 'Trường Đại học Y Dược Cần Thơ',
-      user.phone || '',
-      user.avatar || '',
-    ]);
+    await execute(
+      `
+      INSERT INTO users (id, staff_code, email, full_name, department_id, role, phone)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+      [
+        user.id,
+        user.staff_code || user.staffCode || null,
+        user.email,
+        user.full_name || user.name || 'Cán bộ CTUMP',
+        user.department_id || user.departmentId || 1,
+        user.role || 'USER',
+        user.phone || null,
+      ]
+    );
 
     return this.findById(user.id);
   },
 
-  // Lưu hoặc cập nhật người dùng
   async save(user) {
     const id = user.id || `usr-${Date.now()}`;
-    await execute(`
-      INSERT INTO users (id, email, name, role, title, department, phone, avatar)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    await execute(
+      `
+      INSERT INTO users (id, staff_code, email, full_name, department_id, role, phone)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
-        name = VALUES(name),
+        staff_code = VALUES(staff_code),
+        full_name = VALUES(full_name),
+        department_id = VALUES(department_id),
         role = VALUES(role),
-        title = VALUES(title),
-        department = VALUES(department),
-        phone = VALUES(phone),
-        avatar = VALUES(avatar)
-    `, [
-      id,
-      user.email,
-      user.name,
-      user.role || 'USER',
-      user.title || 'Cán bộ / Giảng viên',
-      user.department || 'Trường Đại học Y Dược Cần Thơ',
-      user.phone || '',
-      user.avatar || user.avatarUrl || '',
-    ]);
+        phone = VALUES(phone)
+      `,
+      [
+        id,
+        user.staff_code || user.staffCode || null,
+        user.email,
+        user.full_name || user.name || 'Cán bộ CTUMP',
+        user.department_id || user.departmentId || 1,
+        user.role || 'USER',
+        user.phone || null,
+      ]
+    );
 
     return this.findById(id);
   },

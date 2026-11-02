@@ -1,57 +1,31 @@
-import { query } from '../utils/db.js';
-import { TemplateModel } from '../models/templateModel.js';
-
 export const templateRepository = {
-  // Lấy tất cả biểu mẫu đang hoạt động
   async findAll() {
-    const rows = await query(`
-      SELECT * FROM document_templates 
-      WHERE is_active = 1
-      ORDER BY code ASC
-    `);
-
-    return rows.map((r) => TemplateModel.fromRow(r).toObject());
+    return [
+      {
+        id: 'tmpl-cgcn-1a',
+        code: 'Mẫu 1a-TT.CGCN',
+        title: 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu',
+        category: 'Đào tạo & Tri thức',
+        fileName: 'mau_1a_chuan.docx',
+        active: true,
+      },
+      {
+        id: 'tmpl-cgcn-2a',
+        code: 'Mẫu 2a-KH.CGCN',
+        title: 'Kế hoạch tổ chức chuyển giao công nghệ trong trường',
+        category: 'Khoa học Công nghệ',
+        fileName: 'mau_2a_chuan.docx',
+        active: true,
+      },
+    ];
   },
 
-  // Lấy biểu mẫu theo ID hoặc Mã
   async findById(id) {
-    const rows = await query(`
-      SELECT * FROM document_templates 
-      WHERE id = ? OR code = ?
-      LIMIT 1
-    `, [id, id]);
-
-    if (!rows || rows.length === 0) return null;
-    return TemplateModel.fromRow(rows[0]).toObject();
+    const all = await this.findAll();
+    return all.find((t) => t.id === id || t.code === id) || null;
   },
 
-  // Lưu hoặc cập nhật biểu mẫu
   async save(tmpl) {
-    const id = tmpl.id || `tmpl_${Date.now()}`;
-    const fieldsConfig = typeof tmpl.fields === 'object' ? JSON.stringify(tmpl.fields) : (tmpl.fields_config || null);
-    await query(`
-      INSERT INTO document_templates (id, code, title, category, description, version, file_name, fields_config, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        title = VALUES(title),
-        category = VALUES(category),
-        description = VALUES(description),
-        version = VALUES(version),
-        file_name = VALUES(file_name),
-        fields_config = VALUES(fields_config),
-        is_active = VALUES(is_active)
-    `, [
-      id,
-      tmpl.code || id,
-      tmpl.title || 'Biểu mẫu',
-      tmpl.category || 'Khoa học Công nghệ',
-      tmpl.description || '',
-      tmpl.version || '1.0',
-      tmpl.fileName || tmpl.file_name || 'template.docx',
-      fieldsConfig,
-      tmpl.active !== undefined ? (tmpl.active ? 1 : 0) : 1,
-    ]);
-
-    return this.findById(id);
+    return tmpl;
   },
 };

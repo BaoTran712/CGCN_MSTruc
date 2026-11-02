@@ -39,7 +39,7 @@ interface DossierContextValue {
   ) => Promise<Application>;
   updateSchoolSigning: (
     id: string,
-    flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean },
+    flags: Record<string, any>,
     adminUser?: User
   ) => Promise<Application>;
   completeDossier: (
@@ -241,7 +241,7 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const updateSchoolSigning = useCallback(
     async (
       id: string,
-      flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean },
+      flags: Record<string, any>,
       adminUser?: User
     ): Promise<Application> => {
       const updated = await api.updateSchoolSigning(id, flags, adminUser);

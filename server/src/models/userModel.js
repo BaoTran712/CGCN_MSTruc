@@ -4,64 +4,62 @@
 export class UserModel {
   constructor({
     id,
+    staff_code = null,
     email,
-    name,
+    full_name,
+    department_id = 1,
+    department_name = 'Khoa Y',
+    department_code = 'KY',
     role = 'USER',
-    title = 'Cán bộ / Giảng viên',
-    department = 'Trường Đại học Y Dược Cần Thơ',
-    departmentId = null,
     phone = '',
-    avatar = '',
-    createdAt = null,
-    updatedAt = null,
+    created_at = null,
+    updated_at = null,
   }) {
     this.id = id;
+    this.staff_code = staff_code;
     this.email = email;
-    this.name = name;
+    this.full_name = full_name;
+    this.name = full_name;
+    this.department_id = department_id;
+    this.department_name = department_name;
+    this.department = department_name;
+    this.department_code = department_code;
     this.role = role;
-    this.title = title;
-    this.department = department;
-    this.departmentId = departmentId;
     this.phone = phone;
-    this.avatar = avatar;
-    this.createdAt = createdAt;
-    this.updatedAt = updatedAt;
+    this.created_at = created_at;
+    this.updated_at = updated_at;
   }
 
-  /**
-   * Ánh xạ từ dòng dữ liệu thô (raw row snake_case) của MySQL
-   */
   static fromRow(row) {
     if (!row) return null;
     return new UserModel({
       id: row.id,
+      staff_code: row.staff_code || null,
       email: row.email,
-      name: row.name,
+      full_name: row.full_name || row.name,
+      department_id: row.department_id,
+      department_name: row.department_name || row.department || 'Khoa Y',
+      department_code: row.department_code || 'KY',
       role: row.role,
-      title: row.title,
-      department: row.department,
-      departmentId: row.department_id,
       phone: row.phone,
-      avatar: row.avatar,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
     });
   }
 
-  /**
-   * Chuyển thành Object chuẩn trả về cho Client
-   */
   toObject() {
     return {
       id: this.id,
+      staff_code: this.staff_code,
       email: this.email,
-      name: this.name,
+      full_name: this.full_name,
+      name: this.full_name,
+      department_id: this.department_id,
+      department_name: this.department_name,
+      department: this.department_name,
+      department_code: this.department_code,
       role: this.role,
-      title: this.title,
-      department: this.department,
-      departmentId: this.departmentId,
       phone: this.phone,
-      avatar: this.avatar,
     };
   }
 }

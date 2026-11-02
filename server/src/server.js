@@ -1,13 +1,8 @@
 import express from 'express';
 import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { config } from './utils/config.js';
-import { initDb } from './utils/db.js';
+import { initDb } from './config/database.js';
 import apiRoutes from './routes/api.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 
@@ -25,12 +20,11 @@ app.use('/api', apiRoutes);
 // Root route
 app.get('/', (req, res) => {
   res.json({
-    name: 'CTUMP DocuGov Backend Service',
+    name: 'CTUMP DocuGov Backend Service (Lean Architecture)',
     description: 'Hệ thống Quản lý Hồ sơ Chuyển giao Công nghệ CTUMP',
     status: 'Running',
     endpoints: {
       dossiers: '/api/dossiers',
-      templates: '/api/templates',
       users: '/api/users',
       status: '/api/status',
     },
@@ -46,12 +40,11 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start Server
 async function start() {
   await initDb();
   app.listen(config.port, () => {
     console.log(`=======================================================`);
-    console.log(`  CTUMP DocuGov Backend NodeJS Server`);
+    console.log(`  CTUMP DocuGov Backend NodeJS Server (Lean Workflow)`);
     console.log(`  Địa chỉ: http://localhost:${config.port}`);
     console.log(`  Tài liệu API: http://localhost:${config.port}/api/status`);
     console.log(`=======================================================`);

@@ -440,38 +440,46 @@ export async function uploadFacultySignature(
   return updated;
 }
 
-// Bước 4 & 7: Admin cập nhật tiến độ ký số cấp Trường
-export async function updateSchoolSigning(
+// Bước 4: Admin kiểm duyệt bộ file upload & cập nhật tiến độ trình Hiệu trưởng
+export async function reviewEvidenceFiles(
   id: string,
-  flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean },
+  action: 'APPROVE_FILES' | 'REQUEST_REUPLOAD',
+  adminNote?: string,
   adminUser?: User
 ): Promise<Application> {
   try {
-    const res = await request<Application>(API_ENDPOINTS.SCHOOL_SIGNING(id), {
+    const res = await request<Application>(API_ENDPOINTS.REVIEW_EVIDENCE(id), {
       method: 'POST',
-      body: JSON.stringify({ ...flags, adminUser }),
+      body: JSON.stringify({ action, admin_note: adminNote, adminUser }),
     });
     if (res) return res;
   } catch (err) {
-    console.warn('[updateSchoolSigning] Backend offline, cập nhật tiến độ ký Trường cục bộ:', err);
+    console.warn('[reviewEvidenceFiles] Backend offline, cập nhật cục bộ:', err);
   }
 
   const local = getLocalDossiers();
   const target = local.find((d) => d.id === id || d.code === id);
-  if (!target) throw new Error('Không tìm thấy hồ sơ để cập nhật ký Trường');
+  if (!target) throw new Error('Không tìm thấy hồ sơ để kiểm duyệt file minh chứng');
 
   const updated: Application = {
     ...target,
-    status: 'SCHOOL_SIGNING',
-    khcnSigned: flags.khcnSigned ?? target.khcnSigned,
-    khtcSigned: flags.khtcSigned ?? target.khtcSigned,
-    bghSigned: flags.bghSigned ?? target.bghSigned,
+    status: action === 'APPROVE_FILES' ? 'SCHOOL_SIGNING' : 'NEEDS_REVISION',
+    current_step: action === 'APPROVE_FILES' ? 4 : 3,
+    reviewNotes: adminNote || target.reviewNotes,
   };
   saveLocalDossiers(local.map((d) => (d.id === target.id ? updated : d)));
   return updated;
 }
 
-// Bước 4 & 8: Ban hành Quyết định CGCN & Hoàn tất đóng hồ sơ
+export async function updateSchoolSigning(
+  id: string,
+  _flags: Record<string, any>,
+  adminUser?: User
+): Promise<Application> {
+  return reviewEvidenceFiles(id, 'APPROVE_FILES', undefined, adminUser);
+}
+
+// Bước 5: Ban hành Quyết định CGCN & Hoàn tất đóng hồ sơ
 export async function completeDossier(
   id: string,
   decisionNumber?: string,
@@ -496,83 +504,14 @@ export async function completeDossier(
   const updated: Application = {
     ...target,
     status: 'COMPLETED',
+    current_step: 5,
     decisionNumber: decisionNumber || '128/QĐ-ĐHYDCT',
     decisionDate: decisionDate || new Date().toISOString().slice(0, 10),
     final_pdf_url: finalPdfUrl || 'https://drive.google.com/drive/folders/1UZfnO_hY9LshjsaHH6btODtWgii0Vv8-?usp=drive_link',
     completedAt: new Date().toISOString(),
-    khcnSigned: true,
-    khtcSigned: true,
-    bghSigned: true,
   };
   saveLocalDossiers(local.map((d) => (d.id === target.id ? updated : d)));
   return updated;
-}
-
-// =========================================================================
-// 2.1 Dự án Chuyển giao công nghệ (transfer_projects) - 5 Endpoint chuẩn
-// =========================================================================
-
-export async function getAllProjects(): Promise<any[]> {
-  return request<any[]>(API_ENDPOINTS.GET_ALL_PROJECTS, { method: 'GET' });
-}
-
-export async function getProjectById(id: string): Promise<any> {
-  return request<any>(API_ENDPOINTS.GET_PROJECT_DETAIL(id), { method: 'GET' });
-}
-
-export async function createProject(payload: any): Promise<any> {
-  return request<any>(API_ENDPOINTS.CREATE_PROJECT, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function reviewProject(
-  id: string,
-  isValid: boolean,
-  reviewNotes?: string,
-  actor?: any
-): Promise<any> {
-  return request<any>(API_ENDPOINTS.REVIEW_PROJECT(id), {
-    method: 'POST',
-    body: JSON.stringify({ isValid, reviewNotes, actor }),
-  });
-}
-
-export async function uploadDeanSignedFile(
-  id: string,
-  file: File | Blob,
-  actor?: any
-): Promise<any> {
-  const formData = new FormData();
-  formData.append('dean_signed_pdf', file);
-  if (actor) {
-    formData.append('actor', JSON.stringify(actor));
-  }
-  const token = getAuthToken();
-  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-
-  const response = await fetch(API_ENDPOINTS.UPLOAD_DEAN_SIGNED(id), {
-    method: 'POST',
-    headers,
-    body: formData,
-  });
-  if (!response.ok) {
-    const errorJson = await response.json().catch(() => ({}));
-    throw new Error(errorJson.message || `Lỗi tải lên văn bản ký Khoa (${response.status})`);
-  }
-  const json = await response.json();
-  return json.data;
-}
-
-export async function completeProject(
-  id: string,
-  payload: { decisionNumber?: string; decisionDate?: string; finalPdfUrl?: string; actor?: any }
-): Promise<any> {
-  return request<any>(API_ENDPOINTS.COMPLETE_PROJECT(id), {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
 }
 
 // =========================================================================
@@ -848,7 +787,7 @@ export async function uploadUserSignature(id: string, driveFileId: string, actor
 }
 
 export async function receiveSecretaryDossier(id: string, secretary?: User): Promise<Application> {
-  return updateSchoolSigning(id, { khcnSigned: true }, secretary);
+  return reviewEvidenceFiles(id, 'APPROVE_FILES', undefined, secretary);
 }
 
 export async function completeDossierBySecretary(

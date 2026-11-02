@@ -49,7 +49,7 @@ interface DossierDetailViewProps {
   ) => Promise<void>;
   onUpdateSchoolSigning?: (
     dossierId: string,
-    flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean }
+    flags: Record<string, any>
   ) => Promise<void>;
   onCompleteDossier?: (
     dossierId: string,
@@ -406,30 +406,12 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
               </button>
             )}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
-            <div className="p-2.5 bg-white rounded border border-amber-200 flex items-center gap-2">
-              <CheckCircle2 className={`w-4 h-4 ${currentDossier.khcn_signed ? 'text-emerald-600' : 'text-slate-300'}`} />
+          <div className="p-3 bg-white rounded border border-amber-200 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <div>
-                <div className="font-semibold text-slate-800">1. Trưởng phòng KH&CN</div>
-                <div className="text-[10px] text-slate-500">{currentDossier.khcn_signed ? 'Đã ký số' : 'Đang xử lý'}</div>
-              </div>
-            </div>
-
-            <div className="p-2.5 bg-white rounded border border-amber-200 flex items-center gap-2">
-              <CheckCircle2 className={`w-4 h-4 ${currentDossier.khtc_signed ? 'text-emerald-600' : 'text-slate-300'}`} />
-              <div>
-                <div className="font-semibold text-slate-800">2. Phòng KHTC</div>
-                <div className="text-[10px] text-slate-500">
-                  {currentDossier.has_financial_implication ? (currentDossier.khtc_signed ? 'Đã ký số' : 'Cần thẩm định kinh phí') : 'Không phát sinh $'}
-                </div>
-              </div>
-            </div>
-
-            <div className="p-2.5 bg-white rounded border border-amber-200 flex items-center gap-2">
-              <CheckCircle2 className={`w-4 h-4 ${currentDossier.bgh_signed ? 'text-emerald-600' : 'text-slate-300'}`} />
-              <div>
-                <div className="font-semibold text-slate-800">3. Hiệu trưởng (BGH)</div>
-                <div className="text-[10px] text-slate-500">{currentDossier.bgh_signed ? 'Đã ký duyệt' : 'Chờ ký ban hành'}</div>
+                <div className="font-semibold text-slate-800">Đã kiểm duyệt bộ file ký Khoa & Minh chứng hợp lệ</div>
+                <div className="text-[11px] text-slate-500">Phòng KH&CN đang trình Ban Giám hiệu / Hiệu trưởng ký ban hành Quyết định bên ngoài hệ thống (Bước 4/5).</div>
               </div>
             </div>
           </div>

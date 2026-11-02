@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Tải biến môi trường từ server/.env hoặc fallback
+// Tải biến môi trường từ server/.env hoặc root .env
 const serverEnvPath = path.resolve(__dirname, '../../.env');
 const fallbackEnvPath = path.resolve(__dirname, '../../../.env');
 if (fs.existsSync(serverEnvPath)) {
@@ -31,7 +31,7 @@ export const dbConfig = {
   keepAliveInitialDelay: 0,
 };
 
-// Khởi tạo MySQL Connection Pool bằng mysql2/promise
+// Khởi tạo MySQL Connection Pool duy nhất cho toàn bộ ứng dụng
 export const pool = mysql.createPool(dbConfig);
 
 let isConnected = false;
@@ -42,7 +42,9 @@ export async function initDb() {
     await conn.ping();
     conn.release();
     isConnected = true;
-    console.log(`[Database] Đã kết nối MySQL pool thành công tới database: ${dbConfig.database} (${dbConfig.host}:${dbConfig.port})`);
+    console.log(
+      `[Database] Đã kết nối MySQL Pool thành công tới database: ${dbConfig.database} (${dbConfig.host}:${dbConfig.port})`
+    );
     return pool;
   } catch (err) {
     isConnected = false;

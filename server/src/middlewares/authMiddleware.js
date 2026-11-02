@@ -14,7 +14,7 @@ export function generateToken(user) {
       id: user.id,
       email: user.email,
       role: user.role || 'USER',
-      name: user.name,
+      name: user.full_name || user.name || 'Người dùng',
     },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
@@ -37,12 +37,12 @@ export function requireAuth(req, res, next) {
   // Hỗ trợ dev token khi đang ở môi trường development
   if (config.nodeEnv === 'development' && token && token.startsWith('dev-token-')) {
     const role = token.includes('admin') ? 'ADMIN' : 'USER';
-    const email = role === 'ADMIN' ? 'toanhkhai12345@gmail.com' : 'user.test@gmail.com';
+    const email = role === 'ADMIN' ? 'admin@ctump.edu.vn' : 'canbo@ctump.edu.vn';
     req.user = {
       id: token,
       email,
       role,
-      name: role === 'ADMIN' ? 'Quản trị viên (Toàn Khải)' : 'Cán bộ / Giảng viên (User)',
+      name: role === 'ADMIN' ? 'Quản trị viên Phòng KH&CN' : 'TS. Nguyễn Văn Nam',
     };
     return next();
   }
@@ -60,7 +60,7 @@ export function requireAuth(req, res, next) {
 }
 
 /**
- * Middleware phân quyền Admin — Chỉ role ADMIN mới được truy cập
+ * Middleware phân quyền Admin — Chỉ role ADMIN hoặc TECH_ADMIN mới được truy cập
  * Phải gắn SAU requireAuth
  */
 export function requireAdmin(req, res, next) {
@@ -68,9 +68,14 @@ export function requireAdmin(req, res, next) {
     return ApiResponse.error('Chưa xác thực.', 401).send(res);
   }
 
+  const role = req.user.role ? String(req.user.role).toUpperCase() : '';
+  const email = req.user.email ? req.user.email.trim().toLowerCase() : '';
+
   const isAdmin =
-    req.user.role === 'ADMIN' ||
-    req.user.email?.trim().toLowerCase() === 'toanhkhai12345@gmail.com';
+    role === 'ADMIN' ||
+    role === 'TECH_ADMIN' ||
+    email === 'admin@ctump.edu.vn' ||
+    email === 'toanhkhai12345@gmail.com';
 
   if (!isAdmin) {
     return ApiResponse.error('Bạn không có quyền truy cập chức năng này. Chỉ Admin mới được phép.', 403).send(res);

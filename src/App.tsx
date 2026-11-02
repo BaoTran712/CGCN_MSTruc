@@ -266,7 +266,7 @@ function AppContent() {
 
   const handleUpdateSchoolSigning = async (
     dossierId: string,
-    flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean }
+    flags: Record<string, any>
   ) => {
     try {
       const updated = await updateSchoolSigning(dossierId, flags, currentUser);

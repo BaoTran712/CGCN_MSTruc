@@ -4,56 +4,56 @@ import { fileURLToPath } from 'url';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const TEMPLATES_DIR = path.resolve(__dirname, '../../../docs/templates');
+// Single Source of Truth cho file mẫu Word (.docx)
+const TEMPLATES_DIR = path.resolve(__dirname, '../../templates');
 const UPLOADS_DOCX_DIR = path.resolve(__dirname, '../../uploads/docx');
+const UPLOADS_PDF_DIR = path.resolve(__dirname, '../../uploads/pdf');
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
-function ensureUploadDir() {
-  if (!fs.existsSync(UPLOADS_DOCX_DIR)) {
-    fs.mkdirSync(UPLOADS_DOCX_DIR, { recursive: true });
-  }
-}
-
-/**
- * Tìm file template chuẩn tương ứng (Mẫu 1a hoặc Mẫu 2a)
- * Chỉ chấp nhận file chuẩn ECMA-376 .docx (ZIP magic 50 4B 03 04), tuyệt đối không dùng .doc nhị phân
- */
-export function findTemplateFile(templateId = '') {
-  const is1a =
-    String(templateId).includes('1a') ||
-    String(templateId).toLowerCase().includes('tt') ||
-    String(templateId).toLowerCase().includes('tri-thuc');
-
-  const candidates = is1a
-    ? [
-        path.join(TEMPLATES_DIR, 'mau_1a_chuan.docx'),
-        path.join(TEMPLATES_DIR, 'Mẫu 1a-TT.CGCN- Tờ trình CG Tri thức.docx'),
-        path.resolve(__dirname, '../../templates/mau_1a_chuan.docx'),
-      ]
-    : [
-        path.join(TEMPLATES_DIR, 'mau_2a_chuan.docx'),
-        path.join(TEMPLATES_DIR, 'Mẫu 2a-KH.CGCN -Ke hoach CGCN - Trong trường.docx'),
-        path.resolve(__dirname, '../../templates/mau_2a_chuan.docx'),
-      ];
-
-  for (const p of candidates) {
-    if (fs.existsSync(p)) {
-      const magic = fs.readFileSync(p).slice(0, 4).toString('hex');
-      if (magic === '504b0304') {
-        return { filePath: p, is1a };
-      }
+function ensureUploadDirs() {
+  [UPLOADS_DOCX_DIR, UPLOADS_PDF_DIR].forEach((dir) => {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
     }
-  }
-
-  throw new Error(`Không tìm thấy file mẫu biểu Word (.docx ECMA-376) cho templateId: ${templateId}`);
+  });
 }
 
 /**
- * Step 3.1 & 3.2: Chuẩn hóa chuỗi, chuyển null/undefined -> "", chuẩn hóa \r\n -> \n, xóa thẻ HTML
+ * Tìm đường dẫn file mẫu chuẩn trong thư mục duy nhất server/templates/
+ * Chỉ đọc buffer bản sao từ file mẫu, tuyệt đối không ghi đè file mẫu gốc.
+ */
+export function findTemplateFile(templateType = '2a') {
+  const str = String(templateType).toLowerCase();
+  const is1a =
+    str.includes('1a') ||
+    str.includes('tt') ||
+    str.includes('proposal') ||
+    str.includes('knowledge') ||
+    str.includes('tri-thuc');
+
+  const fileName = is1a ? 'mau_1a_chuan.docx' : 'mau_2a_chuan.docx';
+  const filePath = path.join(TEMPLATES_DIR, fileName);
+
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Không tìm thấy file mẫu chuẩn tại: ${filePath}`);
+  }
+
+  const magic = fs.readFileSync(filePath).slice(0, 4).toString('hex');
+  if (magic !== '504b0304') {
+    throw new Error(`File mẫu ${fileName} không đúng chuẩn OpenXML .docx (ZIP magic mismatch)`);
+  }
+
+  return { filePath, is1a, fileName };
+}
+
+/**
+ * Chuẩn hóa chuỗi: null/undefined -> "", chuẩn hóa \r\n -> \n, xóa thẻ HTML
  */
 export function normalizeMultiline(str) {
   if (str === null || str === undefined) return '';
@@ -64,9 +64,7 @@ export function normalizeMultiline(str) {
 }
 
 /**
- * Đệ quy làm sạch toàn bộ payload JSON:
- * - Chuyển mọi giá trị null / undefined thành ""
- * - Chuẩn hóa xuống dòng \r\n | \r -> \n và loại bỏ thẻ HTML vô tình lọt vào
+ * Đệ quy làm sạch toàn bộ payload JSON
  */
 export function sanitizePayload(input) {
   if (input === null || input === undefined) return '';
@@ -86,8 +84,7 @@ export function sanitizePayload(input) {
 }
 
 /**
- * Step 3.3: Xử lý Số văn bản hành chính: Số: {so_hieu}/KH-{ten_don_vi} hoặc {so_hieu}/TTr-{ten_don_vi}
- * Nếu so_hieu trống, mặc định là "      " (6 khoảng trắng) để chừa chỗ ghi số khi in.
+ * Định dạng số hiệu văn bản hành chính: {so_hieu}/TTr-{ten_don_vi} hoặc {so_hieu}/KH-{ten_don_vi}
  */
 export function formatDocumentNumber(rawNumber, soHieuInput, docType = 'KH', unitAbbr = 'ĐV') {
   const cleanUnit = normalizeMultiline(unitAbbr).trim() || 'ĐV';
@@ -123,11 +120,14 @@ export function formatDocumentNumber(rawNumber, soHieuInput, docType = 'KH', uni
 }
 
 /**
- * Step 3.4: Adapter gom mảng nhân sự thành 2 cột trên mỗi hàng (8.1, 8.2, 8.3, 9.1, 9.2)
- * Tự động đánh số stt (1, 2, 3...) và áp dụng Empty Table Safeguard nếu mảng rỗng.
+ * Gom mảng nhân sự thành bảng 2 cột (Mục 8.1, 8.2, 8.3, 9.1, 9.2)
  */
 export function pairTwoColumns(input) {
-  if (!input || (Array.isArray(input) && input.length === 0) || (typeof input === 'string' && !input.trim())) {
+  if (
+    !input ||
+    (Array.isArray(input) && input.length === 0) ||
+    (typeof input === 'string' && !input.trim())
+  ) {
     return [{ stt: '', col1: '', col2: '' }];
   }
 
@@ -145,7 +145,6 @@ export function pairTwoColumns(input) {
       return [{ stt: '', col1: '', col2: '' }];
     }
 
-    // Nếu phần tử đã có cấu trúc { col1, col2 }
     if (typeof valid[0] === 'object' && ('col1' in valid[0] || 'col2' in valid[0])) {
       return valid.map((r, idx) => ({
         stt: r.stt !== undefined && r.stt !== '' ? r.stt : idx + 1,
@@ -154,7 +153,6 @@ export function pairTwoColumns(input) {
       }));
     }
 
-    // Nếu phần tử có cấu trúc { ho_ten/name, chuc_vu/role/don_vi }
     if (
       typeof valid[0] === 'object' &&
       ('ho_ten' in valid[0] || 'name' in valid[0] || 'chuc_vu' in valid[0] || 'role' in valid[0])
@@ -172,7 +170,6 @@ export function pairTwoColumns(input) {
       });
     }
 
-    // Mảng chuỗi
     const strItems = valid.map((item) => normalizeMultiline(String(item)).trim()).filter(Boolean);
     return parseStringLinesToTwoColumns(strItems);
   }
@@ -196,7 +193,6 @@ function parseStringLinesToTwoColumns(lines) {
     return [{ stt: '', col1: '', col2: '' }];
   }
 
-  // Nếu các dòng phân tách tên và chức vụ bằng " - " hoặc " – "
   const hasDashSeparator = lines.some((l) => /\s[-–]\s/.test(l));
   if (hasDashSeparator) {
     return lines.map((line, idx) => {
@@ -224,9 +220,6 @@ function parseStringLinesToTwoColumns(lines) {
   return pairs;
 }
 
-/**
- * Phân loại rủi ro dựa trên giá trị R = P * S (thang 1 - 25)
- */
 export function getRiskLevel(r) {
   const val = Number(r);
   if (val <= 4) return 'Thấp';
@@ -235,12 +228,6 @@ export function getRiskLevel(r) {
   return 'Rất cao';
 }
 
-/**
- * Adapter bảng đánh giá rủi ro 10.1:
- * - Tự động đánh số stt (1, 2, 3...)
- * - Tự động tính r = Number(p) * Number(s) nếu có p và s
- * - Empty Table Safeguard: nếu mảng rỗng, trả về 1 hàng trống giữ nguyên độ rộng cột
- */
 export function adaptRiskTable(risks) {
   if (Array.isArray(risks)) {
     if (risks.length === 0) {
@@ -253,7 +240,8 @@ export function adaptRiskTable(risks) {
       const yeuTo = normalizeMultiline(item.yeu_to_rui_ro ?? item.risk_factor ?? item.cong_viec ?? item.name ?? '');
       const rawP = item.p ?? item.probability ?? '';
       const rawS = item.s ?? item.severity ?? '';
-      const hasPS = rawP !== '' && rawP !== null && rawP !== undefined && rawS !== '' && rawS !== null && rawS !== undefined;
+      const hasPS =
+        rawP !== '' && rawP !== null && rawP !== undefined && rawS !== '' && rawS !== null && rawS !== undefined;
       const p = hasPS ? Number(rawP) : normalizeMultiline(rawP);
       const s = hasPS ? Number(rawS) : normalizeMultiline(rawS);
       const r =
@@ -294,11 +282,6 @@ export function adaptRiskTable(risks) {
   return [{ stt: '', yeu_to_rui_ro: '', p: '', s: '', r: '', phan_loai: '' }];
 }
 
-/**
- * Adapter bảng biện pháp kiểm soát rủi ro 10.2
- * - Tự động đánh số stt (1, 2, 3...)
- * - Empty Table Safeguard: nếu mảng rỗng, trả về 1 hàng trống giữ nguyên độ rộng cột
- */
 export function adaptRiskControlTable(controls) {
   if (Array.isArray(controls)) {
     if (controls.length === 0) {
@@ -375,11 +358,6 @@ export function adaptRiskControlTable(controls) {
   ];
 }
 
-/**
- * Adapter chương trình chi tiết hội thảo 9.3
- * - Tự động đánh số stt (1, 2, 3...)
- * - Empty Table Safeguard: nếu mảng rỗng, trả về 1 hàng trống giữ nguyên độ rộng cột
- */
 export function adaptWorkshopSchedule(schedule) {
   if (Array.isArray(schedule)) {
     if (schedule.length === 0) {
@@ -417,11 +395,6 @@ export function adaptWorkshopSchedule(schedule) {
   return [{ stt: '', thoi_gian: '', noi_dung: '', thanh_phan: '' }];
 }
 
-/**
- * Adapter phân công nhiệm vụ tổ chức 9.4
- * - Tự động đánh số stt (1, 2, 3...)
- * - Empty Table Safeguard: nếu mảng rỗng, trả về 1 hàng trống giữ nguyên độ rộng cột
- */
 export function adaptWorkshopAssignment(assignments) {
   if (Array.isArray(assignments)) {
     if (assignments.length === 0) {
@@ -469,24 +442,61 @@ function getDirectChildren(parent, tagName) {
 }
 
 /**
- * Step 4: OpenXML Post-Processing Dimension Lock (The "Anti-Skew" Layer)
- * 1. Lock All Table Widths & Column Grids:
- *    - Ensure every <w:tblPr> contains <w:tblLayout w:type="fixed"/> (overwriting autofit if present).
- *    - Verify <w:tblGrid> and its <w:gridCol w:w="..."/> children match the template dxa measurements,
- *      and ensure every <w:tcPr> inside every row retains its explicit <w:tcW w:w="..." w:type="dxa"/>.
- * 2. Enforce Flexible Row Heights & Prevent Row Splitting:
- *    - Ensure every <w:trPr> contains <w:cantSplit/>.
- *    - If <w:trHeight> is present in any data table row, set w:hRule="atLeast" (never exact).
- * 3. Protect Signature Blocks from Page Breaks:
- *    - Locate the bottom signature tables ("Trưởng đơn vị nhận", "Trưởng đơn vị", "Phòng KH&CN", "HIỆU TRƯỞNG").
- *    - Inject <w:cantSplit/> into every <w:trPr> and <w:keepNext/> + <w:keepLines/> into <w:pPr>
- *      of the rows in these signature tables so signature titles and their 4+4=8 blank signing rows
- *      are never separated across a page break.
- * 4. Leave <w:sectPr> (<w:pgSz>, <w:pgMar>) 100% untouched byte-for-byte.
+ * OpenXML Post-Processing Dimension Lock (Anti-Skew & Signature Protection)
  */
-export function applyPaginationAndSignatureProtection(zip) {
+export function applyPaginationAndSignatureProtection(zip, options = {}) {
   const xmlString = zip.file('word/document.xml').asText();
   const domDoc = new DOMParser().parseFromString(xmlString, 'text/xml');
+
+  // Xử lý cờ điều kiện has_budget: Nếu has_budget === 0 / false -> tự động ẩn/xóa các mục kinh phí/chi phí trong Word
+  const hideBudget = options.hideBudget === true;
+  if (hideBudget) {
+    const bodyEl = domDoc.getElementsByTagName('w:body')[0];
+    if (bodyEl) {
+      const bodyChildren = getDirectChildren(bodyEl);
+      for (let i = 0; i < bodyChildren.length; i++) {
+        const node = bodyChildren[i];
+        if (node.tagName !== 'w:p') continue;
+        const pText = (node.textContent || '').trim();
+
+        // Mẫu 1a: Mục "VI. Kinh phí tổ chức: ..."
+        if (/^VI\.\s*Kinh phí tổ chức/i.test(pText)) {
+          bodyEl.removeChild(node);
+          continue;
+        }
+
+        // Mẫu 2a: Mục "VII. Chi phí chuyển giao" và đoạn giá trị chi phí liền kề bên dưới
+        if (/^VII\.\s*Chi phí chuyển giao/i.test(pText)) {
+          const nextNode = bodyChildren[i + 1];
+          bodyEl.removeChild(node);
+          if (
+            nextNode &&
+            nextNode.tagName === 'w:p' &&
+            !/^VIII\./i.test((nextNode.textContent || '').trim())
+          ) {
+            bodyEl.removeChild(nextNode);
+            i++;
+          }
+          continue;
+        }
+
+        // Mẫu 2a (nếu có hội thảo nhưng không có kinh phí): "9.5. Dự trù kinh phí hội thảo" và đoạn liền kề
+        if (/^9\.5\.\s*Dự trù kinh phí hội thảo/i.test(pText)) {
+          const nextNode = bodyChildren[i + 1];
+          bodyEl.removeChild(node);
+          if (
+            nextNode &&
+            nextNode.tagName === 'w:p' &&
+            !/^X\./i.test((nextNode.textContent || '').trim())
+          ) {
+            bodyEl.removeChild(nextNode);
+            i++;
+          }
+          continue;
+        }
+      }
+    }
+  }
 
   const signatureKeywords = [
     'Trưởng đơn vị nhận',
@@ -506,14 +516,12 @@ export function applyPaginationAndSignatureProtection(zip) {
   for (let t = 0; t < allTables.length; t++) {
     const tbl = allTables[t];
     const text = tbl.textContent || '';
-    const isSignatureTable =
-      t > 0 && signatureKeywords.some((kw) => text.includes(kw));
+    const isSignatureTable = t > 0 && signatureKeywords.some((kw) => text.includes(kw));
 
     if (isSignatureTable) {
       signatureTables.push(tbl);
     }
 
-    // 4.1: Ensure <w:tblPr> has <w:tblLayout w:type="fixed"/>
     let tblPr = getDirectChildren(tbl, 'w:tblPr')[0];
     if (!tblPr) {
       tblPr = domDoc.createElementNS(W_NS, 'w:tblPr');
@@ -531,13 +539,11 @@ export function applyPaginationAndSignatureProtection(zip) {
     }
     tblLayout.setAttribute('w:type', 'fixed');
 
-    // Read <w:tblGrid> column widths in dxa
     const tblGrid = getDirectChildren(tbl, 'w:tblGrid')[0];
     const gridCols = tblGrid
       ? getDirectChildren(tblGrid, 'w:gridCol').map((gc) => Number(gc.getAttribute('w:w') || 0))
       : [];
 
-    // 4.1 & 4.2: Check every row <w:tr> and cell <w:tc>
     const rows = getDirectChildren(tbl, 'w:tr');
     for (let r = 0; r < rows.length; r++) {
       const tr = rows[r];
@@ -547,12 +553,10 @@ export function applyPaginationAndSignatureProtection(zip) {
         tr.insertBefore(trPr, tr.firstChild);
       }
 
-      // Ensure <w:cantSplit/>
       if (getDirectChildren(trPr, 'w:cantSplit').length === 0) {
         trPr.appendChild(domDoc.createElementNS(W_NS, 'w:cantSplit'));
       }
 
-      // Ensure <w:trHeight> in data tables uses w:hRule="atLeast" (never exact)
       if (!isSignatureTable && t > 0) {
         const trHeights = getDirectChildren(trPr, 'w:trHeight');
         for (const th of trHeights) {
@@ -560,7 +564,6 @@ export function applyPaginationAndSignatureProtection(zip) {
         }
       }
 
-      // Verify every <w:tcPr> retains its explicit <w:tcW w:w="..." w:type="dxa"/>
       const cells = getDirectChildren(tr, 'w:tc');
       let gridIdx = 0;
       for (let c = 0; c < cells.length; c++) {
@@ -591,7 +594,6 @@ export function applyPaginationAndSignatureProtection(zip) {
     }
   }
 
-  // 4.3: Protect Signature Blocks from Page Breaks (<w:keepLines/> and <w:keepNext/>)
   for (let sIdx = 0; sIdx < signatureTables.length; sIdx++) {
     const sigTbl = signatureTables[sIdx];
     const isLastSigTable = sIdx === signatureTables.length - 1;
@@ -618,7 +620,6 @@ export function applyPaginationAndSignatureProtection(zip) {
       }
     }
 
-    // Also keep any spacer paragraph immediately between signature tables glued with <w:keepNext/>
     if (!isLastSigTable && sigTbl.nextSibling && sigTbl.nextSibling.nodeName === 'w:p') {
       const betweenP = sigTbl.nextSibling;
       let pPr = getDirectChildren(betweenP, 'w:pPr')[0];
@@ -632,8 +633,6 @@ export function applyPaginationAndSignatureProtection(zip) {
     }
   }
 
-  // 4.4: Header Table Left Cell Single-Line Unit Name Protection
-  // Prevents long department names (e.g. "PHÒNG KHOA HỌC CÔNG NGHỆ") from wrapping onto a 2nd line
   if (allTables.length > 0) {
     const headerTbl = allTables[0];
     const firstRow = getDirectChildren(headerTbl, 'w:tr')[0];
@@ -716,31 +715,54 @@ export function applyPaginationAndSignatureProtection(zip) {
 }
 
 /**
- * Chuẩn bị dữ liệu đã tiền xử lý cho Docxtemplater (Mẫu 1a & Mẫu 2a)
+ * Chuẩn bị dữ liệu mapping cho Docxtemplater (Mẫu 1a - Tờ trình & Mẫu 2a - Kế hoạch)
+ * Nhận thêm departmentInfo từ bảng departments và cờ hasWorkshop, hasBudget
  */
-export function prepareRenderData(code, rawFormData = {}, is1a = false) {
+export function prepareRenderData(code, rawFormData = {}, is1a = false, options = {}) {
   const formData = sanitizePayload(rawFormData || {});
   const now = new Date();
   const day = String(formData.ngay || now.getDate()).padStart(2, '0');
   const month = String(formData.thang || now.getMonth() + 1).padStart(2, '0');
   const year = String(formData.nam || now.getFullYear());
 
-  const dept =
-    formData.department ||
+  const deptName =
+    options.departmentName ||
     formData.department_name ||
+    formData.department ||
     formData.don_vi ||
     formData.ten_don_vi ||
-    'KHOA CÔNG NGHỆ THÔNG TIN';
+    'KHOA Y';
+
   const unitAbbr =
+    options.departmentCode ||
     formData.don_vi_viet_tat ||
     formData.ten_don_vi ||
-    dept
+    deptName
       .split(/\s+/)
       .filter(Boolean)
       .map((w) => w[0])
       .join('')
       .toUpperCase() ||
     'ĐV';
+
+  const deanTitle = options.deanTitle || formData.dean_title || 'TRƯỞNG KHOA';
+  const techName =
+    options.technologyName ||
+    formData.technology_name ||
+    formData.product_name ||
+    formData.research_title ||
+    formData.ten_san_pham ||
+    formData.title ||
+    '';
+  const transferTarget =
+    options.transferTarget ||
+    formData.transfer_target ||
+    formData.receiving_party ||
+    formData.ben_nhan_chuyen_giao ||
+    formData.doi_tuong ||
+    '';
+  const purposeText =
+    options.purpose || formData.purpose || formData.muc_dich || techName || '';
 
   if (is1a) {
     const docNumInfo = formatDocumentNumber(
@@ -752,7 +774,8 @@ export function prepareRenderData(code, rawFormData = {}, is1a = false) {
 
     return {
       ...formData,
-      don_vi_uppercase: dept.toUpperCase(),
+      don_vi_uppercase: deptName.toUpperCase(),
+      dean_title: deanTitle,
       so_hieu: docNumInfo.so_hieu,
       ten_don_vi: docNumInfo.ten_don_vi,
       so_to_trinh: docNumInfo.formatted,
@@ -763,11 +786,11 @@ export function prepareRenderData(code, rawFormData = {}, is1a = false) {
       chuc_danh: formData.position || formData.chuc_danh || '',
       dien_thoai: formData.phone || formData.dien_thoai || '',
       email: formData.email || '',
-      muc_dich: normalizeMultiline(formData.purpose || formData.muc_dich || formData.research_title || ''),
+      muc_dich: normalizeMultiline(purposeText),
       nhu_cau_tiep_nhan: normalizeMultiline(formData.receiver_needs || formData.nhu_cau_tiep_nhan || ''),
       dap_ung_thuc_hien: normalizeMultiline(formData.provider_capacity || formData.dap_ung_thuc_hien || ''),
       muc_tieu: normalizeMultiline(formData.transfer_goals || formData.muc_tieu || ''),
-      doi_tuong: normalizeMultiline(formData.transfer_target || formData.doi_tuong || ''),
+      doi_tuong: normalizeMultiline(transferTarget),
       phuong_thuc: normalizeMultiline(formData.transfer_method || formData.phuong_thuc || ''),
       hinh_thuc: normalizeMultiline(formData.transfer_form || formData.hinh_thuc || 'Chuyển giao công nghệ độc lập.'),
       quyen_chuyen_giao: normalizeMultiline(formData.transfer_rights || formData.quyen_chuyen_giao || ''),
@@ -781,7 +804,7 @@ export function prepareRenderData(code, rawFormData = {}, is1a = false) {
     };
   }
 
-  // Mẫu 2a
+  // Mẫu 2a - Kế hoạch CGCN
   const docNumInfo = formatDocumentNumber(
     formData.plan_code || formData.so_ke_hoach,
     formData.so_hieu,
@@ -789,27 +812,23 @@ export function prepareRenderData(code, rawFormData = {}, is1a = false) {
     unitAbbr
   );
 
-  const explicitCoHoiThao =
-    rawFormData?.co_hoi_thao !== undefined
-      ? Boolean(rawFormData.co_hoi_thao)
-      : rawFormData?.has_hoi_thao !== undefined
-        ? Boolean(rawFormData.has_hoi_thao)
-        : rawFormData?.has_workshop !== undefined
-          ? Boolean(rawFormData.has_workshop)
-          : Boolean(
-              formData.workshop_chair ||
-                formData.workshop_speaker ||
-                formData.workshop_program ||
-                formData.chu_toa ||
-                formData.bao_cao_vien ||
-                (Array.isArray(formData.ds_chu_toa) && formData.ds_chu_toa.length > 0) ||
-                (Array.isArray(formData.ds_bao_cao_vien) && formData.ds_bao_cao_vien.length > 0) ||
-                (Array.isArray(formData.ds_chuong_trinh_hoi_thao) && formData.ds_chuong_trinh_hoi_thao.length > 0)
-            );
+  // Xử lý cờ điều kiện has_workshop: Nếu has_workshop === 0 / false -> cắt bỏ hoàn toàn khối Hội thảo trong Word
+  let explicitCoHoiThao = false;
+  if (options.hasWorkshop !== undefined && options.hasWorkshop !== null) {
+    explicitCoHoiThao = Number(options.hasWorkshop) === 1 || options.hasWorkshop === true;
+  } else if (rawFormData?.has_workshop !== undefined) {
+    explicitCoHoiThao = Number(rawFormData.has_workshop) === 1 || rawFormData.has_workshop === true;
+  } else if (rawFormData?.co_hoi_thao !== undefined) {
+    explicitCoHoiThao = Boolean(rawFormData.co_hoi_thao);
+  } else if (rawFormData?.has_hoi_thao !== undefined) {
+    explicitCoHoiThao = Boolean(rawFormData.has_hoi_thao);
+  }
 
   const rawTransferCost = rawFormData?.transfer_cost ?? rawFormData?.chi_phi;
   let formattedChiPhi = '';
-  if (rawTransferCost !== undefined && rawTransferCost !== null && rawTransferCost !== '') {
+  if (options.hasBudget === 0 || options.hasBudget === false) {
+    formattedChiPhi = formData.chi_phi || 'Không thu phí (kinh phí hoạt động Nhà trường)';
+  } else if (rawTransferCost !== undefined && rawTransferCost !== null && rawTransferCost !== '') {
     if (typeof rawTransferCost === 'number' || /^\d+$/.test(String(rawTransferCost).trim())) {
       formattedChiPhi =
         Number(rawTransferCost) === 0
@@ -825,25 +844,22 @@ export function prepareRenderData(code, rawFormData = {}, is1a = false) {
     so_hieu: docNumInfo.so_hieu,
     ten_don_vi: docNumInfo.ten_don_vi,
     so_ke_hoach: docNumInfo.formatted,
-    don_vi_uppercase: dept.toUpperCase(),
+    don_vi_uppercase: deptName.toUpperCase(),
     don_vi_viet_tat: unitAbbr,
+    dean_title: deanTitle,
     ngay: day,
     thang: month,
     nam: year,
-    ten_san_pham: normalizeMultiline(
-      formData.product_name || formData.ten_san_pham || formData.title || formData.research_title || ''
-    ),
+    ten_san_pham: normalizeMultiline(techName),
     ho_ten: normalizeMultiline(formData.full_name || formData.creator_name || formData.ho_ten || ''),
     truong_don_vi_nhan: normalizeMultiline(formData.receiver_manager || formData.truong_don_vi_nhan || ''),
     dien_thoai: normalizeMultiline(formData.phone || formData.dien_thoai || ''),
     email: normalizeMultiline(formData.email || ''),
-    muc_dich: normalizeMultiline(formData.purpose || formData.muc_dich || ''),
+    muc_dich: normalizeMultiline(purposeText),
     nhom_tac_gia: normalizeMultiline(formData.authors_group || formData.nhom_tac_gia || formData.full_name || ''),
     loai_hinh_san_pham: normalizeMultiline(formData.product_type || formData.loai_hinh_san_pham || ''),
     phuong_thuc: normalizeMultiline(formData.transfer_method || formData.phuong_thuc || ''),
-    ben_nhan_chuyen_giao: normalizeMultiline(
-      formData.receiving_party || formData.ben_nhan_chuyen_giao || formData.partner || ''
-    ),
+    ben_nhan_chuyen_giao: normalizeMultiline(transferTarget),
     thoi_gian: formData.transfer_date
       ? new Date(formData.transfer_date).toLocaleDateString('vi-VN')
       : normalizeMultiline(formData.transfer_time || formData.thoi_gian || ''),
@@ -859,22 +875,28 @@ export function prepareRenderData(code, rawFormData = {}, is1a = false) {
     ds_nhan_su: pairTwoColumns(
       rawFormData?.ds_nhan_su ?? rawFormData?.implementing_staff ?? rawFormData?.nhan_su
     ),
-    // Khối điều kiện Mục IX
+    // Khối điều kiện Mục IX (Hội thảo): Tự động cắt bỏ khi explicitCoHoiThao === false
     co_hoi_thao: explicitCoHoiThao,
     has_hoi_thao: explicitCoHoiThao,
-    ds_chu_toa: pairTwoColumns(rawFormData?.ds_chu_toa ?? rawFormData?.workshop_chair ?? rawFormData?.chu_toa),
-    ds_bao_cao_vien: pairTwoColumns(
-      rawFormData?.ds_bao_cao_vien ?? rawFormData?.workshop_speaker ?? rawFormData?.bao_cao_vien
-    ),
-    ds_chuong_trinh_hoi_thao: adaptWorkshopSchedule(
-      rawFormData?.ds_chuong_trinh_hoi_thao ?? rawFormData?.workshop_program ?? rawFormData?.chuong_trinh_hoi_thao
-    ),
-    ds_phan_cong_hoi_thao: adaptWorkshopAssignment(
-      rawFormData?.ds_phan_cong_hoi_thao ?? rawFormData?.workshop_assignments ?? rawFormData?.phan_cong_hoi_thao
-    ),
-    kinh_phi_hoi_thao: normalizeMultiline(
-      formData.workshop_budget || formData.kinh_phi_hoi_thao || ''
-    ),
+    ds_chu_toa: explicitCoHoiThao
+      ? pairTwoColumns(rawFormData?.ds_chu_toa ?? rawFormData?.workshop_chair ?? rawFormData?.chu_toa)
+      : [],
+    ds_bao_cao_vien: explicitCoHoiThao
+      ? pairTwoColumns(rawFormData?.ds_bao_cao_vien ?? rawFormData?.workshop_speaker ?? rawFormData?.bao_cao_vien)
+      : [],
+    ds_chuong_trinh_hoi_thao: explicitCoHoiThao
+      ? adaptWorkshopSchedule(
+          rawFormData?.ds_chuong_trinh_hoi_thao ?? rawFormData?.workshop_program ?? rawFormData?.chuong_trinh_hoi_thao
+        )
+      : [],
+    ds_phan_cong_hoi_thao: explicitCoHoiThao
+      ? adaptWorkshopAssignment(
+          rawFormData?.ds_phan_cong_hoi_thao ?? rawFormData?.workshop_assignments ?? rawFormData?.phan_cong_hoi_thao
+        )
+      : [],
+    kinh_phi_hoi_thao: explicitCoHoiThao
+      ? normalizeMultiline(formData.workshop_budget || formData.kinh_phi_hoi_thao || '')
+      : '',
     // Bảng rủi ro Mục X
     ds_danh_gia_rui_ro: adaptRiskTable(
       rawFormData?.ds_danh_gia_rui_ro ?? rawFormData?.risks ?? rawFormData?.danh_gia_rui_ro ?? rawFormData?.risk_management
@@ -886,11 +908,12 @@ export function prepareRenderData(code, rawFormData = {}, is1a = false) {
 }
 
 /**
- * Render buffer .docx từ template chuẩn và dữ liệu Web Form
+ * Render buffer .docx từ bản sao bộ nhớ của file mẫu chuẩn (tuyệt đối không ghi đè file mẫu gốc)
  */
-export function renderDocxBuffer(formData = {}, templateId = 'tmpl-cgcn-2a', code = 'CGCN-0001') {
+export function renderDocxBuffer(formData = {}, templateId = '2a', code = 'CGCN-2026-0001', options = {}) {
   const { filePath: templatePath, is1a } = findTemplateFile(templateId);
-  const templateBuffer = fs.readFileSync(templatePath);
+  // Đọc bản sao vào bộ nhớ (Buffer.from) để đảm bảo file gốc trong server/templates/ bất biến 100%
+  const templateBuffer = Buffer.from(fs.readFileSync(templatePath));
 
   const zip = new PizZip(templateBuffer);
   const doc = new Docxtemplater(zip, {
@@ -901,11 +924,20 @@ export function renderDocxBuffer(formData = {}, templateId = 'tmpl-cgcn-2a', cod
     },
   });
 
-  const renderData = prepareRenderData(code, formData, is1a);
+  const renderData = prepareRenderData(code, formData, is1a, options);
   doc.render(renderData);
 
-  // Hậu xử lý DOM (Step 4: Anti-Skew & Signature Protection)
-  applyPaginationAndSignatureProtection(doc.getZip());
+  const explicitDisableBudget =
+    options.hasBudget === 0 ||
+    options.hasBudget === false ||
+    formData?.has_budget === 0 ||
+    formData?.has_budget === false ||
+    formData?.co_kinh_phi === 0 ||
+    formData?.co_kinh_phi === false;
+
+  applyPaginationAndSignatureProtection(doc.getZip(), {
+    hideBudget: explicitDisableBudget,
+  });
 
   const buffer = doc.getZip().generate({
     type: 'nodebuffer',
@@ -916,21 +948,24 @@ export function renderDocxBuffer(formData = {}, templateId = 'tmpl-cgcn-2a', cod
 }
 
 /**
- * Sinh file Word .docx mapping dữ liệu từ Web Form không lỗi định dạng
+ * Sinh 1 file Word .docx từ template chỉ định
  */
-export async function generateDocx(code, formData = {}, templateId = 'tmpl-cgcn-2a') {
-  ensureUploadDir();
+export async function generateDocx(code, formData = {}, templateId = '2a', options = {}) {
+  ensureUploadDirs();
 
   const cleanCode = String(code || '').trim();
   const normalizedCode = cleanCode.startsWith('CGCN-') ? cleanCode : `CGCN-${cleanCode}`;
-  const fileName = `${normalizedCode}.docx`;
+  const { is1a } = findTemplateFile(templateId);
+  const suffix = options.fileSuffix || (is1a ? 'ToTrinh_1a' : 'KeHoach_2a');
+  const verSuffix = options.version ? `_v${options.version}` : '';
+  const fileName = `${normalizedCode}_${suffix}${verSuffix}.docx`;
   const outputPath = path.join(UPLOADS_DOCX_DIR, fileName);
 
-  const { buffer } = renderDocxBuffer(formData, templateId, normalizedCode);
-
+  const { buffer } = renderDocxBuffer(formData, templateId, normalizedCode, options);
   fs.writeFileSync(outputPath, buffer);
 
   return {
+    fileCategory: is1a ? 'AUTO_PROPOSAL_DOCX' : 'AUTO_PLAN_DOCX',
     fileName,
     filePath: `server/uploads/docx/${fileName}`,
     absolutePath: outputPath,
@@ -940,8 +975,241 @@ export async function generateDocx(code, formData = {}, templateId = 'tmpl-cgcn-
   };
 }
 
+/**
+ * Sinh đồng thời cả file Tờ trình (AUTO_PROPOSAL_DOCX - Mẫu 1a) và Kế hoạch (AUTO_PLAN_DOCX - Mẫu 2a)
+ * trong 1 lần nộp Web Form
+ */
+export async function generateDossierDocuments(trackingCode, formData = {}, options = {}) {
+  const proposalDoc = await generateDocx(trackingCode, formData, '1a', {
+    ...options,
+    fileSuffix: 'ToTrinh_1a',
+  });
+
+  const planDoc = await generateDocx(trackingCode, formData, '2a', {
+    ...options,
+    fileSuffix: 'KeHoach_2a',
+  });
+
+  return {
+    proposalDoc,
+    planDoc,
+    files: [proposalDoc, planDoc],
+  };
+}
+
+// =========================================================================
+// PHẦN GỘP TỪ pdfService.js: Sinh PDF chuẩn phục vụ Tiền kiểm
+// =========================================================================
+
+async function loadFonts(pdfDoc) {
+  try {
+    pdfDoc.registerFontkit(fontkit);
+
+    const timesPath = 'C:\\Windows\\Fonts\\times.ttf';
+    const timesBoldPath = 'C:\\Windows\\Fonts\\timesbd.ttf';
+    const timesItalicPath = 'C:\\Windows\\Fonts\\timesi.ttf';
+
+    if (fs.existsSync(timesPath) && fs.existsSync(timesBoldPath)) {
+      const regular = await pdfDoc.embedFont(fs.readFileSync(timesPath));
+      const bold = await pdfDoc.embedFont(fs.readFileSync(timesBoldPath));
+      const italic = fs.existsSync(timesItalicPath)
+        ? await pdfDoc.embedFont(fs.readFileSync(timesItalicPath))
+        : regular;
+      return { regular, bold, italic };
+    }
+  } catch (err) {
+    console.warn('[documentService] Fallback sang StandardFonts:', err.message);
+  }
+
+  const regular = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+  const bold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+  const italic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
+  return { regular, bold, italic };
+}
+
+function wrapText(text, maxWidth, font, fontSize) {
+  if (!text) return [];
+  const lines = [];
+  const rawParagraphs = String(text).split('\n');
+
+  for (const paragraph of rawParagraphs) {
+    const words = paragraph.split(' ');
+    let currentLine = '';
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      try {
+        const testWidth = font.widthOfTextAtSize(testLine, fontSize);
+        if (testWidth > maxWidth && currentLine) {
+          lines.push(currentLine);
+          currentLine = word;
+        } else {
+          currentLine = testLine;
+        }
+      } catch {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) {
+      lines.push(currentLine);
+    }
+  }
+
+  return lines;
+}
+
+/**
+ * Xuất file PDF chuẩn từ dữ liệu hồ sơ khi Admin Duyệt tiền kiểm nhưng không upload file chỉnh tay
+ */
+export async function generateLockedPdf(
+  trackingCode,
+  formData = {},
+  templateTitle = 'Hồ sơ Chuyển giao Công nghệ'
+) {
+  ensureUploadDirs();
+  const fileName = `${trackingCode}_Precheck_Standard.pdf`;
+  const filePath = path.join(UPLOADS_PDF_DIR, fileName);
+
+  const pdfDoc = await PDFDocument.create();
+  pdfDoc.setTitle(`CTUMP CGCN - ${trackingCode}`);
+  pdfDoc.setAuthor('Trường Đại học Y Dược Cần Thơ');
+  pdfDoc.setSubject(templateTitle);
+  pdfDoc.setCreationDate(new Date());
+
+  const { regular, bold, italic } = await loadFonts(pdfDoc);
+  const page = pdfDoc.addPage([595.28, 841.89]);
+  const { width, height } = page.getSize();
+  const margin = 50;
+  const contentWidth = width - margin * 2;
+  let y = height - margin;
+
+  page.drawText('BỘ Y TẾ', { x: margin, y, size: 10, font: regular, color: rgb(0.2, 0.2, 0.2) });
+  page.drawText('CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM', {
+    x: width - margin - 235,
+    y,
+    size: 10,
+    font: bold,
+    color: rgb(0, 0, 0),
+  });
+
+  y -= 14;
+  page.drawText('TRƯỜNG ĐẠI HỌC Y DƯỢC CẦN THƠ', {
+    x: margin,
+    y,
+    size: 10,
+    font: bold,
+    color: rgb(0, 0, 0),
+  });
+  page.drawText('Độc lập - Tự do - Hạnh phúc', {
+    x: width - margin - 175,
+    y,
+    size: 10,
+    font: bold,
+    color: rgb(0, 0, 0),
+  });
+
+  y -= 14;
+  const deptName = formData.department_name || formData.department || 'PHÒNG KHOA HỌC CÔNG NGHỆ';
+  page.drawText(String(deptName).toUpperCase(), {
+    x: margin,
+    y,
+    size: 9.5,
+    font: bold,
+    color: rgb(0.1, 0.3, 0.6),
+  });
+
+  y -= 18;
+  page.drawText(`Mã hồ sơ: ${trackingCode}`, {
+    x: margin,
+    y,
+    size: 9,
+    font: regular,
+    color: rgb(0.3, 0.3, 0.3),
+  });
+
+  const now = new Date();
+  const dateStr = `Cần Thơ, ngày ${String(now.getDate()).padStart(2, '0')} tháng ${String(
+    now.getMonth() + 1
+  ).padStart(2, '0')} năm ${now.getFullYear()}`;
+  page.drawText(dateStr, {
+    x: width - margin - 180,
+    y,
+    size: 9,
+    font: italic,
+    color: rgb(0.3, 0.3, 0.3),
+  });
+
+  y -= 35;
+  const mainTitle = (templateTitle || 'HỒ SƠ CHUYỂN GIAO CÔNG NGHỆ').toUpperCase();
+  const titleLines = wrapText(mainTitle, contentWidth, bold, 13);
+  for (const tLine of titleLines) {
+    const tWidth = bold.widthOfTextAtSize(tLine, 13);
+    page.drawText(tLine, {
+      x: margin + (contentWidth - tWidth) / 2,
+      y,
+      size: 13,
+      font: bold,
+      color: rgb(0.1, 0.15, 0.3),
+    });
+    y -= 18;
+  }
+
+  y -= 10;
+  const summaryFields = [
+    {
+      label: 'Tên công nghệ / quy trình:',
+      value: formData.technology_name || formData.product_name || formData.research_title || templateTitle,
+    },
+    { label: 'Chủ nhiệm / Người nộp:', value: formData.full_name || formData.ho_ten || 'Cán bộ CTUMP' },
+    { label: 'Đơn vị công tác:', value: deptName },
+    {
+      label: 'Đơn vị tiếp nhận:',
+      value: formData.transfer_target || formData.receiving_party || formData.ben_nhan_chuyen_giao || '',
+    },
+    { label: 'Mục đích chuyển giao:', value: formData.purpose || formData.muc_dich || '' },
+  ];
+
+  for (const item of summaryFields) {
+    if (y < 160) break;
+    page.drawText(item.label, {
+      x: margin,
+      y,
+      size: 9.5,
+      font: bold,
+      color: rgb(0.15, 0.15, 0.15),
+    });
+
+    const valLines = wrapText(String(item.value || ''), contentWidth - 140, regular, 9.5);
+    let valY = y;
+    for (let i = 0; i < Math.min(valLines.length, 4); i++) {
+      page.drawText(valLines[i], {
+        x: margin + 140,
+        y: valY,
+        size: 9.5,
+        font: regular,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+      valY -= 13;
+    }
+    y = valY - 6;
+  }
+
+  const pdfBytes = await pdfDoc.save();
+  fs.writeFileSync(filePath, pdfBytes);
+
+  return {
+    fileName,
+    fileUrl: `/uploads/pdf/${fileName}`,
+    filePath: `server/uploads/pdf/${fileName}`,
+    absolutePath: filePath,
+    fileSize: `${(pdfBytes.length / 1024).toFixed(1)} KB`,
+  };
+}
+
 export const documentService = {
+  generateDossierDocuments,
   generateDocx,
+  generateLockedPdf,
   renderDocxBuffer,
   prepareRenderData,
   findTemplateFile,

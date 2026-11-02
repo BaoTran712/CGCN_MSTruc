@@ -6,3 +6,11 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Ignored uploaded & generated files (keep .gitkeep)
+server/uploads/docx/*
+!server/uploads/docx/.gitkeep
+server/uploads/pdf/*
+!server/uploads/pdf/.gitkeep
+server/uploads/attachments/*
+!server/uploads/attachments/.gitkeep

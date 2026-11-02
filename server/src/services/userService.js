@@ -21,35 +21,26 @@ export const userService = {
     return userRepository.save(user);
   },
 
-  // Xử lý đăng nhập phân quyền (Admin: toanhkhai12345@gmail.com, các Gmail khác: User)
+  // Xử lý đăng nhập
   async login(email, extraData = {}) {
     if (!email) {
       throw new Error('Vui lòng nhập địa chỉ email');
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const isAdmin = cleanEmail === 'toanhkhai12345@gmail.com';
+    const isAdmin =
+      cleanEmail === 'toanhkhai12345@gmail.com' || cleanEmail === 'admin@ctump.edu.vn';
 
     const found = await userRepository.findByEmail(cleanEmail);
     if (found) {
-      // Đảm bảo tôn trọng phân quyền đã được Admin gán
-      const correctRole = isAdmin ? 'ADMIN' : (found.role || 'USER');
+      const correctRole = isAdmin ? 'ADMIN' : found.role || 'USER';
       let needsSave = false;
       if (found.role !== correctRole) {
         found.role = correctRole;
         needsSave = true;
       }
-      if (extraData.name && (!found.name || found.name === 'Người dùng Thử nghiệm')) {
-        found.name = extraData.name;
-        needsSave = true;
-      }
-      if (extraData.avatar && !found.avatar) {
-        found.avatar = extraData.avatar;
-        needsSave = true;
-      }
-      if (isAdmin && !found.department) {
-        found.title = 'Quản trị viên Hệ thống';
-        found.department = 'Phòng Khoa học Công nghệ';
+      if (extraData.name && (!found.full_name || found.full_name === 'Người dùng Thử nghiệm')) {
+        found.full_name = extraData.name;
         needsSave = true;
       }
       if (needsSave) {
@@ -62,7 +53,8 @@ export const userService = {
     const username = cleanEmail.split('@')[0];
     const newUser = {
       id: `usr-${username}-${Date.now().toString().slice(-4)}`,
-      name:
+      staff_code: `CB-${Date.now().toString().slice(-4)}`,
+      full_name:
         extraData.name ||
         (isAdmin
           ? 'Quản trị viên Hệ thống'
@@ -72,9 +64,8 @@ export const userService = {
               .join(' ') || 'Người dùng Google'),
       email: cleanEmail,
       role: isAdmin ? 'ADMIN' : 'USER',
-      title: isAdmin ? 'Quản trị viên Hệ thống' : 'Cán bộ / Giảng viên',
-      department: isAdmin ? 'Phòng Khoa học Công nghệ' : 'Trường Đại học Y Dược Cần Thơ',
-      avatar: extraData.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${username}`,
+      department_id: 1,
+      phone: '',
     };
 
     return userRepository.create(newUser);
