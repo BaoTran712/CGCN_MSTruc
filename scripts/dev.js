@@ -6,8 +6,8 @@ console.log('  1. Backend NodeJS API: http://localhost:5000');
 console.log('  2. Frontend React Client: http://localhost:3000');
 console.log('=======================================================\n');
 
-// 1. Chạy Backend NodeJS Server (Port 5000)
-const server = spawn('node', ['server/src/server.js'], {
+// 1. Chạy Backend NodeJS Server (Port 5000) với chế độ tự động tải lại khi sửa code
+const server = spawn('node', ['--watch', 'server/src/server.js'], {
   stdio: 'inherit',
   shell: true,
 });

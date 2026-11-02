@@ -1,19 +1,13 @@
 /**
- * CTUMP DocuGov API Service Client (Production-Ready)
- *
- * Giao tiếp trực tiếp với Backend NodeJS Express (3-Layer Architecture).
- * Đảm bảo React thuần chỉ làm nhiệm vụ load UI và ráp dữ liệu từ Backend.
- * Toàn bộ logic nghiệp vụ, sinh mã, thẩm định, gửi mail và lưu database do Backend xử lý.
+ * CTUMP DocuGov API Service Client
+ * Hỗ trợ đầy đủ 6 trạng thái True Flow + False Flow & Đồng bộ Tài liệu (Single Source of Truth)
  */
 
 import {
   DocumentTemplate,
   Application,
   ApplicationHistory,
-  GeneratedDocument,
-  GoogleSheetRow,
   User,
-  UserRole,
   Notification as NotificationItem,
 } from '../types';
 import { API_BASE_URL, API_ENDPOINTS } from '../config/api.config';
@@ -21,24 +15,48 @@ import { OFFICIAL_TEMPLATES, AUTH_TOKEN_KEY } from '../constants';
 
 export { API_BASE_URL };
 
-const DOSSIERS_STORAGE_KEY = 'ctump_dossiers_cache';
+const DOSSIERS_STORAGE_KEY = 'ctump_dossiers_cache_v2';
 
 const DEFAULT_MOCK_USER: User = {
-  id: 'u-cb-01',
-  name: 'Cán bộ Giảng viên',
-  title: 'ThS.',
-  email: 'canbo@ctump.edu.vn',
+  id: 'usr-giangvien-demo',
+  name: 'Thầy / Cô (Cán bộ - Giảng viên)',
+  title: 'Giảng viên',
+  email: 'thayco.giangvien@ctump.edu.vn',
   role: 'USER',
-  department: 'Khoa Công nghệ Thông tin',
+  department: 'Khoa Y',
 };
+
+function deduplicateDossiers(list: Application[]): Application[] {
+  const map = new Map<string, Application>();
+  for (const d of list) {
+    if (!d || !d.code) continue;
+    if (d.id === 'dos-2026-0001' || d.review_notes === 'sai tên') continue;
+    const existing = map.get(d.code);
+    if (!existing) {
+      map.set(d.code, d);
+    } else {
+      const verCurrent = Number(d.current_version || d.currentVersion || 1);
+      const verExisting = Number(existing.current_version || existing.currentVersion || 1);
+      if (verCurrent >= verExisting) {
+        map.set(d.code, d);
+      }
+    }
+  }
+  return Array.from(map.values());
+}
 
 function getLocalDossiers(): Application[] {
   try {
+    // Xóa cache rác phiên bản cũ
+    localStorage.removeItem('ctump_dossiers_cache');
     const raw = localStorage.getItem(DOSSIERS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed;
+        const cleaned = parsed.filter(
+          (d) => d && d.id !== 'dos-2026-0001' && d.review_notes !== 'sai tên'
+        );
+        return deduplicateDossiers(cleaned);
       }
     }
   } catch {
@@ -49,7 +67,8 @@ function getLocalDossiers(): Application[] {
 
 function saveLocalDossiers(dossiers: Application[]): void {
   try {
-    localStorage.setItem(DOSSIERS_STORAGE_KEY, JSON.stringify(dossiers));
+    const deduped = deduplicateDossiers(dossiers);
+    localStorage.setItem(DOSSIERS_STORAGE_KEY, JSON.stringify(deduped));
   } catch {
     // ignore
   }
@@ -71,13 +90,10 @@ export const setAuthToken = (token?: string | null): void => {
       localStorage.removeItem(AUTH_TOKEN_KEY);
     }
   } catch {
-    // Ignore localStorage write error
+    // ignore
   }
 };
 
-/**
- * Standard HTTP Request client với error handling và JSON parsing
- */
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -107,7 +123,7 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
           errMsg = errorJson.message;
         }
       } catch {
-        // ignore json parse error
+        // ignore
       }
       throw new Error(errMsg);
     }
@@ -124,7 +140,6 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     return json as T;
   } catch (err: any) {
     clearTimeout(timeoutId);
-    console.error(`[DocuGov API Error] ${url}:`, err.message || err);
     throw err;
   }
 }
@@ -135,9 +150,6 @@ export interface BackendHealthStatus {
   databaseConnected?: boolean;
 }
 
-/**
- * Kiểm tra trạng thái máy chủ Backend NodeJS & MySQL
- */
 export async function checkBackendHealth(): Promise<BackendHealthStatus> {
   try {
     const res = await fetch(API_ENDPOINTS.STATUS, { method: 'GET' });
@@ -168,14 +180,13 @@ export async function getTemplates(): Promise<DocumentTemplate[]> {
         return {
           ...fallback,
           ...item,
-          fields: (item.fields && item.fields.length > 0) ? item.fields : (fallback?.fields || []),
-          sections: (item.sections && item.sections.length > 0) ? item.sections : (fallback?.sections || []),
+          fields: item.fields && item.fields.length > 0 ? item.fields : fallback?.fields || [],
+          sections: item.sections && item.sections.length > 0 ? item.sections : fallback?.sections || [],
         };
       });
     }
     return OFFICIAL_TEMPLATES;
-  } catch (err) {
-    console.warn('[getTemplates] Using official templates fallback:', err);
+  } catch {
     return OFFICIAL_TEMPLATES;
   }
 }
@@ -188,8 +199,8 @@ export async function getTemplateById(id: string): Promise<DocumentTemplate | nu
       return {
         ...fallback,
         ...found,
-        fields: (found.fields && found.fields.length > 0) ? found.fields : (fallback?.fields || []),
-        sections: (found.sections && found.sections.length > 0) ? found.sections : (fallback?.sections || []),
+        fields: found.fields && found.fields.length > 0 ? found.fields : fallback?.fields || [],
+        sections: found.sections && found.sections.length > 0 ? found.sections : fallback?.sections || [],
       };
     }
   } catch {
@@ -198,26 +209,35 @@ export async function getTemplateById(id: string): Promise<DocumentTemplate | nu
   return OFFICIAL_TEMPLATES.find((t) => t.id === id || t.code === id) || null;
 }
 
-export async function saveTemplate(template: DocumentTemplate, _isNew = false): Promise<DocumentTemplate> {
-  return request<DocumentTemplate>(`${API_BASE_URL}/templates`, {
-    method: 'POST',
-    body: JSON.stringify(template),
-  });
-}
-
 // =========================================================================
-// 2. Hồ sơ CGCN (dossiers) - Quy trình 8 bước chuẩn Automation
+// 2. Hồ sơ CGCN (True Flow + False Flow - 6 trạng thái)
 // =========================================================================
 
 export async function getAllApplications(): Promise<Application[]> {
   try {
     const apps = await request<Application[]>(API_ENDPOINTS.GET_ALL_DOSSIERS, { method: 'GET' });
-    if (Array.isArray(apps) && apps.length > 0) {
-      saveLocalDossiers(apps);
-      return apps;
+    if (Array.isArray(apps)) {
+      const hasLegacyGarbage = apps.some(
+        (d) =>
+          d.id === 'dos-2026-0001' ||
+          d.id?.startsWith('dos-test-') ||
+          (d.review_notes && d.review_notes.trim().toLowerCase() === 'sai tên')
+      );
+      if (hasLegacyGarbage) {
+        request(API_ENDPOINTS.CLEANUP_GARBAGE, { method: 'POST' }).catch(() => {});
+      }
+      const cleaned = apps.filter(
+        (d) =>
+          d &&
+          d.id !== 'dos-2026-0001' &&
+          !d.id?.startsWith('dos-test-') &&
+          (!d.review_notes || d.review_notes.trim().toLowerCase() !== 'sai tên')
+      );
+      saveLocalDossiers(cleaned);
+      return cleaned;
     }
-  } catch (err) {
-    console.warn('[getAllApplications] Backend không sẵn sàng hoặc MySQL chưa kết nối, sử dụng dữ liệu cục bộ:', err);
+  } catch {
+    // fallback localStorage
   }
   return getLocalDossiers();
 }
@@ -226,29 +246,39 @@ export async function getApplicationById(id: string): Promise<Application | null
   try {
     const found = await request<Application | null>(API_ENDPOINTS.GET_DOSSIER_DETAIL(id), { method: 'GET' });
     if (found) return found;
-  } catch (err) {
-    console.warn(`[getApplicationById] Không thể lấy hồ sơ ${id} từ backend, tìm trong cache cục bộ:`, err);
+  } catch {
+    // fallback localStorage
   }
   const local = getLocalDossiers();
   return local.find((d) => d.id === id || d.code === id) || null;
 }
 
+// BƯỚC 1: Gửi đơn mới (SUBMITTED - v1)
 export async function createApplication(payload: Partial<Application>, creator?: User): Promise<Application> {
+  const chosenTemplateId = payload?.templateId || 'tmpl-cgcn-1a';
+  const matchedTemplate = OFFICIAL_TEMPLATES.find((t) => t.id === chosenTemplateId || t.code === chosenTemplateId || t.code === payload?.templateCode);
+  const effectiveTemplateCode = matchedTemplate?.code || payload?.templateCode || (chosenTemplateId.includes('2a') ? 'Mẫu 2a-KH.CGCN' : 'Mẫu 1a-TT.CGCN');
+  const effectiveTemplateTitle = matchedTemplate?.title || payload?.templateTitle || 'Hồ sơ Chuyển giao Công nghệ';
+
   try {
     const created = await request<Application>(API_ENDPOINTS.CREATE_DOSSIER, {
       method: 'POST',
       body: JSON.stringify({
-        templateId: payload?.templateId,
-        templateTitle: payload?.templateTitle,
-        templateCode: payload?.templateCode,
+        templateId: chosenTemplateId,
+        templateTitle: effectiveTemplateTitle,
+        templateCode: effectiveTemplateCode,
         formData: payload?.formData || {},
         user: creator || payload?.createdBy,
-        status: 'NEW',
+        status: 'SUBMITTED',
       }),
     });
-    if (created) return created;
-  } catch (err) {
-    console.warn('[createApplication] Backend offline, lưu vào bộ nhớ cục bộ:', err);
+    if (created) {
+      const local = getLocalDossiers();
+      saveLocalDossiers([created, ...local.filter((d) => d.id !== created.id)]);
+      return created;
+    }
+  } catch {
+    // fallback
   }
 
   const local = getLocalDossiers();
@@ -257,159 +287,151 @@ export async function createApplication(payload: Partial<Application>, creator?:
   const newApp: Application = {
     id: `dos-2026-${nextNum}`,
     code: newCode,
-    title: payload?.templateTitle || 'Hồ sơ Chuyển giao Công nghệ',
-    templateId: payload?.templateId || 'tmpl-cgcn-1a',
-    templateCode: payload?.templateCode || 'Mẫu 1a-TT.CGCN',
-    templateTitle: payload?.templateTitle || 'Hồ sơ Chuyển giao Công nghệ',
-    status: 'NEW',
-    departmentName: creator?.department || 'Khoa Công nghệ Thông tin',
+    title: payload?.title || effectiveTemplateTitle,
+    templateId: chosenTemplateId,
+    templateCode: effectiveTemplateCode,
+    templateTitle: effectiveTemplateTitle,
+    status: 'SUBMITTED',
+    current_version: 1,
+    currentVersion: 1,
+    departmentName: creator?.department || 'Khoa Y',
     createdBy: creator || payload?.createdBy || DEFAULT_MOCK_USER,
     createdAt: new Date().toISOString(),
     submittedAt: new Date().toISOString(),
     formData: payload?.formData || {},
-    docx_file_url: `/uploads/docx/${newCode}.docx`,
+    generated_docx_path: `/uploads/docx/${newCode}-v1.docx`,
+    generated_pdf_path: `/uploads/pdf/${newCode}-v1.pdf`,
+    docx_file_url: `/uploads/docx/${newCode}-v1.docx`,
   };
   saveLocalDossiers([newApp, ...local]);
   return newApp;
 }
 
 export async function saveApplicationDraft(id: string, payload: Partial<Application>, actor?: User): Promise<Application> {
-  const isNew = !id || id.startsWith('hs-') || id.startsWith('dos-temp-');
-  const endpoint = isNew ? API_ENDPOINTS.CREATE_DOSSIER : API_ENDPOINTS.UPDATE_DOSSIER(id);
-  const method = isNew ? 'POST' : 'PUT';
-
-  try {
-    const saved = await request<Application>(endpoint, {
-      method,
-      body: JSON.stringify({
-        templateId: payload?.templateId,
-        templateTitle: payload?.templateTitle,
-        templateCode: payload?.templateCode,
-        formData: payload?.formData || {},
-        user: actor || payload?.createdBy,
-        status: 'DRAFT',
-      }),
-    });
-    if (saved) return saved;
-  } catch (err) {
-    console.warn('[saveApplicationDraft] Backend offline, lưu cục bộ:', err);
-  }
-
-  const local = getLocalDossiers();
-  const existing = local.find((d) => d.id === id || d.code === id);
-  if (existing) {
-    const updated = { ...existing, ...payload, formData: payload.formData || existing.formData, status: 'DRAFT' as const };
-    saveLocalDossiers(local.map((d) => (d.id === existing.id ? updated : d)));
-    return updated;
-  }
-
-  const nextNum = String(local.length + 1).padStart(4, '0');
-  const newApp: Application = {
-    id: id || `dos-2026-${nextNum}`,
-    code: `CGCN-2026-${nextNum}`,
-    title: payload?.templateTitle || 'Bản thảo Hồ sơ Chuyển giao',
-    templateId: payload?.templateId || 'tmpl-cgcn-1a',
-    templateCode: payload?.templateCode || 'Mẫu 1a-TT.CGCN',
-    templateTitle: payload?.templateTitle || 'Bản thảo Hồ sơ Chuyển giao',
-    status: 'DRAFT',
-    departmentName: actor?.department || 'Khoa Công nghệ Thông tin',
-    createdBy: actor || payload?.createdBy || DEFAULT_MOCK_USER,
-    createdAt: new Date().toISOString(),
-    formData: payload?.formData || {},
-  };
-  saveLocalDossiers([newApp, ...local]);
-  return newApp;
+  return submitApplication(id, payload, actor);
 }
 
+// BƯỚC 1 hoặc BƯỚC 2B: Nộp mới hoặc Nộp lại
 export async function submitApplication(id: string, payload?: Partial<Application>, actor?: User): Promise<Application> {
-  const isNew = !id || id.startsWith('hs-') || id.startsWith('dos-temp-');
-  const endpoint = isNew ? API_ENDPOINTS.CREATE_DOSSIER : API_ENDPOINTS.UPDATE_DOSSIER(id);
-  const method = isNew ? 'POST' : 'PUT';
+  const local = getLocalDossiers();
+  const existsLocally = Boolean(
+    id && local.some((d) => d.id === id || d.code === id || (payload?.code && d.code === payload.code))
+  );
+  const isEditingExisting =
+    existsLocally ||
+    Boolean(payload?.current_version && payload.current_version >= 1) ||
+    Boolean(payload?.currentVersion && payload.currentVersion >= 1) ||
+    Boolean(id && !id.startsWith('hs-') && !id.startsWith('dos-temp-'));
 
+  if (!isEditingExisting) {
+    return createApplication(payload || {}, actor);
+  }
+  return resubmitApplication(id, payload?.formData || (payload as any)?.form_data || {}, actor);
+}
+
+// BƯỚC 2B [LUỒNG FALSE]: Thầy/Cô Chỉnh sửa & Nộp lại (v2, v3... -> SUBMITTED)
+export async function resubmitApplication(
+  id: string,
+  formData: Record<string, any>,
+  user?: User
+): Promise<Application> {
   try {
-    const submitted = await request<Application>(endpoint, {
-      method,
-      body: JSON.stringify({
-        templateId: payload?.templateId,
-        templateTitle: payload?.templateTitle,
-        templateCode: payload?.templateCode,
-        formData: payload?.formData || {},
-        user: actor || payload?.createdBy,
-        status: 'NEW',
-      }),
+    const updated = await request<Application>(API_ENDPOINTS.RESUBMIT_APPLICATION(id), {
+      method: 'PUT',
+      body: JSON.stringify({ formData, user }),
     });
-    if (submitted) return submitted;
-  } catch (err) {
-    console.warn('[submitApplication] Backend offline, nộp hồ sơ cục bộ:', err);
+    if (updated) {
+      const local = getLocalDossiers();
+      const filtered = local.filter(
+        (d) => d.id !== updated.id && d.code !== updated.code && d.id !== id
+      );
+      saveLocalDossiers([updated, ...filtered]);
+      return updated;
+    }
+  } catch {
+    // fallback
   }
 
   const local = getLocalDossiers();
-  const existing = local.find((d) => d.id === id || d.code === id);
+  const existing = local.find(
+    (d) => d.id === id || d.code === id || (id && id.includes(d.code))
+  );
   if (existing) {
-    const updated = {
+    const prevVer = Number(existing.current_version || existing.currentVersion || 1);
+    const nextVer = prevVer + 1;
+    const updated: Application = {
       ...existing,
-      ...(payload || {}),
-      formData: payload?.formData || existing.formData,
-      status: 'NEW' as const,
+      formData: { ...existing.formData, ...formData },
+      form_data: { ...existing.formData, ...formData },
+      status: 'SUBMITTED',
+      current_version: nextVer,
+      currentVersion: nextVer,
+      generated_docx_path: `/uploads/docx/${existing.code}-v${nextVer}.docx`,
+      generated_pdf_path: `/uploads/pdf/${existing.code}-v${nextVer}.pdf`,
+      docx_file_url: `/uploads/docx/${existing.code}-v${nextVer}.docx`,
       submittedAt: new Date().toISOString(),
+      submitted_at: new Date().toISOString(),
     };
-    saveLocalDossiers(local.map((d) => (d.id === existing.id ? updated : d)));
+    const filtered = local.filter(
+      (d) => d.id !== existing.id && d.code !== existing.code && d.id !== id
+    );
+    saveLocalDossiers([updated, ...filtered]);
     return updated;
   }
 
-  return createApplication(payload || {}, actor);
+  return createApplication({ formData }, user);
 }
 
-// Bước 2: Admin Tiền kiểm hồ sơ bản thảo
+// BƯỚC 2A [LUỒNG FALSE] & BƯỚC 3 [LUỒNG TRUE]: Admin Duyệt (VALIDATED) hoặc Trả về sửa lỗi (RETURNED_FOR_REVISION)
 export async function adminPrecheck(
   id: string,
   isValid: boolean,
   reviewNotes?: string,
   adminUser?: User
 ): Promise<Application> {
-  let backendResult: Application | null = null;
+  const endpoint = isValid
+    ? API_ENDPOINTS.APPROVE_APPLICATION_TRUE(id)
+    : API_ENDPOINTS.RETURN_REVISION(id);
+
   try {
-    const res = await request<Application>(API_ENDPOINTS.ADMIN_PRECHECK(id), {
-      method: 'POST',
-      body: JSON.stringify({ isValid, reviewNotes, adminUser }),
+    const res = await request<Application>(endpoint, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        isValid,
+        reviewNotes,
+        revisionNote: reviewNotes,
+        adminUser,
+      }),
     });
-    if (res && res.id) backendResult = res;
-  } catch (err) {
-    console.warn('[adminPrecheck] Backend offline, duyệt tiền kiểm cục bộ:', err);
+    if (res && res.id) {
+      const local = getLocalDossiers();
+      saveLocalDossiers(local.map((d) => (d.id === res.id || d.id === id ? res : d)));
+      return res;
+    }
+  } catch {
+    // fallback
   }
 
   const local = getLocalDossiers();
   const target = local.find((d) => d.id === id || d.code === id);
+  if (!target) throw new Error('Không tìm thấy hồ sơ');
 
-  const updated: Application = backendResult || {
-    ...(target || {
-      id: id,
-      code: id.startsWith('CGCN-') ? id : `CGCN-2026-0001`,
-      title: 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu',
-      templateId: 'tmpl-cgcn-1a',
-      templateTitle: 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu',
-      templateCode: 'Mẫu 1a-TT.CGCN',
-      departmentName: 'Khoa Y',
-      createdBy: DEFAULT_MOCK_USER,
-      createdAt: new Date().toISOString(),
-      formData: {},
-    }),
-    status: isValid ? 'PRECHECK_PASSED' : 'NEEDS_REVISION',
-    reviewNotes: reviewNotes || (isValid ? 'Hồ sơ đạt chuẩn thể thức.' : 'Yêu cầu sửa đổi bổ sung.'),
-    returnReason: isValid ? undefined : (reviewNotes || 'Yêu cầu sửa đổi bổ sung.'),
+  const ver = target.current_version || 1;
+  const updated: Application = {
+    ...target,
+    status: isValid ? 'VALIDATED' : 'RETURNED_FOR_REVISION',
+    revision_note: isValid ? undefined : reviewNotes,
+    revisionNote: isValid ? undefined : reviewNotes,
+    reviewNotes: reviewNotes || (isValid ? 'Hồ sơ đã được duyệt hợp lệ.' : 'Trả về sửa lỗi.'),
+    review_notes: reviewNotes || (isValid ? 'Hồ sơ đã được duyệt hợp lệ.' : 'Trả về sửa lỗi.'),
     reviewedAt: new Date().toISOString(),
-    precheck_pdf_url: isValid ? `/uploads/pdf/${target?.code || id}-locked.pdf` : target?.precheck_pdf_url,
+    approved_pdf_path: isValid ? `/uploads/pdf/${target.code}-v${ver}.pdf` : undefined,
   };
-
-  if (target) {
-    saveLocalDossiers(local.map((d) => (d.id === target.id ? updated : d)));
-  } else {
-    saveLocalDossiers([updated, ...local]);
-  }
+  saveLocalDossiers(local.map((d) => (d.id === target.id ? updated : d)));
   return updated;
 }
 
-// Bước 3 & 6: Cán bộ upload PDF ký cấp Khoa + Minh chứng
+// BƯỚC 4: Thầy/Cô Upload bản ký phòng ban (PENDING_SIGNED_REVIEW - Chờ duyệt)
 export async function uploadFacultySignature(
   id: string,
   facultySignedPdfUrl?: string,
@@ -417,61 +439,69 @@ export async function uploadFacultySignature(
   user?: User
 ): Promise<Application> {
   try {
-    const res = await request<Application>(API_ENDPOINTS.UPLOAD_FACULTY_SIGN(id), {
+    const res = await request<Application>(API_ENDPOINTS.REUPLOAD_SIGNED(id), {
       method: 'POST',
       body: JSON.stringify({ facultySignedPdfUrl, evidenceFiles, user }),
     });
-    if (res) return res;
-  } catch (err) {
-    console.warn('[uploadFacultySignature] Backend offline, lưu bản ký Khoa cục bộ:', err);
+    if (res) {
+      const local = getLocalDossiers();
+      saveLocalDossiers(local.map((d) => (d.id === res.id || d.id === id ? res : d)));
+      return res;
+    }
+  } catch {
+    // fallback
   }
 
   const local = getLocalDossiers();
   const target = local.find((d) => d.id === id || d.code === id);
-  if (!target) throw new Error('Không tìm thấy hồ sơ để nộp bản ký');
+  if (!target) throw new Error('Không tìm thấy hồ sơ để nộp bản ký phòng ban');
 
   const updated: Application = {
     ...target,
-    status: 'FACULTY_SIGNED',
-    faculty_signed_pdf_url: facultySignedPdfUrl || `/uploads/pdf/${target.code}-locked.pdf`,
+    status: 'PENDING_SIGNED_REVIEW',
+    faculty_signed_pdf_url: facultySignedPdfUrl || `/uploads/signed/${target.code}-department-signed.pdf`,
     evidenceFiles: evidenceFiles || target.evidenceFiles,
+    department_signed_files: evidenceFiles || [],
   };
   saveLocalDossiers(local.map((d) => (d.id === target.id ? updated : d)));
   return updated;
 }
 
-// Bước 4 & 7: Admin cập nhật tiến độ ký số cấp Trường
+// BƯỚC 5: Admin Chuyển Trình ký Hiệu trưởng (WAITING_RECTOR_SIGNATURE - Chờ ký Hiệu trưởng)
 export async function updateSchoolSigning(
   id: string,
-  flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean },
+  flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean; note?: string },
   adminUser?: User
 ): Promise<Application> {
   try {
-    const res = await request<Application>(API_ENDPOINTS.SCHOOL_SIGNING(id), {
-      method: 'POST',
+    const res = await request<Application>(API_ENDPOINTS.SUBMIT_TO_RECTOR(id), {
+      method: 'PATCH',
       body: JSON.stringify({ ...flags, adminUser }),
     });
-    if (res) return res;
-  } catch (err) {
-    console.warn('[updateSchoolSigning] Backend offline, cập nhật tiến độ ký Trường cục bộ:', err);
+    if (res) {
+      const local = getLocalDossiers();
+      saveLocalDossiers(local.map((d) => (d.id === res.id || d.id === id ? res : d)));
+      return res;
+    }
+  } catch {
+    // fallback
   }
 
   const local = getLocalDossiers();
   const target = local.find((d) => d.id === id || d.code === id);
-  if (!target) throw new Error('Không tìm thấy hồ sơ để cập nhật ký Trường');
+  if (!target) throw new Error('Không tìm thấy hồ sơ');
 
   const updated: Application = {
     ...target,
-    status: 'SCHOOL_SIGNING',
-    khcnSigned: flags.khcnSigned ?? target.khcnSigned,
-    khtcSigned: flags.khtcSigned ?? target.khtcSigned,
-    bghSigned: flags.bghSigned ?? target.bghSigned,
+    status: 'WAITING_RECTOR_SIGNATURE',
+    khcnSigned: true,
+    khcn_signed: true,
   };
   saveLocalDossiers(local.map((d) => (d.id === target.id ? updated : d)));
   return updated;
 }
 
-// Bước 4 & 8: Ban hành Quyết định CGCN & Hoàn tất đóng hồ sơ
+// BƯỚC 6: Hiệu trưởng Đã ký & Lưu trữ (SIGNED_ARCHIVED - Đã ký và lưu trữ)
 export async function completeDossier(
   id: string,
   decisionNumber?: string,
@@ -480,99 +510,39 @@ export async function completeDossier(
   adminUser?: User
 ): Promise<Application> {
   try {
-    const res = await request<Application>(API_ENDPOINTS.COMPLETE_DOSSIER(id), {
-      method: 'POST',
+    const res = await request<Application>(API_ENDPOINTS.CONFIRM_SIGNED(id), {
+      method: 'PATCH',
       body: JSON.stringify({ decisionNumber, decisionDate, finalPdfUrl, adminUser }),
     });
-    if (res) return res;
-  } catch (err) {
-    console.warn('[completeDossier] Backend offline, hoàn tất đóng hồ sơ cục bộ:', err);
+    if (res) {
+      const local = getLocalDossiers();
+      saveLocalDossiers(local.map((d) => (d.id === res.id || d.id === id ? res : d)));
+      return res;
+    }
+  } catch {
+    // fallback
   }
 
   const local = getLocalDossiers();
   const target = local.find((d) => d.id === id || d.code === id);
-  if (!target) throw new Error('Không tìm thấy hồ sơ để đóng');
+  if (!target) throw new Error('Không tìm thấy hồ sơ');
 
+  const ver = target.current_version || 1;
   const updated: Application = {
     ...target,
-    status: 'COMPLETED',
-    decisionNumber: decisionNumber || '128/QĐ-ĐHYDCT',
+    status: 'SIGNED_ARCHIVED',
+    decisionNumber: decisionNumber || `${target.code}/QĐ-ĐHYDCT`,
+    decision_number: decisionNumber || `${target.code}/QĐ-ĐHYDCT`,
     decisionDate: decisionDate || new Date().toISOString().slice(0, 10),
-    final_pdf_url: finalPdfUrl || 'https://drive.google.com/drive/folders/1UZfnO_hY9LshjsaHH6btODtWgii0Vv8-?usp=drive_link',
+    decision_date: decisionDate || new Date().toISOString().slice(0, 10),
+    final_signed_pdf_path: finalPdfUrl || `/uploads/pdf/${target.code}-signed-v${ver}.pdf`,
+    final_pdf_url: finalPdfUrl || `/uploads/pdf/${target.code}-signed-v${ver}.pdf`,
     completedAt: new Date().toISOString(),
     khcnSigned: true,
-    khtcSigned: true,
     bghSigned: true,
   };
   saveLocalDossiers(local.map((d) => (d.id === target.id ? updated : d)));
   return updated;
-}
-
-// =========================================================================
-// 2.1 Dự án Chuyển giao công nghệ (transfer_projects) - 5 Endpoint chuẩn
-// =========================================================================
-
-export async function getAllProjects(): Promise<any[]> {
-  return request<any[]>(API_ENDPOINTS.GET_ALL_PROJECTS, { method: 'GET' });
-}
-
-export async function getProjectById(id: string): Promise<any> {
-  return request<any>(API_ENDPOINTS.GET_PROJECT_DETAIL(id), { method: 'GET' });
-}
-
-export async function createProject(payload: any): Promise<any> {
-  return request<any>(API_ENDPOINTS.CREATE_PROJECT, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function reviewProject(
-  id: string,
-  isValid: boolean,
-  reviewNotes?: string,
-  actor?: any
-): Promise<any> {
-  return request<any>(API_ENDPOINTS.REVIEW_PROJECT(id), {
-    method: 'POST',
-    body: JSON.stringify({ isValid, reviewNotes, actor }),
-  });
-}
-
-export async function uploadDeanSignedFile(
-  id: string,
-  file: File | Blob,
-  actor?: any
-): Promise<any> {
-  const formData = new FormData();
-  formData.append('dean_signed_pdf', file);
-  if (actor) {
-    formData.append('actor', JSON.stringify(actor));
-  }
-  const token = getAuthToken();
-  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-
-  const response = await fetch(API_ENDPOINTS.UPLOAD_DEAN_SIGNED(id), {
-    method: 'POST',
-    headers,
-    body: formData,
-  });
-  if (!response.ok) {
-    const errorJson = await response.json().catch(() => ({}));
-    throw new Error(errorJson.message || `Lỗi tải lên văn bản ký Khoa (${response.status})`);
-  }
-  const json = await response.json();
-  return json.data;
-}
-
-export async function completeProject(
-  id: string,
-  payload: { decisionNumber?: string; decisionDate?: string; finalPdfUrl?: string; actor?: any }
-): Promise<any> {
-  return request<any>(API_ENDPOINTS.COMPLETE_PROJECT(id), {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
 }
 
 // =========================================================================
@@ -584,7 +554,7 @@ export async function login(
   extraData?: { name?: string; avatar?: string; googleId?: string }
 ): Promise<User> {
   const cleanEmail = (email || '').trim().toLowerCase();
-  const isAdmin = cleanEmail === 'toanhkhai12345@gmail.com';
+  const isAdmin = cleanEmail === 'toanhkhai12345@gmail.com' || cleanEmail === 'admin@ctump.edu.vn';
 
   try {
     const res = await fetch(`${API_BASE_URL}/users/login`, {
@@ -601,8 +571,7 @@ export async function login(
       return json.data;
     }
     throw new Error(json.message || 'Lỗi đăng nhập');
-  } catch (err: any) {
-    console.warn('[api.login] Kết nối backend thất bại, sử dụng fallback cấu hình:', err.message);
+  } catch {
     const fallbackToken = isAdmin ? 'dev-token-admin' : 'dev-token-user';
     setAuthToken(fallbackToken);
 
@@ -610,11 +579,11 @@ export async function login(
     const formattedName =
       extraData?.name ||
       (isAdmin
-        ? 'Quản trị viên (Toàn Khải)'
+        ? 'Quản trị viên (Cô Admin)'
         : username
             .split(/[._-]/)
             .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-            .join(' ') || 'Người dùng Google');
+            .join(' ') || 'Giảng viên CTUMP');
 
     return {
       id: `usr-${username}`,
@@ -622,112 +591,47 @@ export async function login(
       email: cleanEmail,
       role: isAdmin ? 'ADMIN' : 'USER',
       title: isAdmin ? 'Quản trị viên Hệ thống' : 'Cán bộ / Giảng viên',
-      department: isAdmin ? 'Phòng Khoa học Công nghệ' : 'Trường Đại học Y Dược Cần Thơ',
+      department: isAdmin ? 'Phòng Khoa học Công nghệ' : 'Khoa Y',
       avatar: extraData?.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${cleanEmail}`,
       token: fallbackToken,
     };
   }
 }
 
+export async function getUsers(): Promise<User[]> {
+  try {
+    const list = await request<User[]>(API_ENDPOINTS.GET_USERS, { method: 'GET' });
+    if (Array.isArray(list)) return list;
+  } catch {
+    // ignore
+  }
+  return [];
+}
 
 // =========================================================================
-// 5. Nhật ký Audit Trail & Email Logs
+// 4. Nhật ký Audit Trail & Email Logs
 // =========================================================================
 
 export async function getAuditLogs(dossierId?: string): Promise<any[]> {
   const url = dossierId ? `${API_ENDPOINTS.GET_AUDIT_LOGS}?dossierId=${dossierId}` : API_ENDPOINTS.GET_AUDIT_LOGS;
   try {
     const logs = await request<any[]>(url, { method: 'GET' });
-    if (Array.isArray(logs) && logs.length > 0) return logs;
-  } catch (err) {
-    console.warn('[getAuditLogs] Backend offline, sử dụng lịch sử từ hồ sơ:', err);
+    if (Array.isArray(logs)) return logs;
+  } catch {
+    // ignore
   }
-
-  const local = getLocalDossiers();
-  const target = dossierId ? local.filter((d) => d.id === dossierId || d.code === dossierId) : local;
-  const generated: any[] = [];
-  target.forEach((app) => {
-    generated.push({
-      id: `aud-${app.code}-1`,
-      dossierId: app.id,
-      actorId: app.createdBy.id,
-      actorName: app.createdBy.name,
-      actorRole: app.createdBy.role,
-      action: 'Nộp hồ sơ trực tuyến',
-      fromStatus: null,
-      toStatus: 'NEW',
-      notes: `Khởi tạo hồ sơ và nộp bản thảo thành công (${app.templateTitle})`,
-      createdAt: app.submittedAt || app.createdAt,
-    });
-    if (['PRECHECK_PASSED', 'FACULTY_SIGNED', 'SCHOOL_SIGNING', 'COMPLETED'].includes(app.status)) {
-      generated.push({
-        id: `aud-${app.code}-2`,
-        dossierId: app.id,
-        actorId: 'usr-admin',
-        actorName: 'Quản trị viên KH&CN',
-        actorRole: 'ADMIN',
-        action: 'Tiền kiểm đạt thể thức',
-        fromStatus: 'NEW',
-        toStatus: 'PRECHECK_PASSED',
-        notes: app.reviewNotes || 'Đạt chuẩn thể thức văn bản số. Khóa layout PDF.',
-        createdAt: app.reviewedAt || app.createdAt,
-      });
-    }
-    if (['FACULTY_SIGNED', 'SCHOOL_SIGNING', 'COMPLETED'].includes(app.status)) {
-      generated.push({
-        id: `aud-${app.code}-3`,
-        dossierId: app.id,
-        actorId: app.createdBy.id,
-        actorName: app.createdBy.name,
-        actorRole: 'USER',
-        action: 'Nộp bản ký cấp Khoa',
-        fromStatus: 'PRECHECK_PASSED',
-        toStatus: 'FACULTY_SIGNED',
-        notes: 'Đã hoàn tất chữ ký số Trưởng Khoa và nộp kèm minh chứng nghiệm thu.',
-        createdAt: app.reviewedAt || app.createdAt,
-      });
-    }
-    if (app.status === 'COMPLETED') {
-      generated.push({
-        id: `aud-${app.code}-4`,
-        dossierId: app.id,
-        actorId: 'usr-admin',
-        actorName: 'Quản trị viên KH&CN',
-        actorRole: 'ADMIN',
-        action: 'Ban hành Quyết định & Đóng hồ sơ',
-        fromStatus: 'SCHOOL_SIGNING',
-        toStatus: 'COMPLETED',
-        notes: `Ban hành Quyết định ${app.decisionNumber || '128/QĐ-ĐHYDCT'} và lưu trữ Google Drive.`,
-        createdAt: app.completedAt || app.createdAt,
-      });
-    }
-  });
-
-  return generated;
+  return [];
 }
 
 export async function getEmailLogs(dossierId?: string): Promise<any[]> {
   const url = dossierId ? `${API_ENDPOINTS.GET_EMAIL_LOGS}?dossierId=${dossierId}` : API_ENDPOINTS.GET_EMAIL_LOGS;
-  return request<any[]>(url, { method: 'GET' });
-}
-
-// =========================================================================
-// 6. Tương thích ngược (Backward Compatibility Helpers)
-// =========================================================================
-
-export async function getMyApplications(userId?: string): Promise<Application[]> {
-  const all = await getAllApplications();
-  if (!userId) return all;
-  return all.filter((app) => app.createdBy?.id === userId || (app as any).userId === userId);
-}
-
-export async function getPendingApplications(): Promise<Application[]> {
-  const all = await getAllApplications();
-  return all.filter((app) => app.status === 'NEW' || app.status === 'FACULTY_SIGNED' || app.status === 'SCHOOL_SIGNING');
-}
-
-export async function requestApplicationRevision(id: string, comment: string, adminUser?: User): Promise<Application> {
-  return adminPrecheck(id, false, comment, adminUser);
+  try {
+    const logs = await request<any[]>(url, { method: 'GET' });
+    if (Array.isArray(logs)) return logs;
+  } catch {
+    // ignore
+  }
+  return [];
 }
 
 export async function approveApplication(id: string, note?: string, reviewer?: string | User): Promise<Application> {
@@ -735,31 +639,8 @@ export async function approveApplication(id: string, note?: string, reviewer?: s
   return adminPrecheck(id, true, note, user);
 }
 
-export async function moveApplicationToSigning(id: string, _reviewerName?: string): Promise<any> {
-  const dossier = await getApplicationById(id);
-  return { application: dossier };
-}
-
-export async function generateDocument(id: string, format: 'docx' | 'pdf' = 'docx'): Promise<GeneratedDocument> {
-  const dossier = await getApplicationById(id);
-  const fileUrl = format === 'pdf' ? (dossier?.precheckPdfUrl || dossier?.docxFileUrl || '') : (dossier?.docxFileUrl || '');
-  return {
-    id: `gen-${id}`,
-    applicationId: id,
-    format,
-    fileUrl,
-    downloadUrl: fileUrl,
-    fileName: `${dossier?.code || id}.${format}`,
-    fileSize: '45 KB',
-    mimeType: format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    version: 1,
-    isSigned: false,
-    generatedAt: new Date().toISOString(),
-  };
-}
-
-export async function getGeneratedDocument(id: string): Promise<GeneratedDocument> {
-  return generateDocument(id, 'docx');
+export async function returnApplication(id: string, returnReason: string, manager?: User): Promise<Application> {
+  return adminPrecheck(id, false, returnReason, manager);
 }
 
 export async function getApplicationHistory(id: string): Promise<ApplicationHistory[]> {
@@ -771,18 +652,10 @@ export async function getApplicationHistory(id: string): Promise<ApplicationHist
     actor: log.actorName || 'Hệ thống',
     role: log.actorRole || 'SYSTEM',
     timestamp: log.createdAt || new Date().toISOString(),
-    status: (log.toStatus || 'NEW') as any,
+    status: (log.toStatus || 'SUBMITTED') as any,
     action: log.action,
     fromStatus: log.fromStatus,
     toStatus: log.toStatus,
-    performedBy: {
-      id: log.actorId,
-      name: log.actorName,
-      role: log.actorRole,
-      department: '',
-      email: '',
-      title: '',
-    },
     performedAt: log.createdAt,
     comments: log.notes,
     comment: log.notes,
@@ -790,95 +663,19 @@ export async function getApplicationHistory(id: string): Promise<ApplicationHist
   }));
 }
 
-export async function syncApplicationToSheet(id: string, data?: Partial<GoogleSheetRow>): Promise<GoogleSheetRow> {
-  const app = await getApplicationById(id);
-  const todayDate = new Date().toISOString().slice(0, 10);
-  return {
-    dossierCode: app ? app.code : id,
-    templateTitle: app ? app.templateTitle : 'Biểu mẫu',
-    creatorName: app ? app.createdBy.name : 'Người dùng',
-    department: app ? app.createdBy.department : 'Đơn vị',
-    createdAt: app?.createdAt?.slice(0, 10) || todayDate,
-    submittedAt: app?.submittedAt?.slice(0, 10) || todayDate,
-    approvedAt: app?.approvedAt?.slice(0, 10) || todayDate,
-    status: app?.status || 'NEW',
-    reviewerName: app?.assignedManager?.name || 'Phòng KH&CN',
-    updatedAt: `${todayDate} ${new Date().toLocaleTimeString('vi-VN')}`,
-    syncStatus: 'Đã đồng bộ MySQL',
-    ...(data || {}),
-  };
-}
-
-export async function getAllSheetRows(): Promise<GoogleSheetRow[]> {
-  const apps = await getAllApplications();
-  const todayDate = new Date().toISOString().slice(0, 10);
-  return apps.map((app) => ({
-    dossierCode: app.code,
-    templateTitle: app.templateTitle,
-    creatorName: app.createdBy.name,
-    department: app.createdBy.department,
-    createdAt: app.createdAt ? app.createdAt.slice(0, 10) : todayDate,
-    submittedAt: app.submittedAt ? app.submittedAt.slice(0, 10) : todayDate,
-    approvedAt: app.approvedAt ? app.approvedAt.slice(0, 10) : todayDate,
-    status: app.status,
-    reviewerName: 'Phòng KH&CN',
-    updatedAt: todayDate,
-    syncStatus: 'Đã đồng bộ MySQL',
-  }));
-}
-
-export async function returnApplication(id: string, returnReason: string, manager?: User): Promise<Application> {
-  return adminPrecheck(id, false, returnReason, manager);
-}
-
-export async function updateDossierDataByManager(
-  id: string,
-  newFormData: Record<string, any>,
-  _changeSummary: string,
-  manager?: User
-): Promise<Application> {
-  return request<Application>(API_ENDPOINTS.UPDATE_DOSSIER(id), {
-    method: 'PUT',
-    body: JSON.stringify({ formData: newFormData, user: manager, status: 'NEW' }),
-  });
-}
-
-export async function uploadUserSignature(id: string, driveFileId: string, actor?: User): Promise<Application> {
-  return uploadFacultySignature(id, driveFileId, [], actor);
-}
-
-export async function receiveSecretaryDossier(id: string, secretary?: User): Promise<Application> {
-  return updateSchoolSigning(id, { khcnSigned: true }, secretary);
-}
-
-export async function completeDossierBySecretary(
-  id: string,
-  finalDriveFileId: string,
-  secretary?: User
-): Promise<{ application: Application; sheetSyncResult: GoogleSheetRow }> {
-  const completed = await completeDossier(id, undefined, undefined, finalDriveFileId, secretary);
-  const sheetRow = await syncApplicationToSheet(id);
-  return { application: completed, sheetSyncResult: sheetRow };
-}
-
-export async function getSecretaryQueueApplications(): Promise<Application[]> {
-  const all = await getAllApplications();
-  return all.filter((app) => app.status === 'FACULTY_SIGNED' || app.status === 'SCHOOL_SIGNING');
-}
-
 export async function getNotifications(userId: string): Promise<NotificationItem[]> {
   try {
     const logs = await getEmailLogs();
     return logs.map((log, idx) => ({
       id: `notif-${log.id || idx}`,
-      userId: userId,
-      dossierId: log.dossier_id || '',
+      userId,
+      dossierId: log.dossier_id || log.dossierId || '',
       dossierCode: log.dossier_code || '',
       title: log.subject || 'Thông báo hệ thống',
-      message: log.content || '',
+      message: log.stepName || log.step_name || 'Thông báo cập nhật trạng thái hồ sơ',
       type: 'INFO' as const,
       isRead: false,
-      createdAt: log.sent_at || new Date().toISOString(),
+      createdAt: log.sent_at || log.sentAt || new Date().toISOString(),
     }));
   } catch {
     return [];
@@ -886,180 +683,5 @@ export async function getNotifications(userId: string): Promise<NotificationItem
 }
 
 export async function markNotificationAsRead(_id: string): Promise<void> {
-  // Client state helper
+  // No-op helper
 }
-
-// ==========================================
-// USER MANAGEMENT & ROLE ASSIGNMENT API
-// ==========================================
-
-const USERS_STORAGE_KEY = 'ctump_users_cache';
-
-const INITIAL_USERS: User[] = [
-  {
-    id: 'usr_admin_toanhkhai',
-    name: 'Quản trị viên (Toàn Khải)',
-    email: 'toanhkhai12345@gmail.com',
-    role: 'ADMIN',
-    department: 'Phòng Khoa học Công nghệ',
-    departmentId: 'khcn',
-    title: 'Quản trị viên Hệ thống (Admin)',
-    jobTitle: 'Quản trị viên Hệ thống (Admin)',
-    avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=ToanKhai',
-  },
-  {
-    id: 'usr_admin_mstruc',
-    name: 'ThS. Nguyễn Thị Trúc',
-    email: 'truc.ctump@ctump.edu.vn',
-    role: 'ADMIN',
-    department: 'Phòng Khoa học Công nghệ',
-    departmentId: 'khcn',
-    title: 'Chuyên viên Quản lý CGCN',
-    jobTitle: 'Cán bộ Tiền kiểm (Admin nghiệp vụ)',
-    avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=NguyenThiTruc',
-  },
-  {
-    id: 'usr_user_thayco',
-    name: 'Thầy / Cô (Cán bộ - Giảng viên)',
-    email: 'thayco.giangvien@ctump.edu.vn',
-    role: 'USER',
-    department: 'Khoa Y - Trường Đại học Y Dược Cần Thơ',
-    departmentId: 'khoa_y',
-    title: 'Giảng viên / Nghiên cứu viên',
-    jobTitle: 'Cán bộ / Giảng viên (Thầy / Cô)',
-    avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=ThayCo',
-  },
-  {
-    id: 'usr_user_bslan',
-    name: 'TS. BS. Trần Ngọc Lan',
-    email: 'tnlan@ctump.edu.vn',
-    role: 'USER',
-    department: 'Khoa Y - Bộ môn Nội',
-    departmentId: 'khoa_y',
-    title: 'Trưởng Bộ môn Nội',
-    jobTitle: 'Chủ nhiệm Đề tài CGCN',
-    avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=TranNgocLan',
-  },
-  {
-    id: 'usr_user_duoc',
-    name: 'ThS. DS. Phạm Minh Hoàng',
-    email: 'pmhoang@ctump.edu.vn',
-    role: 'USER',
-    department: 'Khoa Dược - Bộ môn Dược liệu',
-    departmentId: 'khoa_duoc',
-    title: 'Phó Trưởng Khoa Dược',
-    jobTitle: 'Giảng viên chính',
-    avatar: 'https://api.dicebear.com/7.x/initials/svg?seed=MinhHoang',
-  },
-];
-
-function getLocalUsers(): User[] {
-  try {
-    const raw = localStorage.getItem(USERS_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return INITIAL_USERS;
-}
-
-function saveLocalUsers(users: User[]): void {
-  try {
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-  } catch {
-    // ignore
-  }
-}
-
-/**
- * Lấy danh sách tất cả người dùng trong hệ thống
- */
-export async function getUsers(): Promise<User[]> {
-  try {
-    const res = await fetch(`${API_BASE_URL}/users`, { credentials: 'omit' });
-    if (res.ok) {
-      const json = await res.json();
-      const list = json?.data || json;
-      if (Array.isArray(list) && list.length > 0) {
-        saveLocalUsers(list);
-        return list;
-      }
-    }
-  } catch (err) {
-    console.warn('[getUsers] Backend offline, fallback to local users cache');
-  }
-  return getLocalUsers();
-}
-
-/**
- * Lưu hoặc cập nhật thông tin người dùng / phân quyền
- */
-export async function saveUser(userData: Partial<User>): Promise<User> {
-  const currentUsers = getLocalUsers();
-  const id = userData.id || `usr-${Date.now()}`;
-  const existingIdx = currentUsers.findIndex((u) => u.id === id || (userData.email && u.email?.toLowerCase() === userData.email.toLowerCase()));
-
-  const updatedUser: User = {
-    id: existingIdx >= 0 ? currentUsers[existingIdx].id : id,
-    name: userData.name || (existingIdx >= 0 ? currentUsers[existingIdx].name : 'Người dùng mới'),
-    email: (userData.email || (existingIdx >= 0 ? currentUsers[existingIdx].email : '')).trim().toLowerCase(),
-    role: userData.role || (existingIdx >= 0 ? currentUsers[existingIdx].role : 'USER'),
-    title: userData.title || (existingIdx >= 0 ? currentUsers[existingIdx].title : 'Cán bộ / Giảng viên'),
-    department: userData.department || (existingIdx >= 0 ? currentUsers[existingIdx].department : 'Trường Đại học Y Dược Cần Thơ'),
-    departmentId: userData.departmentId || (existingIdx >= 0 ? currentUsers[existingIdx].departmentId : ''),
-    avatar: userData.avatar || (existingIdx >= 0 ? currentUsers[existingIdx].avatar : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(userData.name || 'User')}`),
-  };
-
-  if (existingIdx >= 0) {
-    currentUsers[existingIdx] = { ...currentUsers[existingIdx], ...updatedUser };
-  } else {
-    currentUsers.push(updatedUser);
-  }
-  saveLocalUsers(currentUsers);
-
-  try {
-    const token = localStorage.getItem(AUTH_TOKEN_KEY);
-    const res = await fetch(`${API_BASE_URL}/users`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(updatedUser),
-    });
-    if (res.ok) {
-      const json = await res.json();
-      return json?.data || updatedUser;
-    }
-  } catch (err) {
-    console.warn('[saveUser] Backend offline, saved to local cache');
-  }
-
-  return updatedUser;
-}
-
-/**
- * Admin phân quyền vai trò cho người dùng
- */
-export async function updateUserRole(userId: string, newRole: UserRole): Promise<User> {
-  const currentUsers = getLocalUsers();
-  const user = currentUsers.find((u) => u.id === userId);
-  if (!user) {
-    throw new Error('Không tìm thấy người dùng để phân quyền');
-  }
-
-  const updated = {
-    ...user,
-    role: newRole,
-    title: newRole === 'ADMIN' ? 'Quản trị viên Hệ thống (Admin)' : 'Cán bộ / Giảng viên',
-    department: newRole === 'ADMIN' ? (user.department || 'Phòng Khoa học Công nghệ') : user.department,
-  };
-
-  return saveUser(updated);
-}
-

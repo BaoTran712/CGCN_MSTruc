@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import {
   Search,
-  Filter,
   Eye,
   Edit,
   FileText,
   AlertCircle,
   Plus,
+  Download,
 } from 'lucide-react';
 import { Dossier, UserProfile, ActiveNavTab } from '../types';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { normalizeStatus } from '../services/workflowEngine';
+import { generateAndDownloadPdf } from '../utils/pdfExport';
 import { isAdminUser } from '../constants';
 
 interface MyDossiersViewProps {
@@ -32,8 +33,6 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   const isAdmin = isAdminUser(currentUser);
-
-  // Admin xem tất cả, User chỉ xem hồ sơ của mình
   const allDossiers = Array.isArray(dossiers) ? dossiers : [];
   const userDossiers = isAdmin
     ? allDossiers
@@ -47,34 +46,31 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
     const matchSearch =
       (d.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (d.templateTitle || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (d.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (d.templateCode || '').toLowerCase().includes(searchQuery.toLowerCase());
+      (d.title || '').toLowerCase().includes(searchQuery.toLowerCase());
+
+    if (!matchSearch) return false;
 
     const st = normalizeStatus(d.status);
-    if (statusFilter === 'all') return matchSearch;
-    if (statusFilter === 'draft') return matchSearch && st === 'DRAFT';
-    if (statusFilter === 'processing')
-      return matchSearch && st === 'NEW';
-    if (statusFilter === 'changes')
-      return matchSearch && st === 'NEEDS_REVISION';
-    if (statusFilter === 'signing')
-      return matchSearch && (st === 'PRECHECK_PASSED' || st === 'FACULTY_SIGNED' || st === 'SCHOOL_SIGNING');
-    if (statusFilter === 'completed')
-      return matchSearch && st === 'COMPLETED';
+    if (statusFilter === 'all') return true;
+    if (statusFilter === 'submitted') return st === 'SUBMITTED';
+    if (statusFilter === 'revision') return st === 'RETURNED_FOR_REVISION';
+    if (statusFilter === 'validated') return st === 'VALIDATED';
+    if (statusFilter === 'pending_signed') return st === 'PENDING_SIGNED_REVIEW';
+    if (statusFilter === 'waiting_rector') return st === 'WAITING_RECTOR_SIGNATURE';
+    if (statusFilter === 'signed_archived') return st === 'SIGNED_ARCHIVED';
 
-    return matchSearch;
+    return true;
   });
 
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-200">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
             Hồ sơ của tôi
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Theo dõi tiến trình thẩm định, nhận xét của Phòng KH&CN và tiến độ ký số liên cấp
+            Theo dõi tiến trình hồ sơ: Đã gửi / Trả về sửa lỗi → Hồ sơ đã được duyệt → Chờ duyệt → Chờ ký Hiệu trưởng → Đã ký và lưu trữ
           </p>
         </div>
 
@@ -88,7 +84,6 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
         </button>
       </div>
 
-      {/* Filter and Search Bar */}
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-3">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="relative w-full sm:w-80">
@@ -102,15 +97,15 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
             />
           </div>
 
-          {/* Status Tabs Tinh gọn */}
           <div className="flex items-center gap-1 overflow-x-auto w-full sm:w-auto p-1 bg-slate-100 rounded-lg text-xs">
             {[
               { id: 'all', label: 'Tất cả' },
-              { id: 'draft', label: 'Bản nháp' },
-              { id: 'processing', label: 'Chờ tiền kiểm' },
-              { id: 'changes', label: 'Cần sửa đổi' },
-              { id: 'signing', label: 'Đang trình ký' },
-              { id: 'completed', label: 'Đã hoàn tất' },
+              { id: 'submitted', label: 'Đã gửi / Chờ duyệt' },
+              { id: 'revision', label: 'Trả về sửa lỗi' },
+              { id: 'validated', label: 'Hồ sơ đã được duyệt' },
+              { id: 'pending_signed', label: 'Chờ duyệt' },
+              { id: 'waiting_rector', label: 'Chờ ký Hiệu trưởng' },
+              { id: 'signed_archived', label: 'Đã ký và lưu trữ' },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -129,101 +124,112 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
         </div>
       </div>
 
-      {/* Applications Table Tinh gọn 5 cột */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[11px]">
               <tr>
-                <th className="py-3 px-4">Mã hồ sơ</th>
+                <th className="py-3 px-4">Mã hồ sơ & Phiên bản</th>
                 <th className="py-3 px-4">Biểu mẫu & Nội dung</th>
                 <th className="py-3 px-4">Ngày nộp</th>
-                <th className="py-3 px-4">Trạng thái thẩm định</th>
+                <th className="py-3 px-4">Trạng thái tiến trình</th>
+                <th className="py-3 px-4 text-center">Tải PDF</th>
                 <th className="py-3 px-4 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {filtered.map((dossier) => {
                 const norm = normalizeStatus(dossier.status);
-                const isOwner =
-                  dossier.createdBy?.id === currentUser?.id ||
-                  dossier.createdBy?.email === currentUser?.email;
-                const canEdit =
-                  norm === 'DRAFT' || norm === 'NEEDS_REVISION' || isOwner;
+                const ver = dossier.current_version || dossier.currentVersion || 1;
+                const isRevision = norm === 'RETURNED_FOR_REVISION';
 
                 return (
                   <tr key={dossier.id} className="hover:bg-slate-50/80 transition-colors">
-                    {/* Code */}
-                    <td className="py-3 px-4 font-mono font-bold text-blue-700 whitespace-nowrap">
-                      {dossier.code}
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-bold text-blue-700">{dossier.code}</span>
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          v{ver}
+                        </span>
+                      </div>
                     </td>
 
-                    {/* Template & Title */}
-                    <td className="py-3 px-4 max-w-[320px]">
+                    <td className="py-3 px-4 max-w-[300px]">
                       <div className="font-semibold text-slate-900 truncate">
                         {dossier.title || dossier.templateTitle}
                       </div>
                       <div className="text-[11px] text-slate-400 font-mono truncate mt-0.5">
-                        {dossier.templateTitle} ({dossier.templateCode})
+                        {dossier.templateTitle}
                       </div>
                     </td>
 
-                    {/* Submitted Date */}
                     <td className="py-3 px-4 font-mono text-[11px] text-slate-500 whitespace-nowrap">
-                      {dossier.submittedAt ? (
-                        new Date(dossier.submittedAt).toLocaleDateString('vi-VN')
-                      ) : (
-                        <span className="text-slate-400 italic">Bản nháp</span>
-                      )}
+                      {dossier.submittedAt || dossier.submitted_at
+                        ? new Date(dossier.submittedAt || dossier.submitted_at || '').toLocaleDateString('vi-VN')
+                        : new Date(dossier.createdAt).toLocaleDateString('vi-VN')}
                     </td>
 
-                    {/* Status badge */}
                     <td className="py-3 px-4 whitespace-nowrap">
                       <div className="space-y-1">
                         <StatusBadge status={dossier.status} />
-                        {norm === 'NEEDS_REVISION' && (
+                        {isRevision && (
                           <div className="flex items-center gap-1 text-[11px] text-rose-600 font-semibold">
                             <AlertCircle className="w-3 h-3" />
-                            <span>Có yêu cầu sửa</span>
+                            <span>Có gợi ý sửa lỗi từ Admin</span>
                           </div>
                         )}
                       </div>
                     </td>
 
-                    {/* Actions Tinh gọn */}
+                    <td className="py-3 px-4 text-center whitespace-nowrap">
+                      {norm === 'SIGNED_ARCHIVED' ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            generateAndDownloadPdf(dossier, undefined, `${dossier.code}_Da_Ky_Luu_Tru.pdf`)
+                          }
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition-colors cursor-pointer"
+                        >
+                          <Download className="w-3 h-3" />
+                          <span>PDF Đã ký</span>
+                        </button>
+                      ) : ['VALIDATED', 'PENDING_SIGNED_REVIEW', 'WAITING_RECTOR_SIGNATURE'].includes(norm) ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            generateAndDownloadPdf(dossier, undefined, `${dossier.code}_v${ver}.pdf`)
+                          }
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-sky-800 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-md transition-colors cursor-pointer"
+                        >
+                          <Download className="w-3 h-3" />
+                          <span>PDF (v{ver})</span>
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic">Chờ duyệt</span>
+                      )}
+                    </td>
+
                     <td className="py-3 px-4 text-right whitespace-nowrap">
                       <div className="inline-flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => onSelectDossier(dossier)}
                           className="inline-flex items-center gap-1 px-3 py-1 text-slate-700 hover:text-blue-700 hover:bg-blue-50 border border-slate-200 rounded-lg font-medium transition-colors cursor-pointer"
-                          title="Xem chi tiết văn bản & tiến trình"
                         >
                           <Eye className="w-3.5 h-3.5 text-slate-400" />
                           <span>Chi tiết</span>
                         </button>
 
-                        {norm === 'NEEDS_REVISION' ? (
+                        {isRevision && (
                           <button
                             type="button"
                             onClick={() => onEditDraft(dossier)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors cursor-pointer shadow-2xs"
-                            title="Mở form chỉnh sửa hồ sơ bị trả về"
+                            className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-colors cursor-pointer shadow-2xs"
                           >
                             <Edit className="w-3.5 h-3.5" />
-                            <span>Sửa ngay</span>
+                            <span>Chỉnh sửa lại</span>
                           </button>
-                        ) : canEdit && norm === 'DRAFT' ? (
-                          <button
-                            type="button"
-                            onClick={() => onEditDraft(dossier)}
-                            className="inline-flex items-center gap-1 px-3 py-1 text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg font-medium transition-colors cursor-pointer"
-                            title="Mở form chỉnh sửa bản nháp"
-                          >
-                            <Edit className="w-3.5 h-3.5 text-slate-500" />
-                            <span>Sửa</span>
-                          </button>
-                        ) : null}
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -236,10 +242,10 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
         {filtered.length === 0 && (
           <div className="text-center py-12 px-4 space-y-2">
             <FileText className="w-8 h-8 text-slate-300 mx-auto" />
-            <h3 className="text-sm font-semibold text-slate-800">Không có hồ sơ nào</h3>
+            <h3 className="text-sm font-semibold text-slate-800">Chưa có hồ sơ nào</h3>
             <p className="text-xs text-slate-500">
               {userDossiers.length === 0
-                ? 'Đồng chí chưa tạo hồ sơ nào. Bấm nút "+ Tạo hồ sơ mới" để bắt đầu.'
+                ? 'Thầy/Cô chưa tạo hồ sơ nào. Bấm nút "+ Tạo hồ sơ mới" để bắt đầu.'
                 : 'Không tìm thấy hồ sơ phù hợp với bộ lọc hiện tại.'}
             </p>
           </div>

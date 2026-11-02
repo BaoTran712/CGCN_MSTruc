@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Menu } from 'lucide-react';
-import { ActiveNavTab, User } from '../../types';
+import { ActiveNavTab, Application, User } from '../../types';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 
@@ -11,6 +11,8 @@ interface MainLayoutProps {
   currentUser: User;
   pendingCount: number;
   myDossierCount: number;
+  dossiers?: Application[];
+  onSelectDossier?: (dossier: Application) => void;
   onSignOut: () => void;
 }
 
@@ -21,6 +23,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
   currentUser,
   pendingCount,
   myDossierCount,
+  dossiers = [],
+  onSelectDossier,
   onSignOut,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -61,6 +65,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
                 onNavigate={onNavigate}
                 activeTab={activeTab}
                 pendingCount={pendingCount}
+                dossiers={dossiers}
+                onSelectDossier={onSelectDossier}
                 onSignOut={onSignOut}
               />
             </div>

@@ -31,10 +31,11 @@ export const config = {
   smtp: {
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
     port: parseInt(process.env.SMTP_PORT || '587', 10),
-    secure: process.env.SMTP_SECURE === 'true',
+    secure: process.env.SMTP_SECURE === 'true' || parseInt(process.env.SMTP_PORT || '587', 10) === 465,
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
-    from: process.env.EMAIL_FROM || '"CTUMP DocuGov" <khcn@ctump.edu.vn>',
+    from: process.env.SMTP_FROM || process.env.EMAIL_FROM || '"Hệ thống Hỗ trợ Quy trình" <email_he_thong@gmail.com>',
+    adminNotificationEmail: process.env.ADMIN_NOTIFICATION_EMAIL || 'admin@ctump.edu.vn',
   },
   driveFolderUrl:
     process.env.GOOGLE_DRIVE_FOLDER_URL ||

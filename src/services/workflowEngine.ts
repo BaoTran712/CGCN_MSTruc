@@ -3,50 +3,85 @@ import {
   UserRole,
   AuditAction,
   AuditLog,
-  Application,
-  DossierVersion,
   Notification,
   User,
 } from '../types';
 
 /**
  * Server-Owned Workflow State Machine & Audit Trail Engine
- * Strictly enforces allowed transitions and immutable audit logs per REQUIREMENTS.md
+ * Hỗ trợ đầy đủ 6 trạng thái True Flow + False Flow:
+ * 1. SUBMITTED (Đã gửi / Chờ duyệt)
+ * 2. RETURNED_FOR_REVISION (Trả về sửa lỗi - Luồng False)
+ * 3. VALIDATED (Hồ sơ đã được duyệt / Đã hợp lệ)
+ * 4. PENDING_SIGNED_REVIEW (Chờ duyệt - Sau khi upload bản ký phòng ban)
+ * 5. WAITING_RECTOR_SIGNATURE (Chờ ký Hiệu trưởng)
+ * 6. SIGNED_ARCHIVED (Đã ký và lưu trữ)
  */
 
-// Normalize all legacy and uppercase statuses to standard DossierStatus
 export function normalizeStatus(status: string): DossierStatus {
-  if (!status) return 'NEW';
+  if (!status) return 'SUBMITTED';
   const upper = status.toUpperCase();
-  if (upper === 'NEW' || upper === 'SUBMITTED' || upper === 'UNDER_REVIEW' || upper === 'RESUBMITTED') return 'NEW';
-  if (upper === 'NEEDS_REVISION' || upper === 'RETURNED' || upper === 'CHANGES_REQUESTED') return 'NEEDS_REVISION';
-  if (upper === 'PRECHECK_PASSED' || upper === 'APPROVED') return 'PRECHECK_PASSED';
-  if (upper === 'FACULTY_SIGNED' || upper === 'USER_SIGNED' || upper === 'FOR_SIGNATURE') return 'FACULTY_SIGNED';
-  if (upper === 'SCHOOL_SIGNING' || upper === 'SECRETARY_RECEIVED') return 'SCHOOL_SIGNING';
-  if (upper === 'COMPLETED') return 'COMPLETED';
+
+  if (upper === 'SUBMITTED' || upper === 'NEW' || upper === 'UNDER_REVIEW' || upper === 'RESUBMITTED') {
+    return 'SUBMITTED';
+  }
+  if (
+    upper === 'RETURNED_FOR_REVISION' ||
+    upper === 'NEEDS_REVISION' ||
+    upper === 'RETURNED' ||
+    upper === 'CHANGES_REQUESTED'
+  ) {
+    return 'RETURNED_FOR_REVISION';
+  }
+  if (upper === 'VALIDATED' || upper === 'PRECHECK_PASSED' || upper === 'APPROVED') {
+    return 'VALIDATED';
+  }
+  if (
+    upper === 'PENDING_SIGNED_REVIEW' ||
+    upper === 'WAITING_FOR_SUBMISSION' ||
+    upper === 'FACULTY_SIGNED' ||
+    upper === 'USER_SIGNED' ||
+    upper === 'FOR_SIGNATURE'
+  ) {
+    return 'PENDING_SIGNED_REVIEW';
+  }
+  if (
+    upper === 'WAITING_RECTOR_SIGNATURE' ||
+    upper === 'SCHOOL_SIGNING' ||
+    upper === 'SECRETARY_RECEIVED'
+  ) {
+    return 'WAITING_RECTOR_SIGNATURE';
+  }
+  if (upper === 'SIGNED_ARCHIVED' || upper === 'SIGNED' || upper === 'COMPLETED') {
+    return 'SIGNED_ARCHIVED';
+  }
   if (upper === 'DRAFT') return 'DRAFT';
   if (upper === 'CANCELLED') return 'CANCELLED';
-  return 'NEW';
+
+  return 'SUBMITTED';
 }
 
-/**
- * State Transition Guard Matrix theo đặc tả quy_trinh.md
- */
 const ALLOWED_TRANSITIONS: Record<string, { target: DossierStatus; allowedRoles: UserRole[] }[]> = {
-  DRAFT: [{ target: 'NEW', allowedRoles: ['USER', 'ADMIN', 'employee', 'admin'] }],
-  NEW: [
-    { target: 'PRECHECK_PASSED', allowedRoles: ['ADMIN', 'admin'] },
-    { target: 'NEEDS_REVISION', allowedRoles: ['ADMIN', 'admin'] },
-    { target: 'NEW', allowedRoles: ['ADMIN', 'admin', 'USER', 'employee'] },
+  DRAFT: [{ target: 'SUBMITTED', allowedRoles: ['USER', 'ADMIN', 'employee', 'admin'] }],
+  SUBMITTED: [
+    { target: 'VALIDATED', allowedRoles: ['ADMIN', 'admin'] },
+    { target: 'RETURNED_FOR_REVISION', allowedRoles: ['ADMIN', 'admin'] },
   ],
-  NEEDS_REVISION: [{ target: 'NEW', allowedRoles: ['USER', 'ADMIN', 'employee', 'admin'] }],
-  PRECHECK_PASSED: [{ target: 'FACULTY_SIGNED', allowedRoles: ['USER', 'ADMIN', 'employee', 'admin'] }],
-  FACULTY_SIGNED: [
-    { target: 'SCHOOL_SIGNING', allowedRoles: ['ADMIN', 'admin'] },
-    { target: 'COMPLETED', allowedRoles: ['ADMIN', 'admin'] },
+  RETURNED_FOR_REVISION: [
+    { target: 'SUBMITTED', allowedRoles: ['USER', 'ADMIN', 'employee', 'admin'] },
   ],
-  SCHOOL_SIGNING: [{ target: 'COMPLETED', allowedRoles: ['ADMIN', 'admin'] }],
-  COMPLETED: [],
+  VALIDATED: [
+    { target: 'PENDING_SIGNED_REVIEW', allowedRoles: ['USER', 'ADMIN', 'employee', 'admin'] },
+  ],
+  PENDING_SIGNED_REVIEW: [
+    { target: 'WAITING_RECTOR_SIGNATURE', allowedRoles: ['ADMIN', 'admin'] },
+    { target: 'SIGNED_ARCHIVED', allowedRoles: ['ADMIN', 'admin'] },
+    { target: 'RETURNED_FOR_REVISION', allowedRoles: ['ADMIN', 'admin'] },
+  ],
+  WAITING_RECTOR_SIGNATURE: [
+    { target: 'SIGNED_ARCHIVED', allowedRoles: ['ADMIN', 'admin'] },
+  ],
+  SIGNED_ARCHIVED: [],
   CANCELLED: [],
 };
 
@@ -56,10 +91,11 @@ export function canTransition(
   role: UserRole
 ): boolean {
   const current = normalizeStatus(fromStatus);
+  const target = normalizeStatus(toStatus);
   const rules = ALLOWED_TRANSITIONS[current] || [];
   return rules.some(
     (rule) =>
-      rule.target === toStatus &&
+      (rule.target === target || normalizeStatus(rule.target) === target) &&
       (rule.allowedRoles.includes(role) || role === 'ADMIN' || role === 'admin')
   );
 }
@@ -105,4 +141,31 @@ export function createNotification(
     isRead: false,
     createdAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Trả về chỉ số mốc trên Thanh tiến trình 5 bước (1 -> 5)
+ * 1: Đã gửi / Trả về sửa lỗi
+ * 2: Hồ sơ đã được duyệt (VALIDATED)
+ * 3: Chờ duyệt bản ký phòng ban (PENDING_SIGNED_REVIEW)
+ * 4: Chờ ký Hiệu trưởng (WAITING_RECTOR_SIGNATURE)
+ * 5: Đã ký và lưu trữ (SIGNED_ARCHIVED)
+ */
+export function getStatusStepIndex(status: string): number {
+  const norm = normalizeStatus(status);
+  switch (norm) {
+    case 'SUBMITTED':
+    case 'RETURNED_FOR_REVISION':
+      return 1;
+    case 'VALIDATED':
+      return 2;
+    case 'PENDING_SIGNED_REVIEW':
+      return 3;
+    case 'WAITING_RECTOR_SIGNATURE':
+      return 4;
+    case 'SIGNED_ARCHIVED':
+      return 5;
+    default:
+      return 1;
+  }
 }

@@ -3,6 +3,8 @@ import path from 'path';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import { config } from './config.js';
+import { sanitizeFormPayload } from './sanitizer.js';
+import { prepareRenderData, pairTwoColumns, adaptWorkshopSchedule, adaptWorkshopAssignment } from '../services/documentService.js';
 
 const pdfDir = path.join(config.uploadDir, 'pdf');
 if (!fs.existsSync(pdfDir)) {
@@ -10,8 +12,7 @@ if (!fs.existsSync(pdfDir)) {
 }
 
 /**
- * Load system TrueType fonts for full Vietnamese diacritics support.
- * Falls back to StandardFonts if system fonts are unavailable.
+ * Load system TrueType fonts (Times New Roman) for full Vietnamese diacritics support.
  */
 async function loadFonts(pdfDoc) {
   try {
@@ -20,6 +21,7 @@ async function loadFonts(pdfDoc) {
     const timesPath = 'C:\\Windows\\Fonts\\times.ttf';
     const timesBoldPath = 'C:\\Windows\\Fonts\\timesbd.ttf';
     const timesItalicPath = 'C:\\Windows\\Fonts\\timesi.ttf';
+    const timesBoldItalicPath = 'C:\\Windows\\Fonts\\timesbi.ttf';
 
     if (fs.existsSync(timesPath) && fs.existsSync(timesBoldPath)) {
       const regular = await pdfDoc.embedFont(fs.readFileSync(timesPath));
@@ -27,7 +29,10 @@ async function loadFonts(pdfDoc) {
       const italic = fs.existsSync(timesItalicPath)
         ? await pdfDoc.embedFont(fs.readFileSync(timesItalicPath))
         : regular;
-      return { regular, bold, italic };
+      const boldItalic = fs.existsSync(timesBoldItalicPath)
+        ? await pdfDoc.embedFont(fs.readFileSync(timesBoldItalicPath))
+        : bold;
+      return { regular, bold, italic, boldItalic };
     }
   } catch (err) {
     console.warn('[pdfService] Không tải được font Times New Roman từ hệ thống, fallback sang StandardFonts:', err.message);
@@ -36,26 +41,70 @@ async function loadFonts(pdfDoc) {
   const regular = await pdfDoc.embedFont(StandardFonts.TimesRoman);
   const bold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
   const italic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
-  return { regular, bold, italic };
+  const boldItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanBoldItalic);
+  return { regular, bold, italic, boldItalic };
 }
 
 /**
- * Helper to wrap text into multiple lines within maxWidth
+ * Helper to break an ultra-long single word/token that exceeds maxWidth
+ */
+function splitLongWord(word, maxWidth, font, fontSize) {
+  const chunks = [];
+  let current = '';
+  for (const ch of word) {
+    const next = current + ch;
+    let w = 0;
+    try {
+      w = font.widthOfTextAtSize(next, fontSize);
+    } catch {
+      w = next.length * (fontSize * 0.5);
+    }
+    if (w > maxWidth && current) {
+      chunks.push(current);
+      current = ch;
+    } else {
+      current = next;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks.length > 0 ? chunks : [word];
+}
+
+/**
+ * Helper to wrap text into multiple lines within maxWidth (never overflows horizontally)
  */
 function wrapText(text, maxWidth, font, fontSize) {
-  if (!text) return [];
+  if (text === null || text === undefined || text === '') return [];
+  const safeMaxWidth = Math.max(16, maxWidth);
   const lines = [];
-  const rawParagraphs = String(text).split('\n');
+  const rawParagraphs = String(text).replace(/\r\n?/g, '\n').split('\n');
 
   for (const paragraph of rawParagraphs) {
-    const words = paragraph.split(' ');
-    let currentLine = '';
+    const trimmed = paragraph.trim();
+    if (!trimmed) {
+      lines.push('');
+      continue;
+    }
+    const rawWords = trimmed.split(/\s+/);
+    const words = [];
+    for (const rw of rawWords) {
+      try {
+        if (font.widthOfTextAtSize(rw, fontSize) > safeMaxWidth) {
+          words.push(...splitLongWord(rw, safeMaxWidth, font, fontSize));
+        } else {
+          words.push(rw);
+        }
+      } catch {
+        words.push(rw);
+      }
+    }
 
+    let currentLine = '';
     for (const word of words) {
       const testLine = currentLine ? `${currentLine} ${word}` : word;
       try {
         const testWidth = font.widthOfTextAtSize(testLine, fontSize);
-        if (testWidth > maxWidth && currentLine) {
+        if (testWidth > safeMaxWidth && currentLine) {
           lines.push(currentLine);
           currentLine = word;
         } else {
@@ -73,257 +122,1015 @@ function wrapText(text, maxWidth, font, fontSize) {
   return lines;
 }
 
+function isRowArrayBlank(rows, keys) {
+  if (!Array.isArray(rows) || rows.length === 0) return true;
+  return rows.every((r) => !r || keys.every((k) => !String(r[k] ?? '').trim()));
+}
+
 /**
- * Utility helper xuất file PDF chuẩn đã khóa nội dung (quy_trinh.md)
- * Tạo PDF 1.4 chuẩn quốc tế, hợp lệ 100%, bảo toàn nội dung và hỗ trợ tiếng Việt đầy đủ.
+ * Tạo trang A4 chuẩn và trả về context vẽ tự động ngắt trang (Auto Page-Break)
+ * Giống hệt bố cục văn bản Word lúc xem lại trên giao diện (WordDocumentPreview.tsx)
  */
-export async function generateLockedPdf(dossierCode, formData = {}, templateTitle = 'Hồ sơ Chuyển giao Công nghệ') {
-  const fileName = `${dossierCode}-locked.pdf`;
+function createDocRenderer(pdfDoc, fonts) {
+  // Kích thước A4: 595.28 x 841.89 pt (Lề chuẩn Nghị định 30/2020/NĐ-CP)
+  const PAGE_WIDTH = 595.28;
+  const PAGE_HEIGHT = 841.89;
+  const MARGIN_LEFT = 65;   // ~2.3cm
+  const MARGIN_RIGHT = 50;  // ~1.8cm
+  const MARGIN_TOP = 55;    // ~2.0cm
+  const MARGIN_BOTTOM = 55; // ~2.0cm
+  const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT; // 480.28pt
+
+  let page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  let y = PAGE_HEIGHT - MARGIN_TOP;
+
+  function ensureSpace(requiredHeight = 20) {
+    if (y - requiredHeight < MARGIN_BOTTOM) {
+      page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+      y = PAGE_HEIGHT - MARGIN_TOP;
+      return true;
+    }
+    return false;
+  }
+
+  function drawCenteredText(text, font, size, spaceAfter = 6, color = rgb(0, 0, 0)) {
+    const wrapped = wrapText(text, CONTENT_WIDTH, font, size);
+    for (const line of wrapped) {
+      ensureSpace(size + 6);
+      const w = font.widthOfTextAtSize(line, size);
+      page.drawText(line, {
+        x: MARGIN_LEFT + (CONTENT_WIDTH - w) / 2,
+        y,
+        size,
+        font,
+        color,
+      });
+      y -= size + 4;
+    }
+    y -= spaceAfter - 4;
+  }
+
+  function drawParagraph(
+    text,
+    font = fonts.regular,
+    size = 12,
+    indent = 0,
+    spaceAfter = 6,
+    color = rgb(0, 0, 0),
+    firstLineIndent = 0
+  ) {
+    if (text === null || text === undefined || String(text).trim() === '') return;
+    const rawParagraphs = String(text).replace(/\r\n?/g, '\n').split('\n');
+
+    for (const para of rawParagraphs) {
+      const trimmed = para.trim();
+      if (!trimmed) {
+        y -= 6;
+        continue;
+      }
+
+      if (firstLineIndent > 0) {
+        const firstLineAvail = CONTENT_WIDTH - indent - firstLineIndent;
+        const words = trimmed.split(/\s+/);
+        let firstLine = '';
+        let remainingIdx = words.length;
+
+        for (let i = 0; i < words.length; i++) {
+          const test = firstLine ? `${firstLine} ${words[i]}` : words[i];
+          if (font.widthOfTextAtSize(test, size) > firstLineAvail && firstLine) {
+            remainingIdx = i;
+            break;
+          }
+          firstLine = test;
+        }
+
+        ensureSpace(size + 6);
+        page.drawText(firstLine, {
+          x: MARGIN_LEFT + indent + firstLineIndent,
+          y,
+          size,
+          font,
+          color,
+        });
+        y -= size + 5;
+
+        if (remainingIdx < words.length) {
+          const restText = words.slice(remainingIdx).join(' ');
+          const restLines = wrapText(restText, CONTENT_WIDTH - indent, font, size);
+          for (const rl of restLines) {
+            ensureSpace(size + 6);
+            page.drawText(rl, {
+              x: MARGIN_LEFT + indent,
+              y,
+              size,
+              font,
+              color,
+            });
+            y -= size + 5;
+          }
+        }
+      } else {
+        const availWidth = CONTENT_WIDTH - indent;
+        const wrapped = wrapText(trimmed, availWidth, font, size);
+        for (const line of wrapped) {
+          ensureSpace(size + 6);
+          page.drawText(line, {
+            x: MARGIN_LEFT + indent,
+            y,
+            size,
+            font,
+            color,
+          });
+          y -= size + 5;
+        }
+      }
+    }
+    y -= spaceAfter - 5;
+  }
+
+  function drawLabelValue(label, value, size = 12, spaceAfter = 6, indent = 0) {
+    ensureSpace(size + 8);
+    const labelStr = `${label}: `;
+    const labelWidth = fonts.bold.widthOfTextAtSize(labelStr, size);
+    page.drawText(labelStr, {
+      x: MARGIN_LEFT + indent,
+      y,
+      size,
+      font: fonts.bold,
+      color: rgb(0, 0, 0),
+    });
+
+    const valStr =
+      value !== undefined && value !== null && String(value).trim() !== ''
+        ? String(value).trim()
+        : '........................................................................................';
+
+    const firstLineAvail = CONTENT_WIDTH - indent - labelWidth;
+    const words = valStr.replace(/\r\n?/g, ' ').split(/\s+/);
+    let firstLine = '';
+    let remainingIdx = words.length;
+
+    for (let i = 0; i < words.length; i++) {
+      const test = firstLine ? `${firstLine} ${words[i]}` : words[i];
+      if (fonts.regular.widthOfTextAtSize(test, size) > firstLineAvail && firstLine) {
+        remainingIdx = i;
+        break;
+      }
+      firstLine = test;
+    }
+
+    page.drawText(firstLine, {
+      x: MARGIN_LEFT + indent + labelWidth,
+      y,
+      size,
+      font: fonts.regular,
+      color: rgb(0, 0, 0),
+    });
+    y -= size + 5;
+
+    if (remainingIdx < words.length) {
+      const restText = words.slice(remainingIdx).join(' ');
+      drawParagraph(restText, fonts.regular, size, indent, spaceAfter);
+    } else {
+      y -= spaceAfter - 5;
+    }
+  }
+
+  /**
+   * Vẽ bảng chuẩn với tự động xuống dòng trong từng ô (Multi-line cell wrapping),
+   * tự động co giãn chiều cao hàng (Dynamic row height) và tự động lặp lại tiêu đề khi sang trang mới.
+   */
+  function drawTable(columns, rows, options = {}) {
+    const {
+      fontSize = 9.5,
+      headerFontSize = 9.5,
+      cellPaddingX = 4,
+      cellPaddingY = 5,
+      showHeader = true,
+      borderWidth = 0.75,
+      spaceAfter = 18,
+    } = typeof options === 'number' ? { fontSize: options } : options;
+
+    const rawTotalW = columns.reduce((sum, c) => sum + c.width, 0);
+    const scale = rawTotalW > 0 ? CONTENT_WIDTH / rawTotalW : 1;
+    const normCols = columns.map((c) => ({
+      ...c,
+      width: c.width * scale,
+    }));
+    const totalW = CONTENT_WIDTH;
+    const startX = MARGIN_LEFT;
+
+    const headerLineHeight = headerFontSize + 3;
+    const wrappedHeaders = normCols.map((col) =>
+      showHeader ? wrapText(col.header || '', col.width - cellPaddingX * 2, fonts.bold, headerFontSize) : []
+    );
+    const maxHeaderLines = showHeader
+      ? Math.max(1, ...wrappedHeaders.map((lines) => lines.length))
+      : 0;
+    const headerHeight = showHeader
+      ? Math.max(22, maxHeaderLines * headerLineHeight + cellPaddingY * 2)
+      : 0;
+
+    const drawHeaderRow = () => {
+      if (!showHeader) return;
+      page.drawRectangle({
+        x: startX,
+        y: y - headerHeight,
+        width: totalW,
+        height: headerHeight,
+        color: rgb(0.94, 0.94, 0.94),
+        borderColor: rgb(0, 0, 0),
+        borderWidth,
+      });
+
+      let curX = startX;
+      normCols.forEach((col, colIdx) => {
+        const hLines = wrappedHeaders[colIdx];
+        const blockH = hLines.length * headerLineHeight;
+        const firstBaselineY = y - (headerHeight - blockH) / 2 - headerFontSize + 1.5;
+
+        hLines.forEach((line, lIdx) => {
+          const hw = fonts.bold.widthOfTextAtSize(line, headerFontSize);
+          const textX = curX + Math.max(cellPaddingX, (col.width - hw) / 2);
+          page.drawText(line, {
+            x: textX,
+            y: firstBaselineY - lIdx * headerLineHeight,
+            size: headerFontSize,
+            font: fonts.bold,
+            color: rgb(0, 0, 0),
+          });
+        });
+
+        if (borderWidth > 0 && colIdx > 0) {
+          page.drawLine({
+            start: { x: curX, y },
+            end: { x: curX, y: y - headerHeight },
+            thickness: borderWidth,
+            color: rgb(0, 0, 0),
+          });
+        }
+        curX += col.width;
+      });
+
+      y -= headerHeight;
+    };
+
+    const lineHeight = fontSize + 3.2;
+
+    // Tính trước chiều cao dòng đầu tiên để không bao giờ vẽ header trơ trọi ở cuối trang
+    const firstRowCells = rows.length > 0
+      ? normCols.map((col) => {
+          const rawVal = rows[0][col.key];
+          const cellText = rawVal !== undefined && rawVal !== null ? String(rawVal).trim() : '';
+          return wrapText(cellText, col.width - cellPaddingX * 2, fonts.regular, fontSize);
+        })
+      : [];
+    const firstRowMaxLines = firstRowCells.length > 0
+      ? Math.max(1, ...firstRowCells.map((lines) => lines.length))
+      : 1;
+    const firstRowHeight = Math.max(20, firstRowMaxLines * lineHeight + cellPaddingY * 2);
+
+    ensureSpace(headerHeight + firstRowHeight + 6);
+    drawHeaderRow();
+
+    rows.forEach((row) => {
+      const wrappedCells = normCols.map((col) => {
+        const rawVal = row[col.key];
+        const cellText = rawVal !== undefined && rawVal !== null ? String(rawVal).trim() : '';
+        return wrapText(cellText, col.width - cellPaddingX * 2, fonts.regular, fontSize);
+      });
+
+      const maxLines = Math.max(1, ...wrappedCells.map((lines) => lines.length));
+      const rowHeight = Math.max(20, maxLines * lineHeight + cellPaddingY * 2);
+
+      // Nếu hàng hiện tại tràn xuống lề dưới, ngắt trang và vẽ lại header bảng
+      if (y - rowHeight < MARGIN_BOTTOM) {
+        page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+        y = PAGE_HEIGHT - MARGIN_TOP;
+        drawHeaderRow();
+      }
+
+      if (borderWidth > 0) {
+        page.drawRectangle({
+          x: startX,
+          y: y - rowHeight,
+          width: totalW,
+          height: rowHeight,
+          color: rgb(1, 1, 1),
+          borderColor: rgb(0, 0, 0),
+          borderWidth,
+        });
+      }
+
+      let curX = startX;
+      normCols.forEach((col, colIdx) => {
+        const cLines = wrappedCells[colIdx];
+        const isCentered = col.align === 'center';
+        const blockH = cLines.length * lineHeight;
+        const firstBaselineY = isCentered && cLines.length === 1
+          ? y - (rowHeight - blockH) / 2 - fontSize + 1.5
+          : y - cellPaddingY - fontSize + 1.5;
+
+        cLines.forEach((line, lIdx) => {
+          if (!line) return;
+          const tw = fonts.regular.widthOfTextAtSize(line, fontSize);
+          const textX = isCentered
+            ? curX + Math.max(cellPaddingX, (col.width - tw) / 2)
+            : curX + cellPaddingX;
+          page.drawText(line, {
+            x: textX,
+            y: firstBaselineY - lIdx * lineHeight,
+            size: fontSize,
+            font: fonts.regular,
+            color: rgb(0, 0, 0),
+          });
+        });
+
+        if (borderWidth > 0 && colIdx > 0) {
+          page.drawLine({
+            start: { x: curX, y },
+            end: { x: curX, y: y - rowHeight },
+            thickness: borderWidth,
+            color: rgb(0, 0, 0),
+          });
+        }
+        curX += col.width;
+      });
+
+      y -= rowHeight;
+    });
+
+    y -= spaceAfter;
+  }
+
+  /**
+   * Vẽ bảng nhân sự 2 cột cho các mục 8.1, 8.2, 8.3, 9.1, 9.2
+   */
+  function drawTwoColumnList(rows, fontSize = 11.5) {
+    if (!Array.isArray(rows) || rows.length === 0) return;
+    const validRows = rows.filter(
+      (r) => r && (String(r.col1 || '').trim() !== '' || String(r.col2 || '').trim() !== '')
+    );
+    if (validRows.length === 0) return;
+
+    const col1W = CONTENT_WIDTH * 0.62;
+    const col2W = CONTENT_WIDTH * 0.38;
+    const lineHeight = fontSize + 3.5;
+
+    for (const row of validRows) {
+      const leftLines = wrapText(String(row.col1 || '').trim(), col1W - 8, fonts.regular, fontSize);
+      const rightLines = wrapText(String(row.col2 || '').trim(), col2W - 8, fonts.regular, fontSize);
+      const maxLines = Math.max(1, leftLines.length, rightLines.length);
+      const rowH = maxLines * lineHeight + 2;
+
+      ensureSpace(rowH + 4);
+
+      leftLines.forEach((line, idx) => {
+        page.drawText(line, {
+          x: MARGIN_LEFT + 16,
+          y: y - idx * lineHeight,
+          size: fontSize,
+          font: fonts.regular,
+          color: rgb(0, 0, 0),
+        });
+      });
+
+      rightLines.forEach((line, idx) => {
+        page.drawText(line, {
+          x: MARGIN_LEFT + col1W + 6,
+          y: y - idx * lineHeight,
+          size: fontSize,
+          font: fonts.regular,
+          color: rgb(0, 0, 0),
+        });
+      });
+
+      y -= rowH;
+    }
+    y -= 4;
+  }
+
+  function drawHeader({ isMinistry, unitLabel, docNumber, dateObj }) {
+    const leftColWidth = CONTENT_WIDTH * 0.45;
+    const rightColWidth = CONTENT_WIDTH * 0.55;
+    const leftCenterX = MARGIN_LEFT + leftColWidth / 2;
+    const rightCenterX = MARGIN_LEFT + leftColWidth + rightColWidth / 2;
+
+    let leftY = y;
+    let rightY = y;
+
+    if (isMinistry) {
+      const minText = 'BỘ Y TẾ';
+      const w = fonts.regular.widthOfTextAtSize(minText, 10.5);
+      page.drawText(minText, { x: leftCenterX - w / 2, y: leftY, size: 10.5, font: fonts.regular });
+      leftY -= 14;
+
+      const schoolText = 'TRƯỜNG ĐẠI HỌC Y DƯỢC CẦN THƠ';
+      const sw = fonts.bold.widthOfTextAtSize(schoolText, 10.5);
+      page.drawText(schoolText, { x: leftCenterX - sw / 2, y: leftY, size: 10.5, font: fonts.bold });
+      leftY -= 6;
+
+      // Đường kẻ ngang bằng 1/3 - 1/2 độ dài tên cơ quan ban hành (NĐ 30/2020/NĐ-CP)
+      page.drawLine({
+        start: { x: leftCenterX - sw * 0.22, y: leftY },
+        end: { x: leftCenterX + sw * 0.22, y: leftY },
+        thickness: 0.7,
+        color: rgb(0, 0, 0),
+      });
+      leftY -= 14;
+    } else {
+      const schoolText = 'TRƯỜNG ĐẠI HỌC Y DƯỢC CẦN THƠ';
+      const sw = fonts.regular.widthOfTextAtSize(schoolText, 10.5);
+      page.drawText(schoolText, { x: leftCenterX - sw / 2, y: leftY, size: 10.5, font: fonts.regular });
+      leftY -= 14;
+
+      const unitText = String(unitLabel || 'KHOA / ĐƠN VỊ').toUpperCase();
+      const unitFontSize = unitText.length > 28 ? 9.5 : 10.5;
+      const uw = fonts.bold.widthOfTextAtSize(unitText, unitFontSize);
+      page.drawText(unitText, { x: leftCenterX - uw / 2, y: leftY, size: unitFontSize, font: fonts.bold });
+      leftY -= 6;
+
+      page.drawLine({
+        start: { x: leftCenterX - uw * 0.22, y: leftY },
+        end: { x: leftCenterX + uw * 0.22, y: leftY },
+        thickness: 0.7,
+        color: rgb(0, 0, 0),
+      });
+      leftY -= 14;
+    }
+
+    const numText = `Số: ${docNumber}`;
+    const nw = fonts.regular.widthOfTextAtSize(numText, 11);
+    page.drawText(numText, { x: leftCenterX - nw / 2, y: leftY, size: 11, font: fonts.regular });
+
+    // Cột phải: Quốc hiệu & Tiêu ngữ
+    const qhText = 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM';
+    const qhw = fonts.bold.widthOfTextAtSize(qhText, 10.5);
+    page.drawText(qhText, { x: rightCenterX - qhw / 2, y: rightY, size: 10.5, font: fonts.bold });
+    rightY -= 14;
+
+    const tnText = 'Độc lập – Tự do – Hạnh phúc';
+    const tnw = fonts.bold.widthOfTextAtSize(tnText, 11.5);
+    page.drawText(tnText, { x: rightCenterX - tnw / 2, y: rightY, size: 11.5, font: fonts.bold });
+    rightY -= 6;
+
+    // Đường kẻ ngang bằng đúng độ dài dòng chữ Tiêu ngữ (NĐ 30/2020/NĐ-CP)
+    page.drawLine({
+      start: { x: rightCenterX - tnw / 2, y: rightY },
+      end: { x: rightCenterX + tnw / 2, y: rightY },
+      thickness: 0.7,
+      color: rgb(0, 0, 0),
+    });
+    rightY -= 16;
+
+    const d = dateObj || new Date();
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const dateLine = `Cần Thơ, ngày ${day} tháng ${month} năm ${year}`;
+    const dw = fonts.italic.widthOfTextAtSize(dateLine, 11);
+    page.drawText(dateLine, { x: rightCenterX - dw / 2, y: rightY, size: 11, font: fonts.italic });
+
+    y = Math.min(leftY, rightY) - 24;
+  }
+
+  return {
+    get page() { return page; },
+    get y() { return y; },
+    set y(val) { y = val; },
+    PAGE_WIDTH,
+    PAGE_HEIGHT,
+    MARGIN_LEFT,
+    MARGIN_RIGHT,
+    CONTENT_WIDTH,
+    ensureSpace,
+    drawCenteredText,
+    drawParagraph,
+    drawLabelValue,
+    drawTable,
+    drawTwoColumnList,
+    drawHeader,
+  };
+}
+
+/**
+ * Render Mẫu 1a-TT.CGCN: Tờ trình chuyển giao tri thức (Đồng bộ 100% với documentService)
+ */
+function renderMau1a(ctx, fonts, dossierCode, rawData) {
+  const data = prepareRenderData(dossierCode, rawData, true);
+  const unitLabel = data.don_vi_uppercase || 'KHOA / ĐƠN VỊ';
+  const docNumber = data.so_to_trinh || `      /TTr-${data.ten_don_vi || 'ĐV'}`;
+
+  ctx.drawHeader({
+    isMinistry: false,
+    unitLabel,
+    docNumber,
+    dateObj: new Date(),
+  });
+
+  // Tiêu đề TỜ TRÌNH
+  ctx.drawCenteredText('TỜ TRÌNH', fonts.bold, 14, 4);
+  ctx.drawCenteredText(
+    'Về việc chuyển giao tri thức: từ kết quả đề tài nghiên cứu vào bài giảng,',
+    fonts.bold,
+    12,
+    2
+  );
+  ctx.drawCenteredText('giáo trình, tài liệu tập huấn giảng dạy', fonts.bold, 12, 12);
+
+  // Kính gửi
+  ctx.drawCenteredText('Kính gửi: Ban Giám Hiệu trường Đại học Y Dược Cần Thơ', fonts.boldItalic, 12, 14);
+
+  // Người trình & Đơn vị
+  ctx.drawLabelValue('Người trình', data.ho_ten || '');
+  ctx.drawLabelValue('Đơn vị / Khoa', unitLabel, 12, 10);
+
+  // I. Mục đích
+  ctx.ensureSpace(45);
+  ctx.drawParagraph('I. Mục đích', fonts.bold, 12.5, 0, 4);
+  ctx.drawParagraph(
+    data.muc_dich || 'Trình bày lý do cần thiết của chuyển giao sản phẩm từ kết quả đề tài NCKH vào giảng dạy.',
+    fonts.regular,
+    12,
+    0,
+    8,
+    rgb(0, 0, 0),
+    24
+  );
+
+  // II. Nội dung chuyển giao bao gồm
+  ctx.ensureSpace(45);
+  ctx.drawParagraph('II. Nội dung chuyển giao bao gồm:', fonts.bold, 12.5, 0, 6);
+
+  const subItems = [
+    {
+      title: '1. Nhu cầu cần sử dụng của đơn vị tiếp nhận chuyển giao:',
+      val: data.nhu_cau_tiep_nhan || 'Áp dụng kết quả nghiên cứu vào giảng dạy và đào tạo thực tiễn tại đơn vị.',
+    },
+    {
+      title: '2. Đáp ứng thực hiện chuyển giao của cá nhân/ đơn vị có sản phẩm chuyển giao:',
+      val: data.dap_ung_thuc_hien || 'Đảm bảo đầy đủ năng lực chuyên môn, sản phẩm đề tài đã nghiệm thu và tài liệu hướng dẫn.',
+    },
+    {
+      title: '3. Mục tiêu của chuyển giao:',
+      val: data.muc_tieu || 'Tăng cường tính ứng dụng thực tiễn trong công tác đào tạo và chăm sóc sức khỏe.',
+    },
+    {
+      title: '4. Đối tượng chuyển giao:',
+      val: data.doi_tuong || '',
+    },
+    {
+      title: '5. Phương thức chuyển giao:',
+      val: data.phuong_thuc || 'Bài giảng, giáo trình, tài liệu tập huấn chuyên môn.',
+    },
+    {
+      title: '6. Hình thức chuyển giao:',
+      val: data.hinh_thuc || 'Chuyển giao công nghệ độc lập.',
+    },
+    {
+      title: '7. Quyền chuyển giao cụ thể đối với sản phẩm tri thức:',
+      val: data.quyen_chuyen_giao || 'Chuyển giao quyền sử dụng tri thức phục vụ công tác đào tạo của Nhà trường.',
+    },
+  ];
+
+  for (const item of subItems) {
+    ctx.ensureSpace(38);
+    ctx.drawParagraph(item.title, fonts.bold, 12, 0, 3);
+    ctx.drawParagraph(item.val, fonts.regular, 12, 0, 6, rgb(0, 0, 0), 24);
+  }
+
+  // III. Thời gian chuyển giao
+  ctx.ensureSpace(42);
+  ctx.drawParagraph('III. Thời gian chuyển giao: (dự kiến)', fonts.bold, 12.5, 0, 3);
+  ctx.drawParagraph(data.thoi_gian || 'Theo kế hoạch năm học.', fonts.regular, 12, 0, 6, rgb(0, 0, 0), 24);
+
+  // IV. Địa điểm chuyển giao
+  ctx.ensureSpace(42);
+  ctx.drawParagraph('IV. Địa điểm chuyển giao:', fonts.bold, 12.5, 0, 3);
+  ctx.drawParagraph(data.dia_diem || 'Trường Đại học Y Dược Cần Thơ.', fonts.regular, 12, 0, 6, rgb(0, 0, 0), 24);
+
+  // V. Thành phần tham dự
+  ctx.ensureSpace(42);
+  ctx.drawParagraph('V. Thành phần tham dự:', fonts.bold, 12.5, 0, 3);
+  ctx.drawParagraph(data.thanh_phan || 'Giảng viên các bộ môn, sinh viên, học viên sau đại học.', fonts.regular, 12, 0, 6, rgb(0, 0, 0), 24);
+
+  // VI. Kinh phí tổ chức
+  ctx.ensureSpace(42);
+  ctx.drawParagraph('VI. Kinh phí tổ chức:', fonts.bold, 12.5, 0, 3);
+  ctx.drawParagraph(
+    data.kinh_phi || 'Từ nguồn kinh phí của Trường theo quy chế chi tiêu nội bộ.',
+    fonts.regular,
+    12,
+    0,
+    10,
+    rgb(0, 0, 0),
+    24
+  );
+
+  ctx.drawParagraph('Kính mong Ban Giám Hiệu xem xét và phê duyệt.', fonts.italic, 12, 0, 3, rgb(0, 0, 0), 24);
+  ctx.drawParagraph('Trân trọng./.', fonts.italic, 12, 0, 18, rgb(0, 0, 0), 24);
+
+  // Giữ toàn bộ 3 tầng chữ ký Mẫu 1a trên cùng một mặt trang
+  ctx.ensureSpace(225);
+  const colW = ctx.CONTENT_WIDTH / 2;
+  const leftCenter = ctx.MARGIN_LEFT + colW / 2;
+  const rightCenter = ctx.MARGIN_LEFT + colW + colW / 2;
+
+  const drawSigHeader = (title, hint, centerX, topY) => {
+    const tw = fonts.bold.widthOfTextAtSize(title, 11);
+    ctx.page.drawText(title, { x: centerX - tw / 2, y: topY, size: 11, font: fonts.bold });
+    const hw = fonts.italic.widthOfTextAtSize(hint, 10);
+    ctx.page.drawText(hint, { x: centerX - hw / 2, y: topY - 13, size: 10, font: fonts.italic });
+  };
+
+  let sigY = ctx.y;
+  drawSigHeader('TRƯỞNG ĐƠN VỊ', '(Ký và ghi rõ họ tên)', leftCenter, sigY);
+  drawSigHeader('CÁ NHÂN/CHỦ NHIỆM ĐỀ TÀI', '(Ký và ghi rõ họ tên)', rightCenter, sigY);
+
+  const applicantName = String(data.ho_ten || '');
+  if (applicantName) {
+    const aw = fonts.bold.widthOfTextAtSize(applicantName, 11);
+    ctx.page.drawText(applicantName, { x: rightCenter - aw / 2, y: sigY - 56, size: 11, font: fonts.bold });
+  }
+
+  ctx.y = sigY - 74;
+
+  // Hàng chữ ký 2: Phòng KH&CN & Phòng TCKT
+  sigY = ctx.y;
+  drawSigHeader('PHÒNG KH&CN', '(Ký và ghi rõ họ tên)', leftCenter, sigY);
+  drawSigHeader('PHÒNG TCKT', '(Ký và ghi rõ họ tên)', rightCenter, sigY);
+
+  ctx.y = sigY - 68;
+
+  // Hàng 3: Nơi nhận & Hiệu trưởng
+  sigY = ctx.y;
+  ctx.page.drawText('Nơi nhận:', { x: ctx.MARGIN_LEFT, y: sigY, size: 10.5, font: fonts.boldItalic });
+  const receivLines = [`- ${data.noi_nhan_don_vi || 'Như kính gửi'};`, '- TCKT;', '- TTDV&ĐTTNCXH;', '- Lưu: VT, KHCN.'];
+  let ry = sigY - 13;
+  for (const rl of receivLines) {
+    ctx.page.drawText(rl, { x: ctx.MARGIN_LEFT, y: ry, size: 10, font: fonts.regular });
+    ry -= 12;
+  }
+
+  const htTitle = 'HIỆU TRƯỞNG';
+  const htw = fonts.bold.widthOfTextAtSize(htTitle, 11.5);
+  ctx.page.drawText(htTitle, { x: rightCenter - htw / 2, y: sigY, size: 11.5, font: fonts.bold });
+}
+
+/**
+ * Render Mẫu 2a-KH.CGCN: Kế hoạch tổ chức chuyển giao công nghệ (Đồng bộ 100% với Mẫu 2a / Mau2b)
+ */
+function renderMau2a(ctx, fonts, dossierCode, rawData) {
+  const data = prepareRenderData(dossierCode, rawData, false);
+  const unitLabel = data.don_vi_uppercase || 'KHOA / ĐƠN VỊ';
+  const docNumber = data.so_ke_hoach || `      /KH-${data.ten_don_vi || 'ĐV'}`;
+
+  ctx.drawHeader({
+    isMinistry: true,
+    unitLabel,
+    docNumber,
+    dateObj: new Date(),
+  });
+
+  // Tiêu đề KẾ HOẠCH
+  ctx.drawCenteredText('KẾ HOẠCH', fonts.bold, 14, 4);
+  ctx.drawCenteredText('Về việc tổ chức chuyển giao công nghệ', fonts.bold, 12.5, 3);
+  const prodName = data.ten_san_pham || 'Tên sản phẩm chuyển giao';
+  ctx.drawCenteredText(`“${prodName}”`, fonts.bold, 12.5, 6);
+
+  // Đường kẻ ngang ngắn dưới tiêu đề Kế hoạch
+  const centerPage = ctx.MARGIN_LEFT + ctx.CONTENT_WIDTH / 2;
+  ctx.page.drawLine({
+    start: { x: centerPage - 65, y: ctx.y + 4 },
+    end: { x: centerPage + 65, y: ctx.y + 4 },
+    thickness: 0.7,
+    color: rgb(0, 0, 0),
+  });
+  ctx.y -= 10;
+
+  // I. Mục đích
+  ctx.ensureSpace(42);
+  ctx.drawParagraph('I. Mục đích', fonts.bold, 12.5, 0, 4);
+  ctx.drawParagraph(
+    data.muc_dich || 'Giới thiệu sản phẩm chuyển giao công nghệ và mục đích ứng dụng vào thực tiễn.',
+    fonts.regular,
+    12,
+    0,
+    6,
+    rgb(0, 0, 0),
+    24
+  );
+
+  // II. Nhóm tác giả của sản phẩm chuyển giao (chuẩn Mẫu 2b: 1. Họ tên – Chức vụ/Đơn vị – Vai trò; ... .)
+  ctx.ensureSpace(42);
+  ctx.drawParagraph('II. Nhóm tác giả của sản phẩm chuyển giao', fonts.bold, 12.5, 0, 4);
+  ctx.drawParagraph(
+    data.nhom_tac_gia || '1. Nhóm tác giả đề tài nghiên cứu.',
+    fonts.regular,
+    12,
+    0,
+    6,
+    rgb(0, 0, 0),
+    24
+  );
+
+  // III. Loại hình sản phẩm chuyển giao công nghệ
+  ctx.ensureSpace(42);
+  ctx.drawParagraph('III. Loại hình sản phẩm chuyển giao công nghệ', fonts.bold, 12.5, 0, 4);
+  ctx.drawParagraph(
+    data.loai_hinh_san_pham || 'Quy trình kỹ thuật / Tri thức chuyên môn.',
+    fonts.regular,
+    12,
+    0,
+    6,
+    rgb(0, 0, 0),
+    24
+  );
+
+  // IV. Phương thức chuyển giao
+  ctx.ensureSpace(42);
+  ctx.drawParagraph('IV. Phương thức chuyển giao', fonts.bold, 12.5, 0, 4);
+  ctx.drawParagraph(
+    data.phuong_thuc || 'Tập huấn trực tiếp & Bàn giao tài liệu hướng dẫn.',
+    fonts.regular,
+    12,
+    0,
+    6,
+    rgb(0, 0, 0),
+    24
+  );
+
+  // V. Bên nhận chuyển giao (thụt lề dòng đầu 1cm chuẩn Mẫu 2b)
+  ctx.ensureSpace(42);
+  ctx.drawParagraph('V. Bên nhận chuyển giao', fonts.bold, 12.5, 0, 4);
+  ctx.drawParagraph(
+    data.ben_nhan_chuyen_giao || 'Các bộ môn chuyên môn & Bệnh viện Trường Đại học Y Dược Cần Thơ.',
+    fonts.regular,
+    12,
+    0,
+    6,
+    rgb(0, 0, 0),
+    24
+  );
+
+  // VI. Thời gian, địa điểm chuyển giao (6.1 & 6.2 chuẩn Mẫu 2b)
+  ctx.ensureSpace(48);
+  ctx.drawParagraph('VI. Thời gian, địa điểm chuyển giao', fonts.bold, 12.5, 0, 4);
+  ctx.drawLabelValue('6.1. Thời gian', data.thoi_gian || 'Theo kế hoạch năm học.', 12, 4);
+  ctx.drawLabelValue('6.2. Địa điểm', data.dia_diem || 'Trường Đại học Y Dược Cần Thơ.', 12, 6);
+
+  // VII. Chi phí chuyển giao (thụt lề dòng đầu 1cm chuẩn Mẫu 2b)
+  ctx.ensureSpace(42);
+  ctx.drawParagraph('VII. Chi phí chuyển giao', fonts.bold, 12.5, 0, 4);
+  ctx.drawParagraph(
+    data.chi_phi || 'Không thu phí chuyển giao. Chi phí phát sinh (nếu có) thực hiện theo quy chế chi tiêu nội bộ của Trường.',
+    fonts.regular,
+    12,
+    0,
+    6,
+    rgb(0, 0, 0),
+    24
+  );
+
+  // VIII. Ban chỉ đạo – tổ chức chuyển giao (bố cục 2 cột chuẩn Mẫu 2a/2b)
+  ctx.ensureSpace(65);
+  ctx.drawParagraph('VIII. Ban chỉ đạo – tổ chức chuyển giao', fonts.bold, 12.5, 0, 4);
+
+  const steeringRows = !isRowArrayBlank(data.ds_ban_chi_dao, ['col1', 'col2'])
+    ? data.ds_ban_chi_dao
+    : pairTwoColumns(['1. Đại diện Ban Giám Hiệu - Trưởng ban', '2. Trưởng Phòng KH&CN - Phó Trưởng ban']);
+  ctx.drawParagraph('8.1. Ban chỉ đạo', fonts.bold, 12, 16, 3);
+  ctx.drawTwoColumnList(steeringRows, 11.5);
+
+  const orgRows = !isRowArrayBlank(data.ds_ban_to_chuc, ['col1', 'col2'])
+    ? data.ds_ban_to_chuc
+    : pairTwoColumns(['1. Trưởng Khoa / Đơn vị - Trưởng ban', '2. Đại diện Bên nhận chuyển giao - Đồng Trưởng ban']);
+  ctx.ensureSpace(42);
+  ctx.drawParagraph('8.2. Ban tổ chức', fonts.bold, 12, 16, 3);
+  ctx.drawTwoColumnList(orgRows, 11.5);
+
+  const staffRows = !isRowArrayBlank(data.ds_nhan_su, ['col1', 'col2'])
+    ? data.ds_nhan_su
+    : pairTwoColumns(['1. Chủ nhiệm đề tài - Phụ trách chung', '2. Nhóm tác giả và chuyên viên kỹ thuật - Thực hiện chuyển giao']);
+  ctx.ensureSpace(42);
+  ctx.drawParagraph('8.3. Nhân sự thực hiện chuyển giao kỹ thuật', fonts.bold, 12, 16, 3);
+  ctx.drawTwoColumnList(staffRows, 11.5);
+
+  // IX. Hội thảo chuyển giao (Đầy đủ 9.1 -> 9.5 nếu có tổ chức hội thảo)
+  const hasWorkshop = Boolean(data.co_hoi_thao);
+
+  if (hasWorkshop) {
+    ctx.ensureSpace(65);
+    ctx.drawParagraph('IX. Hội thảo chuyển giao', fonts.bold, 12.5, 0, 4);
+
+    const chairRows = !isRowArrayBlank(data.ds_chu_toa, ['col1', 'col2'])
+      ? data.ds_chu_toa
+      : pairTwoColumns(['1. Đại diện Ban Giám Hiệu - Chủ tọa', '2. Đại diện Ban Chủ nhiệm Khoa - Đồng Chủ tọa']);
+    ctx.drawParagraph('9.1. Chủ tọa', fonts.bold, 12, 16, 3);
+    ctx.drawTwoColumnList(chairRows, 11.5);
+
+    const speakerRows = !isRowArrayBlank(data.ds_bao_cao_vien, ['col1', 'col2'])
+      ? data.ds_bao_cao_vien
+      : pairTwoColumns(['1. Chủ nhiệm đề tài - Báo cáo viên chính', '2. Thành viên nhóm nghiên cứu - Báo cáo viên chuyên môn']);
+    ctx.ensureSpace(42);
+    ctx.drawParagraph('9.2. Báo cáo viên', fonts.bold, 12, 16, 3);
+    ctx.drawTwoColumnList(speakerRows, 11.5);
+
+    const scheduleRows = !isRowArrayBlank(data.ds_chuong_trinh_hoi_thao, ['thoi_gian', 'noi_dung', 'thanh_phan'])
+      ? data.ds_chuong_trinh_hoi_thao
+      : adaptWorkshopSchedule([
+          '08h00 - 08h30 | Đón tiếp đại biểu, tuyên bố lý do, khai mạc | Ban Tổ chức và đại biểu',
+          '08h30 - 10h00 | Báo cáo chuyên đề và hướng dẫn quy trình kỹ thuật | Nhóm tác giả đề tài',
+          '10h00 - 11h00 | Thảo luận, thực hành và ký biên bản bàn giao | Toàn thể đại biểu',
+        ]);
+    ctx.ensureSpace(95);
+    ctx.drawParagraph('9.3. Chương trình chi tiết của hội thảo', fonts.bold, 12, 16, 6);
+    ctx.drawTable(
+      [
+        { header: 'Thời gian', key: 'thoi_gian', width: 105, align: 'center' },
+        { header: 'Nội dung', key: 'noi_dung', width: 245, align: 'left' },
+        { header: 'Thành phần', key: 'thanh_phan', width: 130, align: 'left' },
+      ],
+      scheduleRows,
+      { fontSize: 10, headerFontSize: 10, spaceAfter: 16 }
+    );
+
+    const assignmentRows = !isRowArrayBlank(data.ds_phan_cong_hoi_thao, ['noi_dung', 'phu_trach'])
+      ? data.ds_phan_cong_hoi_thao
+      : adaptWorkshopAssignment([
+          'Chuẩn bị nội dung báo cáo và bộ tài liệu hướng dẫn kỹ thuật | Nhóm tác giả đề tài',
+          'Công tác hậu cần, hội trường và danh sách đại biểu | Đơn vị tiếp nhận & Ban Tổ chức',
+        ]);
+    ctx.ensureSpace(95);
+    ctx.drawParagraph('9.4. Phân công nhiệm vụ tổ chức', fonts.bold, 12, 16, 6);
+    ctx.drawTable(
+      [
+        { header: 'TT', key: 'stt', width: 38, align: 'center' },
+        { header: 'Nội dung công việc', key: 'noi_dung', width: 292, align: 'left' },
+        { header: 'Phụ trách', key: 'phu_trach', width: 150, align: 'left' },
+      ],
+      assignmentRows,
+      { fontSize: 10, headerFontSize: 10, spaceAfter: 16 }
+    );
+
+    ctx.ensureSpace(45);
+    ctx.drawParagraph('9.5. Dự trù kinh phí hội thảo', fonts.bold, 12, 16, 3);
+    ctx.drawParagraph(
+      data.kinh_phi_hoi_thao || 'Theo quy chế chi tiêu nội bộ của Trường Đại học Y Dược Cần Thơ.',
+      fonts.regular,
+      12,
+      0,
+      8,
+      rgb(0, 0, 0),
+      24
+    );
+  }
+
+  // Quản lý rủi ro (Đánh số X nếu có hội thảo, IX nếu ẩn hội thảo)
+  const riskRoman = data.so_la_ma_rui_ro || (hasWorkshop ? 'X' : 'IX');
+  const riskSubPrefix = data.so_muc_rui_ro || (hasWorkshop ? '10' : '9');
+  ctx.ensureSpace(120);
+  ctx.drawParagraph(`${riskRoman}. Quản lý rủi ro trong chuyển giao`, fonts.bold, 12.5, 0, 4);
+
+  // 10.1. Xác định và đánh giá rủi ro
+  ctx.drawParagraph(`${riskSubPrefix}.1. Xác định và đánh giá rủi ro`, fonts.bold, 12, 16, 3);
+  ctx.drawParagraph(
+    'Thang đánh giá: P và S chấm từ 1 đến 5; R = P x S; R <= 4: Thấp; 5 <= R <= 9: Trung bình; R >= 10: Cao.',
+    fonts.italic,
+    10.5,
+    16,
+    6
+  );
+
+  ctx.drawTable(
+    [
+      { header: 'Stt', key: 'stt', width: 30, align: 'center' },
+      { header: 'Công việc / Yếu tố rủi ro', key: 'yeu_to_rui_ro', width: 240, align: 'left' },
+      { header: 'P', key: 'p', width: 40, align: 'center' },
+      { header: 'S', key: 's', width: 40, align: 'center' },
+      { header: 'R=PxS', key: 'r', width: 50, align: 'center' },
+      { header: 'Phân loại', key: 'phan_loai', width: 80, align: 'center' },
+    ],
+    data.ds_danh_gia_rui_ro,
+    { fontSize: 9.5, headerFontSize: 9.5, spaceAfter: 18 }
+  );
+
+  // 10.2. Biện pháp kiểm soát rủi ro (Đầy đủ 7 cột gồm Thời gian, tự động xuống dòng trong từng ô)
+  ctx.ensureSpace(100);
+  ctx.drawParagraph(`${riskSubPrefix}.2. Biện pháp kiểm soát rủi ro`, fonts.bold, 12, 16, 6);
+
+  ctx.drawTable(
+    [
+      { header: 'Stt', key: 'stt', width: 26, align: 'center' },
+      { header: 'Yếu tố rủi ro', key: 'yeu_to_rui_ro', width: 84, align: 'left' },
+      { header: 'Biện pháp kiểm soát', key: 'bien_phap', width: 114, align: 'left' },
+      { header: 'ĐV phụ trách', key: 'don_vi_phu_trach', width: 64, align: 'center' },
+      { header: 'ĐV phối hợp', key: 'don_vi_phoi_hop', width: 64, align: 'center' },
+      { header: 'Thời gian', key: 'thoi_gian', width: 64, align: 'center' },
+      { header: 'Sản phẩm', key: 'san_pham', width: 64, align: 'center' },
+    ],
+    data.ds_kiem_soat_rui_ro,
+    { fontSize: 9, headerFontSize: 9.2, spaceAfter: 24 }
+  );
+
+  // Giữ toàn bộ 3 tầng chữ ký Mẫu 2a trên cùng một mặt trang
+  ctx.ensureSpace(225);
+  const colW = ctx.CONTENT_WIDTH / 2;
+  const leftCenter = ctx.MARGIN_LEFT + colW / 2;
+  const rightCenter = ctx.MARGIN_LEFT + colW + colW / 2;
+
+  const drawSigHeader = (title, hint, centerX, topY) => {
+    const tw = fonts.bold.widthOfTextAtSize(title, 10.5);
+    ctx.page.drawText(title, { x: centerX - tw / 2, y: topY, size: 10.5, font: fonts.bold });
+    const hw = fonts.italic.widthOfTextAtSize(hint, 9.5);
+    ctx.page.drawText(hint, { x: centerX - hw / 2, y: topY - 13, size: 9.5, font: fonts.italic });
+  };
+
+  let sigY = ctx.y;
+  drawSigHeader('TRƯỞNG ĐƠN VỊ NHẬN', '(Ký và ghi rõ họ tên)', leftCenter, sigY);
+  drawSigHeader('TRƯỞNG ĐƠN VỊ GIAO / CHỦ NHIỆM ĐỀ TÀI', '(Ký và ghi rõ họ tên)', rightCenter, sigY);
+
+  const receiverManager = String(data.truong_don_vi_nhan || '');
+  if (receiverManager) {
+    const rw = fonts.bold.widthOfTextAtSize(receiverManager, 11);
+    ctx.page.drawText(receiverManager, { x: leftCenter - rw / 2, y: sigY - 56, size: 11, font: fonts.bold });
+  }
+
+  const applicantName = String(data.ho_ten || '');
+  if (applicantName) {
+    const aw = fonts.bold.widthOfTextAtSize(applicantName, 11);
+    ctx.page.drawText(applicantName, { x: rightCenter - aw / 2, y: sigY - 56, size: 11, font: fonts.bold });
+  }
+
+  ctx.y = sigY - 74;
+
+  // Hàng chữ ký 2: Phòng KH&CN | Phòng TCKT | Văn Phòng
+  sigY = ctx.y;
+  const thirdW = ctx.CONTENT_WIDTH / 3;
+  drawSigHeader('PHÒNG KH&CN', '(Ký duyệt)', ctx.MARGIN_LEFT + thirdW * 0.5, sigY);
+  drawSigHeader('PHÒNG TCKT', '(Ký duyệt)', ctx.MARGIN_LEFT + thirdW * 1.5, sigY);
+  drawSigHeader('VĂN PHÒNG', '(Ký duyệt)', ctx.MARGIN_LEFT + thirdW * 2.5, sigY);
+
+  ctx.y = sigY - 68;
+
+  // Hàng 3: Nơi nhận & Hiệu trưởng (Theo Nghị định 30/2020/NĐ-CP)
+  sigY = ctx.y;
+  ctx.page.drawText('Nơi nhận:', { x: ctx.MARGIN_LEFT, y: sigY, size: 10.5, font: fonts.boldItalic });
+  const cleanNoiNhanDonVi = String(data.noi_nhan_don_vi || 'Đơn vị nhận chuyển giao').replace(/\.,\s*/g, ', ');
+  const recvUnitLine = `- ${cleanNoiNhanDonVi};`;
+  const wrappedRecvUnit = wrapText(recvUnitLine, colW - 8, fonts.regular, 9.5);
+  const receivLines = [
+    ...wrappedRecvUnit,
+    '- VP, TCKT;',
+    '- TTDV&ĐTTNCXH;',
+    '- Lưu: VT, KHCN.',
+  ];
+  let ry = sigY - 13;
+  for (const rl of receivLines) {
+    ctx.page.drawText(rl, { x: ctx.MARGIN_LEFT, y: ry, size: 9.5, font: fonts.regular });
+    ry -= 12;
+  }
+
+  const htTitle = 'HIỆU TRƯỞNG';
+  const htw = fonts.bold.widthOfTextAtSize(htTitle, 11.5);
+  ctx.page.drawText(htTitle, { x: rightCenter - htw / 2, y: sigY, size: 11.5, font: fonts.bold });
+}
+
+/**
+ * Xuất file PDF chuẩn có nội dung và bố cục giống hệt bản Word lúc xem lại (WordDocumentPreview)
+ */
+export async function generateLockedPdf(
+  dossierCode,
+  rawFormData = {},
+  templateTitle = 'Tờ trình chuyển giao tri thức',
+  templateCode = '',
+  customFileName = null
+) {
+  const formData = sanitizeFormPayload(rawFormData || {});
+  const fileName = customFileName || `${dossierCode}-locked.pdf`;
   const filePath = path.join(pdfDir, fileName);
 
   const pdfDoc = await PDFDocument.create();
-  pdfDoc.setTitle(`CTUMP DocuGov - ${dossierCode}`);
+  pdfDoc.setTitle(`${dossierCode} - ${templateTitle}`);
   pdfDoc.setAuthor('Trường Đại học Y Dược Cần Thơ');
   pdfDoc.setSubject(templateTitle);
   pdfDoc.setCreationDate(new Date());
 
-  const { regular, bold, italic } = await loadFonts(pdfDoc);
+  const fonts = await loadFonts(pdfDoc);
+  const ctx = createDocRenderer(pdfDoc, fonts);
 
-  // Kích thước chuẩn A4 (595.28 x 841.89 pt)
-  const page = pdfDoc.addPage([595.28, 841.89]);
-  const { width, height } = page.getSize();
-  const margin = 50;
-  const contentWidth = width - margin * 2;
+  const checkStr = `${templateCode} ${templateTitle} ${formData.templateId || ''}`.toLowerCase();
+  const isMau2a =
+    checkStr.includes('2a') ||
+    checkStr.includes('kế hoạch') ||
+    checkStr.includes('ke hoach') ||
+    Boolean(formData.plan_code || formData.product_name);
 
-  let y = height - margin;
-
-  // 1. Header văn bản chuẩn quốc gia
-  // Cột trái: Đơn vị
-  page.drawText('BỘ Y TẾ', {
-    x: margin,
-    y,
-    size: 10,
-    font: regular,
-    color: rgb(0.2, 0.2, 0.2),
-  });
-  // Cột phải: Quốc hiệu
-  page.drawText('CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM', {
-    x: width - margin - 235,
-    y,
-    size: 10,
-    font: bold,
-    color: rgb(0, 0, 0),
-  });
-
-  y -= 14;
-  page.drawText('TRƯỜNG ĐẠI HỌC Y DƯỢC CẦN THƠ', {
-    x: margin,
-    y,
-    size: 10,
-    font: bold,
-    color: rgb(0, 0, 0),
-  });
-  page.drawText('Độc lập - Tự do - Hạnh phúc', {
-    x: width - margin - 175,
-    y,
-    size: 10,
-    font: bold,
-    color: rgb(0, 0, 0),
-  });
-
-  y -= 14;
-  const deptName = formData.department || formData.department_name || 'PHÒNG KHOA HỌC CÔNG NGHỆ';
-  page.drawText(String(deptName).toUpperCase(), {
-    x: margin,
-    y,
-    size: 9.5,
-    font: bold,
-    color: rgb(0.1, 0.3, 0.6),
-  });
-
-  // Đường kẻ phân cách dưới quốc hiệu
-  page.drawLine({
-    start: { x: width - margin - 185, y: y + 2 },
-    end: { x: width - margin - 50, y: y + 2 },
-    thickness: 0.8,
-    color: rgb(0, 0, 0),
-  });
-
-  y -= 16;
-  page.drawText(`Số: ${dossierCode}/HSCGCN`, {
-    x: margin,
-    y,
-    size: 9,
-    font: regular,
-    color: rgb(0.3, 0.3, 0.3),
-  });
-
-  const now = new Date();
-  const dateStr = `Cần Thơ, ngày ${now.getDate().toString().padStart(2, '0')} tháng ${(now.getMonth() + 1).toString().padStart(2, '0')} năm ${now.getFullYear()}`;
-  page.drawText(dateStr, {
-    x: width - margin - 180,
-    y,
-    size: 9,
-    font: italic,
-    color: rgb(0.3, 0.3, 0.3),
-  });
-
-  y -= 30;
-
-  // 2. Banner Xác thực & Khóa nội dung (Locked Layout Badge)
-  page.drawRectangle({
-    x: margin,
-    y: y - 24,
-    width: contentWidth,
-    height: 32,
-    color: rgb(0.93, 0.96, 1),
-    borderColor: rgb(0.2, 0.45, 0.85),
-    borderWidth: 1,
-  });
-
-  page.drawText('VĂN BẢN ĐÃ TIỀN KIỂM & KHÓA NỘI DUNG (CHUẨN KÝ SỐ)', {
-    x: margin + 15,
-    y: y - 8,
-    size: 10,
-    font: bold,
-    color: rgb(0.1, 0.3, 0.7),
-  });
-
-  page.drawText(`Mã xác thực: ${dossierCode} • Khóa lúc: ${now.toLocaleTimeString('vi-VN')} ${now.toLocaleDateString('vi-VN')} • Hệ thống CTUMP DocuGov`, {
-    x: margin + 15,
-    y: y - 20,
-    size: 8,
-    font: regular,
-    color: rgb(0.25, 0.35, 0.5),
-  });
-
-  y -= 50;
-
-  // 3. Tiêu đề chính
-  const mainTitle = (templateTitle || 'HỒ SƠ CHUYỂN GIAO CÔNG NGHỆ').toUpperCase();
-  const titleLines = wrapText(mainTitle, contentWidth, bold, 14);
-  for (const tLine of titleLines) {
-    const tWidth = bold.widthOfTextAtSize(tLine, 14);
-    page.drawText(tLine, {
-      x: margin + (contentWidth - tWidth) / 2,
-      y,
-      size: 14,
-      font: bold,
-      color: rgb(0.1, 0.15, 0.3),
-    });
-    y -= 18;
+  if (isMau2a) {
+    renderMau2a(ctx, fonts, dossierCode, formData);
+  } else {
+    renderMau1a(ctx, fonts, dossierCode, formData);
   }
-
-  y -= 10;
-
-  // 4. Các thông tin tóm lược của hồ sơ
-  const summaryFields = [
-    { label: 'Tên sản phẩm / đề tài:', value: formData.product_name || formData.research_title || formData.title || templateTitle },
-    { label: 'Chủ nhiệm / Người nộp:', value: formData.full_name || formData.creator_name || 'Cán bộ Y Dược CTUMP' },
-    { label: 'Đơn vị công tác:', value: deptName },
-    { label: 'Chức danh / Học hàm:', value: formData.position || formData.title || 'Cán bộ / Giảng viên' },
-    { label: 'Điện thoại liên hệ:', value: formData.phone || formData.dien_thoai || 'Chưa cập nhật' },
-    { label: 'Email công vụ:', value: formData.email || 'canbo@ctump.edu.vn' },
-    { label: 'Mục đích chuyển giao:', value: formData.purpose || formData.muc_dich || 'Ứng dụng thực tiễn y tế và nghiên cứu khoa học.' },
-    { label: 'Bên nhận chuyển giao:', value: formData.receiving_party || formData.ben_nhan_chuyen_giao || 'Bệnh viện Trường Đại học Y Dược Cần Thơ' },
-    {
-      label: 'Kinh phí dự kiến:',
-      value: formData.transfer_cost !== undefined && formData.transfer_cost !== null && formData.transfer_cost !== ''
-        ? Number(formData.transfer_cost) === 0
-          ? 'Không thu phí (kinh phí hoạt động Nhà trường)'
-          : `${Number(formData.transfer_cost).toLocaleString('vi-VN')} VNĐ`
-        : 'Theo thỏa thuận và quy chế chi tiêu nội bộ',
-    },
-  ];
-
-  for (const item of summaryFields) {
-    if (y < 160) break; // tránh tràn trang
-
-    page.drawText(item.label, {
-      x: margin,
-      y,
-      size: 9.5,
-      font: bold,
-      color: rgb(0.15, 0.15, 0.15),
-    });
-
-    const valLines = wrapText(String(item.value || ''), contentWidth - 140, regular, 9.5);
-    let valY = y;
-    for (let i = 0; i < Math.min(valLines.length, 3); i++) {
-      page.drawText(valLines[i], {
-        x: margin + 140,
-        y: valY,
-        size: 9.5,
-        font: regular,
-        color: rgb(0.2, 0.2, 0.2),
-      });
-      valY -= 13;
-    }
-
-    y = valY - 4;
-  }
-
-  // 5. Khung chữ ký cấp cơ sở & cấp Trường
-  y = Math.min(y - 15, 170);
-
-  // Kẻ đường ngăn cách
-  page.drawLine({
-    start: { x: margin, y: y + 20 },
-    end: { x: width - margin, y: y + 20 },
-    thickness: 0.5,
-    color: rgb(0.8, 0.8, 0.8),
-  });
-
-  // Cột trái: Người đề nghị
-  page.drawText('CHỦ NHIỆM / NGƯỜI ĐỀ NGHỊ', {
-    x: margin + 30,
-    y: y + 5,
-    size: 10,
-    font: bold,
-    color: rgb(0, 0, 0),
-  });
-  page.drawText('(Ký và ghi rõ họ tên)', {
-    x: margin + 55,
-    y: y - 8,
-    size: 8.5,
-    font: italic,
-    color: rgb(0.4, 0.4, 0.4),
-  });
-
-  // Cột phải: Trưởng đơn vị
-  page.drawText('TRƯỞNG KHOA / ĐƠN VỊ', {
-    x: width - margin - 180,
-    y: y + 5,
-    size: 10,
-    font: bold,
-    color: rgb(0, 0, 0),
-  });
-  page.drawText('(Ký số phê duyệt cấp Khoa)', {
-    x: width - margin - 185,
-    y: y - 8,
-    size: 8.5,
-    font: italic,
-    color: rgb(0.4, 0.4, 0.4),
-  });
-
-  // Tên người nộp ở chân chữ ký
-  const authorName = formData.full_name || formData.creator_name || 'Cán bộ đề nghị';
-  page.drawText(String(authorName), {
-    x: margin + 40,
-    y: margin + 25,
-    size: 9.5,
-    font: bold,
-    color: rgb(0.1, 0.1, 0.1),
-  });
-
-  // Footer ghi chú bảo mật
-  page.drawText(`Văn bản điện tử được tạo tự động bởi Hệ thống CTUMP DocuGov • Bản quyền © ${now.getFullYear()} Trường ĐH Y Dược Cần Thơ`, {
-    x: margin,
-    y: margin,
-    size: 8,
-    font: italic,
-    color: rgb(0.5, 0.5, 0.5),
-  });
 
   const pdfBytes = await pdfDoc.save();
   fs.writeFileSync(filePath, pdfBytes);

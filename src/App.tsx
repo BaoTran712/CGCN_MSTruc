@@ -6,6 +6,7 @@ import {
 } from './types';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { isAdminUser } from './constants';
+import { getEffectiveTemplate } from './utils/templateUtils';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { DossierProvider, useDossiers } from './contexts/DossierContext';
 import { MainLayout } from './components/layout/MainLayout';
@@ -17,12 +18,8 @@ import {
   CreateDossierView,
   MyDossiersView,
   ReviewQueueView,
-  SecretaryView,
   DossierDetailView,
-  ProcessingHistoryView,
-  SettingsView,
   LoginPage,
-  UsersView,
 } from './pages';
 
 function AppContent() {
@@ -31,24 +28,18 @@ function AppContent() {
   const {
     templates,
     dossiers,
-    sheetRows,
-    users,
     isLoading,
     pendingCount,
     myDossierCount,
     saveDraft,
     submitDossier,
+    resubmitDossier,
     approveDossier,
     returnDossier,
-    saveManagerEdit,
-    uploadUserSignature,
-    receiveSecretaryIntake,
-    completeBySecretary,
     adminPrecheck,
     uploadFacultySignature,
     updateSchoolSigning,
     completeDossier,
-    refreshSheetRows,
   } = useDossiers();
 
   const [activeTab, setActiveTab] = useState<ActiveNavTab>('dashboard');
@@ -59,35 +50,26 @@ function AppContent() {
 
   const isAdmin = isAdminUser(currentUser);
 
-  // Chặn người dùng truy cập các tab không phù hợp với vai trò
   useEffect(() => {
     if (!currentUser) return;
-    // User không được truy cập tab Admin
-    if (!isAdmin && ['pending_approval', 'secretary_queue', 'history_sheets', 'users'].includes(activeTab)) {
+    if (!isAdmin && activeTab === 'pending_approval') {
       setActiveTab('my_dossiers');
     }
-    // Admin có toàn quyền truy cập tất cả các tab
   }, [currentUser, isAdmin, activeTab]);
 
-  // If user is not authenticated, show Login page
   if (!currentUser) {
     return (
       <LoginPage
         onLoginSuccess={(user) => {
           login(user);
           const isUserAdmin = isAdminUser(user);
-          if (isUserAdmin) {
-            setActiveTab('pending_approval');
-          } else {
-            setActiveTab('my_dossiers');
-          }
+          setActiveTab(isUserAdmin ? 'pending_approval' : 'my_dossiers');
           showToast(`Đăng nhập thành công: ${user.name}!`);
         }}
       />
     );
   }
 
-  // Navigation and creation handlers
   const handleCreateWithTemplate = (tmpl: DocumentTemplate) => {
     setTemplateForCreation(tmpl);
     setEditingDossier(null);
@@ -96,7 +78,7 @@ function AppContent() {
   };
 
   const handleEditDraft = (dossier: Application) => {
-    const tmpl = templates.find((t) => t.id === dossier.templateId) || templates[0];
+    const tmpl = getEffectiveTemplate(dossier);
     setTemplateForCreation(tmpl);
     setEditingDossier(dossier);
     setSelectedDossier(null);
@@ -104,123 +86,59 @@ function AppContent() {
   };
 
   const handleSaveDraft = async (draftDossier: Application) => {
-    try {
-      const saved = await saveDraft(draftDossier, currentUser);
-      showToast(`Đã lưu bản nháp hồ sơ ${saved.code}!`);
-    } catch (err) {
-      console.error('Error saving draft:', err);
-    }
+    const saved = await saveDraft(draftDossier, currentUser);
+    showToast(`Đã lưu hồ sơ ${saved.code}!`);
   };
 
+  // BƯỚC 1 & BƯỚC 2B: Nộp đơn & Chuyển hướng ngay sang màn hình "Chi tiết đơn đã gửi"
   const handleSubmitDossier = async (submittedDossier: Application) => {
-    try {
-      const submitted = await submitDossier(submittedDossier, currentUser);
-      setEditingDossier(null);
-      setTemplateForCreation(null);
-      setActiveTab('my_dossiers');
-      showToast(`Đã gửi nộp hồ sơ ${submitted.code} lên hệ thống phê duyệt!`);
-    } catch (err) {
-      console.error('Error submitting application:', err);
-    }
+    const submitted = await submitDossier(submittedDossier, currentUser);
+    setEditingDossier(null);
+    setTemplateForCreation(null);
+    setSelectedDossier(submitted);
+    setActiveTab('my_dossiers');
+    const ver = submitted.current_version || submitted.currentVersion || 1;
+    showToast(
+      `Đã nộp hồ sơ ${submitted.code} (Phiên bản v${ver}) thành công! Đang chờ Admin xét duyệt.`
+    );
+  };
+
+  // BƯỚC 2B [LUỒNG FALSE]: Chỉnh sửa trực tiếp trên trang Chi tiết đơn & Nộp lại
+  const handleResubmitDossier = async (dossierId: string, updatedFormData: Record<string, any>) => {
+    const updated = await resubmitDossier(dossierId, updatedFormData, currentUser);
+    setSelectedDossier(updated);
+    const ver = updated.current_version || updated.currentVersion || 2;
+    showToast(
+      `Đã nộp lại hồ sơ ${updated.code} (Phiên bản v${ver})! Đang chờ Admin kiểm tra và duyệt.`
+    );
+    return updated;
   };
 
   const handleApproveDossier = async (dossierId: string, comment?: string) => {
-    try {
-      const approved = await approveDossier(dossierId, comment, currentUser);
-      if (selectedDossier?.id === approved.id) {
-        setSelectedDossier(approved);
-      }
-      showToast(`Đã phê duyệt hồ sơ ${approved.code}!`);
-    } catch (err) {
-      console.error('Error approving application:', err);
+    const approved = await approveDossier(dossierId, comment, currentUser);
+    if (selectedDossier?.id === approved.id) {
+      setSelectedDossier(approved);
     }
+    showToast(`Đã duyệt hợp lệ hồ sơ ${approved.code} và gửi Email kèm file PDF chuẩn!`);
   };
 
   const handleReturnDossier = async (dossierId: string, reason: string) => {
-    try {
-      const returned = await returnDossier(dossierId, reason, currentUser);
-      if (
-        selectedDossier &&
-        (selectedDossier.id === returned.id ||
-          selectedDossier.code === returned.code ||
-          selectedDossier.id === dossierId ||
-          selectedDossier.code === dossierId)
-      ) {
-        setSelectedDossier(returned);
-      }
-      showToast(`Đã trả lại hồ sơ ${returned.code} (Yêu cầu chỉnh sửa bổ sung).`);
-    } catch (err: any) {
-      console.error('Error returning application:', err);
-      showToast(err.message || 'Lỗi khi trả lại hồ sơ', 'error');
-      throw err;
+    const returned = await returnDossier(dossierId, reason, currentUser);
+    if (selectedDossier?.id === returned.id) {
+      setSelectedDossier(returned);
     }
-  };
-
-  const handleSaveManagerEdit = async (
-    dossierId: string,
-    updatedFormData: Record<string, any>,
-    changeSummary: string
-  ) => {
-    try {
-      const updated = await saveManagerEdit(
-        dossierId,
-        updatedFormData,
-        changeSummary,
-        currentUser
-      );
-      if (selectedDossier?.id === updated.id) {
-        setSelectedDossier(updated);
-      }
-      showToast(`Đã cập nhật dữ liệu hồ sơ ${updated.code} và ghi vết phiên bản.`);
-    } catch (err) {
-      console.error('Error saving manager edit:', err);
-    }
-  };
-
-  const handleUploadUserSignature = async (dossierId: string, driveFileId: string) => {
-    try {
-      const updated = await uploadUserSignature(dossierId, driveFileId, currentUser);
-      if (selectedDossier?.id === updated.id) {
-        setSelectedDossier(updated);
-      }
-      showToast(`Đã tải lên văn bản ký tay/ký số cho hồ sơ ${updated.code}!`);
-    } catch (err) {
-      console.error('Error uploading user signature:', err);
-    }
-  };
-
-  const handleReceiveSecretaryIntake = async (dossierId: string) => {
-    try {
-      const updated = await receiveSecretaryIntake(dossierId, currentUser);
-      if (selectedDossier?.id === updated.id) {
-        setSelectedDossier(updated);
-      }
-      showToast(`Đã tiếp nhận hồ sơ ${updated.code}!`);
-    } catch (err) {
-      console.error('Error receiving secretary intake:', err);
-    }
-  };
-
-  const handleCompleteBySecretary = async (dossierId: string, finalDriveFileId: string) => {
-    try {
-      const completed = await completeBySecretary(dossierId, finalDriveFileId, currentUser);
-      if (selectedDossier?.id === completed.id) {
-        setSelectedDossier(completed);
-      }
-      showToast(`Đã hoàn tất đóng dấu và lưu trữ Google Drive cho hồ sơ ${completed.code}!`);
-    } catch (err) {
-      console.error('Error completing dossier:', err);
-    }
+    showToast(`Đã trả về sửa lỗi hồ sơ ${returned.code} kèm gợi ý chỗ sai cần sửa chữa.`);
   };
 
   const handleSignOut = () => {
     logout();
-    showToast('Đã đăng xuất khỏi hệ thống.', 'info');
+    setSelectedDossier(null);
+    setEditingDossier(null);
+    setTemplateForCreation(null);
+    setActiveTab('dashboard');
+    showToast('Đã đăng xuất khỏi hệ thống.');
   };
 
-  // ----------------------------------------------------
-  // AUTOMATION WORKFLOW HANDLERS (quy_trinh.md)
-  // ----------------------------------------------------
   const handleAdminPrecheck = async (dossierId: string, isValid: boolean, reviewNotes?: string) => {
     try {
       const updated = await adminPrecheck(dossierId, isValid, reviewNotes, currentUser);
@@ -234,13 +152,13 @@ function AppContent() {
         setSelectedDossier(updated);
       }
       if (isValid) {
-        showToast(`Đã duyệt hợp lệ thể thức hồ sơ ${updated.code} và xuất file PDF chuẩn.`);
+        const ver = updated.current_version || updated.currentVersion || 1;
+        showToast(`Đã duyệt hợp lệ hồ sơ ${updated.code} (v${ver}) và gửi Gmail SMTP kèm file PDF chuẩn.`);
       } else {
-        showToast(`Đã trả lại hồ sơ ${updated.code} (Yêu cầu chỉnh sửa bổ sung).`);
+        showToast(`Đã trả về sửa lỗi hồ sơ ${updated.code} kèm gợi ý sửa chữa.`);
       }
     } catch (err: any) {
-      console.error('Error in admin precheck:', err);
-      showToast(err.message || 'Lỗi khi xử lý tiền kiểm hồ sơ', 'error');
+      showToast(err.message || 'Lỗi khi xử lý xét duyệt hồ sơ', 'error');
       throw err;
     }
   };
@@ -250,30 +168,22 @@ function AppContent() {
     pdfUrl: string,
     evidenceFiles: Array<{ name: string; url: string; size?: string }>
   ) => {
-    try {
-      const updated = await uploadFacultySignature(dossierId, pdfUrl, evidenceFiles, currentUser);
-      if (selectedDossier?.id === updated.id) {
-        setSelectedDossier(updated);
-      }
-      showToast(`Đã nộp bản ký số cấp Khoa cho hồ sơ ${updated.code}!`);
-    } catch (err) {
-      console.error('Error in faculty signature upload:', err);
+    const updated = await uploadFacultySignature(dossierId, pdfUrl, evidenceFiles, currentUser);
+    if (selectedDossier?.id === updated.id) {
+      setSelectedDossier(updated);
     }
+    showToast(`Đã tải lên bản ký phòng ban cho hồ sơ ${updated.code} (Trạng thái: Chờ duyệt)!`);
   };
 
   const handleUpdateSchoolSigning = async (
     dossierId: string,
-    flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean }
+    flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean; note?: string }
   ) => {
-    try {
-      const updated = await updateSchoolSigning(dossierId, flags, currentUser);
-      if (selectedDossier?.id === updated.id) {
-        setSelectedDossier(updated);
-      }
-      showToast(`Đã cập nhật tiến độ ký số cấp Trường cho hồ sơ ${updated.code}!`);
-    } catch (err) {
-      console.error('Error updating school signing:', err);
+    const updated = await updateSchoolSigning(dossierId, flags, currentUser);
+    if (selectedDossier?.id === updated.id) {
+      setSelectedDossier(updated);
     }
+    showToast(`Đã chuyển hồ sơ ${updated.code} sang trạng thái "Chờ ký Hiệu trưởng"!`);
   };
 
   const handleCompleteDossier = async (
@@ -282,15 +192,11 @@ function AppContent() {
     decisionDate: string,
     finalPdfUrl: string
   ) => {
-    try {
-      const updated = await completeDossier(dossierId, decisionNumber, decisionDate, finalPdfUrl, currentUser);
-      if (selectedDossier?.id === updated.id) {
-        setSelectedDossier(updated);
-      }
-      showToast(`Đã ban hành Quyết định ${decisionNumber} và lưu trữ Google Drive cho hồ sơ ${updated.code}!`);
-    } catch (err) {
-      console.error('Error completing dossier:', err);
+    const updated = await completeDossier(dossierId, decisionNumber, decisionDate, finalPdfUrl, currentUser);
+    if (selectedDossier?.id === updated.id) {
+      setSelectedDossier(updated);
     }
+    showToast(`Đã xác nhận "Đã ký và lưu trữ" cho hồ sơ ${updated.code} và gửi Gmail kèm PDF đã ký!`);
   };
 
   return (
@@ -304,6 +210,11 @@ function AppContent() {
       currentUser={currentUser}
       pendingCount={pendingCount}
       myDossierCount={myDossierCount}
+      dossiers={dossiers}
+      onSelectDossier={(d) => {
+        setEditingDossier(null);
+        setSelectedDossier(d);
+      }}
       onSignOut={handleSignOut}
     >
       {isLoading ? (
@@ -311,17 +222,17 @@ function AppContent() {
       ) : selectedDossier ? (
         <DossierDetailView
           dossier={selectedDossier}
-          template={templates.find((t) => t.id === selectedDossier.templateId)}
+          template={getEffectiveTemplate(selectedDossier)}
           currentUser={currentUser}
           onBack={() => setSelectedDossier(null)}
           onEditDossier={(d) => handleEditDraft(d)}
+          onResubmitDossier={handleResubmitDossier}
           onAdminPrecheck={handleAdminPrecheck}
           onUploadFacultySignature={handleUploadFacultySignature}
           onUpdateSchoolSigning={handleUpdateSchoolSigning}
           onCompleteDossier={handleCompleteDossier}
           onApproveDossier={handleApproveDossier}
           onReturnDossier={handleReturnDossier}
-          onSaveManagerEdit={handleSaveManagerEdit}
           onNavigate={(tab) => {
             setSelectedDossier(null);
             setActiveTab(tab);
@@ -376,7 +287,7 @@ function AppContent() {
             />
           )}
 
-          {activeTab === 'pending_approval' && isAdmin && (
+          {activeTab === 'pending_approval' && (
             <ReviewQueueView
               dossiers={dossiers}
               currentUser={currentUser}
@@ -384,47 +295,20 @@ function AppContent() {
               onNavigate={setActiveTab}
             />
           )}
-
-          {activeTab === 'secretary_queue' && isAdmin && (
-            <SecretaryView
-              dossiers={dossiers}
-              currentUser={currentUser}
-              onInspectDossier={(d) => setSelectedDossier(d)}
-              onReceiveIntake={handleReceiveSecretaryIntake}
-              onCompleteWithFinalDoc={handleCompleteBySecretary}
-            />
-          )}
-
-
-          {activeTab === 'history_sheets' && isAdmin && (
-            <ProcessingHistoryView
-              sheetRows={sheetRows}
-              dossiers={dossiers}
-              onRefreshSync={async () => {
-                await refreshSheetRows();
-                showToast('Đã làm mới dữ liệu từ API Google Sheets!');
-              }}
-            />
-          )}
-
-          {activeTab === 'users' && isAdmin && (
-            <UsersView
-              currentUser={currentUser}
-              onNavigate={setActiveTab}
-            />
-          )}
-
-          {activeTab === 'settings' && <SettingsView />}
         </>
       )}
 
-      {/* Template Detail Modal */}
-      <TemplateDetailModal
-        template={templateDetailModal}
-        isOpen={!!templateDetailModal}
-        onClose={() => setTemplateDetailModal(null)}
-        onUseTemplate={(tmpl) => handleCreateWithTemplate(tmpl)}
-      />
+      {templateDetailModal && (
+        <TemplateDetailModal
+          isOpen={true}
+          template={templateDetailModal}
+          onClose={() => setTemplateDetailModal(null)}
+          onUseTemplate={(tmpl) => {
+            setTemplateDetailModal(null);
+            handleCreateWithTemplate(tmpl);
+          }}
+        />
+      )}
     </MainLayout>
   );
 }

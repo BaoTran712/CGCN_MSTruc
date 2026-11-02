@@ -5,7 +5,6 @@ import templateRoute from './templateRoute.js';
 import dossierRoute from './dossierRoute.js';
 import auditRoute from './auditRoute.js';
 import emailRoute from './emailRoute.js';
-import projectRoute from './projectRoute.js';
 import { userController } from '../controllers/userController.js';
 
 const router = Router();
@@ -25,14 +24,14 @@ router.get('/status', (req, res) => {
 // =========================================================================
 // 2. Định tuyến đồng bộ 3-Layer (Route -> Controller -> Service -> Repository)
 // =========================================================================
-router.use('/projects', projectRoute);
 router.use('/users', userRoute);
 router.use('/templates', templateRoute);
 router.use('/dossiers', dossierRoute);
+router.use('/applications', dossierRoute);
 router.use('/audit-logs', auditRoute);
 router.use('/email-logs', emailRoute);
 
-// Alias backward-compatibility cho endpoint đăng nhập SSO
+// Alias đăng nhập
 router.post('/auth/login', userController.login);
 
 export default router;

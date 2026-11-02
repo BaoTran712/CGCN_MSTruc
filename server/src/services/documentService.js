@@ -23,21 +23,44 @@ function ensureUploadDir() {
  * Chỉ chấp nhận file chuẩn ECMA-376 .docx (ZIP magic 50 4B 03 04), tuyệt đối không dùng .doc nhị phân
  */
 export function findTemplateFile(templateId = '') {
-  const is1a =
+  // 1. Kiểm tra trực tiếp nếu templateId là đường dẫn file .docx tồn tại
+  if (typeof templateId === 'string' && templateId.endsWith('.docx') && fs.existsSync(templateId)) {
+    try {
+      const magic = fs.readFileSync(templateId).slice(0, 4).toString('hex');
+      if (magic === '504b0304') {
+        const is1aDirect =
+          templateId.includes('1a') ||
+          templateId.toLowerCase().includes('tt') ||
+          templateId.toLowerCase().includes('tri-thuc');
+        return { filePath: templateId, is1a: is1aDirect };
+      }
+    } catch {}
+  }
+
+  const is2aExplicit =
+    String(templateId).includes('2a') ||
+    String(templateId).toLowerCase().includes('kh') ||
+    String(templateId).toLowerCase().includes('ke-hoach') ||
+    String(templateId).toLowerCase().includes('ke hoach');
+
+  const is1a = !is2aExplicit && (
     String(templateId).includes('1a') ||
     String(templateId).toLowerCase().includes('tt') ||
-    String(templateId).toLowerCase().includes('tri-thuc');
+    String(templateId).toLowerCase().includes('tri-thuc')
+  );
 
   const candidates = is1a
     ? [
         path.join(TEMPLATES_DIR, 'mau_1a_chuan.docx'),
         path.join(TEMPLATES_DIR, 'Mẫu 1a-TT.CGCN- Tờ trình CG Tri thức.docx'),
         path.resolve(__dirname, '../../templates/mau_1a_chuan.docx'),
+        path.resolve(__dirname, '../../../CGCN_MSTruc/docs/templates/Mẫu 1a-TT.CGCN- Tờ trình CG Tri thức.docx'),
       ]
     : [
         path.join(TEMPLATES_DIR, 'mau_2a_chuan.docx'),
         path.join(TEMPLATES_DIR, 'Mẫu 2a-KH.CGCN -Ke hoach CGCN - Trong trường.docx'),
         path.resolve(__dirname, '../../templates/mau_2a_chuan.docx'),
+        path.resolve(__dirname, '../../../CGCN_MSTruc/docs/templates/Mẫu 2a-KH.CGCN -Ke hoach CGCN - Trong trường.docx'),
       ];
 
   for (const p of candidates) {
@@ -55,6 +78,57 @@ export function findTemplateFile(templateId = '') {
 /**
  * Step 3.1 & 3.2: Chuẩn hóa chuỗi, chuyển null/undefined -> "", chuẩn hóa \r\n -> \n, xóa thẻ HTML
  */
+
+export function formatAuthorsGroupText(rawInput, fallbackName = '') {
+  if (!rawInput && !fallbackName) return '';
+  if (Array.isArray(rawInput)) {
+    const valid = rawInput.filter((r) => r && (r.ho_ten || r.name));
+    if (valid.length > 0) {
+      return valid
+        .map((r, idx) => {
+          const name = String(r.ho_ten || r.name || '').trim();
+          const unit = String(r.chuc_vu || r.don_vi || r.unit || '').trim();
+          const role = String(r.vai_tro || r.role || '').trim();
+          const parts = [name, unit, role].filter(Boolean);
+          const punct = idx === valid.length - 1 ? '.' : ';';
+          return `${idx + 1}. ${parts.join(' – ').replace(/[;.,]+$/, '')}${punct}`;
+        })
+        .join('\n');
+    }
+  }
+  const str = normalizeMultiline(rawInput || fallbackName);
+  const lines = str
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return '';
+
+  return lines
+    .map((line, idx) => {
+      const stt = idx + 1;
+      let clean = line.replace(/^\d+\.\s*/, '').replace(/[;.,]+$/, '').trim();
+      // Chuyển đổi định dạng cũ "TS. Nguyễn Văn Nam (Chủ nhiệm, Khoa CNTT)" -> "TS. Nguyễn Văn Nam – Giảng viên Khoa CNTT – Tác giả chính..."
+      const parenMatch = clean.match(/^(.*?)\s*\(([^)]+)\)$/);
+      if (parenMatch) {
+        const personName = parenMatch[1].trim();
+        const inside = parenMatch[2].split(',').map((s) => s.trim()).filter(Boolean);
+        const rawRole = inside[0] || 'Thành viên';
+        const rawUnit = inside.slice(1).join(', ') || 'Trường ĐHYD Cần Thơ';
+        const stdRole = /chủ nhiệm|tác giả chính/i.test(rawRole)
+          ? 'Tác giả chính, chủ trì xây dựng nội dung và triển khai chuyển giao kỹ thuật'
+          : /đồng nghiên cứu|thành viên/i.test(rawRole)
+          ? 'Thành viên'
+          : rawRole;
+        clean = `${personName} – ${rawUnit} – ${stdRole}`;
+      } else {
+        clean = clean.replace(/\s+-\s+/g, ' – ');
+      }
+      const punct = idx === lines.length - 1 ? '.' : ';';
+      return `${stt}. ${clean}${punct}`;
+    })
+    .join('\n');
+}
+
 export function normalizeMultiline(str) {
   if (str === null || str === undefined) return '';
   if (typeof str !== 'string') return String(str);
@@ -147,6 +221,15 @@ export function pairTwoColumns(input) {
 
     // Nếu phần tử đã có cấu trúc { col1, col2 }
     if (typeof valid[0] === 'object' && ('col1' in valid[0] || 'col2' in valid[0])) {
+      const needsReparse = valid.some(
+        (r) => !String(r.col2 || '').trim() && /[;-–|]/.test(String(r.col1 || ''))
+      );
+      if (needsReparse) {
+        const lines = valid.map((r) =>
+          String(r.col2 || '').trim() ? `${r.col1} - ${r.col2}` : String(r.col1 || '')
+        );
+        return parseStringLinesToTwoColumns(lines);
+      }
       return valid.map((r, idx) => ({
         stt: r.stt !== undefined && r.stt !== '' ? r.stt : idx + 1,
         col1: normalizeMultiline(r.col1 || ''),
@@ -177,9 +260,9 @@ export function pairTwoColumns(input) {
     return parseStringLinesToTwoColumns(strItems);
   }
 
-  if (typeof input === 'string') {
+    if (typeof input === 'string') {
     const lines = normalizeMultiline(input)
-      .split('\n')
+      .split(/[\n;]+/)
       .map((s) => s.trim())
       .filter(Boolean);
     if (lines.length === 0) {
@@ -191,37 +274,34 @@ export function pairTwoColumns(input) {
   return [{ stt: '', col1: '', col2: '' }];
 }
 
-function parseStringLinesToTwoColumns(lines) {
+function parseStringLinesToTwoColumns(rawLines) {
+  const lines = rawLines
+    .flatMap((l) => String(l).split(/[\n;]+/))
+    .map((s) => s.trim())
+    .filter(Boolean);
+
   if (lines.length === 0) {
     return [{ stt: '', col1: '', col2: '' }];
   }
 
-  // Nếu các dòng phân tách tên và chức vụ bằng " - " hoặc " – "
-  const hasDashSeparator = lines.some((l) => /\s[-–]\s/.test(l));
-  if (hasDashSeparator) {
-    return lines.map((line, idx) => {
-      const stt = idx + 1;
-      const match = line.match(/^(.*?)\s+[-–]\s+(.+)$/);
-      if (match) {
-        const left = match[1].trim();
-        const right = match[2].trim();
-        const numberedLeft = /^\d+\./.test(left) ? left : `${stt}. ${left}`;
-        return { stt, col1: numberedLeft, col2: right };
-      }
-      const numbered = /^\d+\./.test(line) ? line : `${stt}. ${line}`;
-      return { stt, col1: numbered, col2: '' };
-    });
-  }
-
-  const pairs = [];
-  for (let i = 0; i < lines.length; i += 2) {
-    pairs.push({
-      stt: Math.floor(i / 2) + 1,
-      col1: lines[i] || '',
-      col2: lines[i + 1] || '',
-    });
-  }
-  return pairs;
+  return lines.map((line, idx) => {
+    const stt = idx + 1;
+    const cleanLine = line.replace(/^\d+\.\s*/, '').trim();
+    const match = cleanLine.match(/^(.*?)(?:\s+[-–|]\s+|\s*:\s+)(.+)$/);
+    if (match) {
+      const left = match[1].trim();
+      const right = match[2].trim();
+      return { stt, col1: `${stt}. ${left}`, col2: right };
+    }
+    // Fallback cho dữ liệu cũ chưa có dấu gạch ngang phân tách chức vụ/vai trò
+    let inferredRole = '';
+    if (/Ban Giám Hiệu/i.test(cleanLine)) inferredRole = 'Chủ tọa';
+    else if (/Ban Chủ nhiệm Khoa|Trưởng Khoa|Lãnh đạo Khoa/i.test(cleanLine)) inferredRole = 'Đồng Chủ tọa';
+    else if (/Chủ nhiệm đề tài/i.test(cleanLine)) inferredRole = 'Báo cáo viên chính';
+    else if (/Báo cáo viên/i.test(cleanLine)) inferredRole = 'Báo cáo viên';
+    else if (/Nhóm tác giả|Thành viên/i.test(cleanLine)) inferredRole = 'Thành viên thực hiện';
+    return { stt, col1: `${stt}. ${cleanLine}`, col2: inferredRole };
+  });
 }
 
 /**
@@ -380,6 +460,36 @@ export function adaptRiskControlTable(controls) {
  * - Tự động đánh số stt (1, 2, 3...)
  * - Empty Table Safeguard: nếu mảng rỗng, trả về 1 hàng trống giữ nguyên độ rộng cột
  */
+function parseScheduleLine(line, idx) {
+  if (line.includes('|')) {
+    const parts = line.split('|').map((s) => s.trim());
+    return {
+      stt: idx + 1,
+      thoi_gian: parts[0] || '',
+      noi_dung: parts[1] || '',
+      thanh_phan: parts[2] || 'Đại biểu tham dự',
+    };
+  }
+  const colonIdx = line.indexOf(':');
+  if (colonIdx > 0 && colonIdx <= 25) {
+    const timePart = line.slice(0, colonIdx).trim();
+    const rest = line.slice(colonIdx + 1).trim();
+    const dashMatch = rest.match(/^(.*?)\s+[-–]\s+(.+)$/);
+    return {
+      stt: idx + 1,
+      thoi_gian: timePart,
+      noi_dung: dashMatch ? dashMatch[1].trim() : rest,
+      thanh_phan: dashMatch ? dashMatch[2].trim() : 'Ban Tổ chức và đại biểu',
+    };
+  }
+  return {
+    stt: idx + 1,
+    thoi_gian: 'Theo chương trình',
+    noi_dung: line,
+    thanh_phan: 'Ban Tổ chức và đại biểu',
+  };
+}
+
 export function adaptWorkshopSchedule(schedule) {
   if (Array.isArray(schedule)) {
     if (schedule.length === 0) {
@@ -387,17 +497,26 @@ export function adaptWorkshopSchedule(schedule) {
     }
     return schedule.map((item, idx) => {
       if (!item || typeof item !== 'object') {
-        return { stt: idx + 1, thoi_gian: '', noi_dung: normalizeMultiline(item), thanh_phan: '' };
+        return parseScheduleLine(normalizeMultiline(item), idx);
       }
       const thoi_gian = normalizeMultiline(item.thoi_gian ?? item.time ?? '');
       const noi_dung = normalizeMultiline(item.noi_dung ?? item.content ?? '');
       const thanh_phan = normalizeMultiline(item.thanh_phan ?? item.attendees ?? '');
+      if (!thoi_gian && noi_dung && (noi_dung.includes('|') || (noi_dung.indexOf(':') > 0 && noi_dung.indexOf(':') <= 25))) {
+        const parsed = parseScheduleLine(noi_dung, idx);
+        return {
+          stt: item.stt || idx + 1,
+          thoi_gian: parsed.thoi_gian,
+          noi_dung: parsed.noi_dung,
+          thanh_phan: thanh_phan || parsed.thanh_phan,
+        };
+      }
       const isAllBlank = !thoi_gian && !noi_dung && !thanh_phan;
       return {
         stt: isAllBlank ? (item.stt ?? '') : (item.stt || idx + 1),
         thoi_gian,
-        noi_dung,
-        thanh_phan,
+        noi_dung: noi_dung.replace(/^\d{1,2}[h:]\d{0,2}\s*[-–]\s*\d{1,2}[h:]\d{0,2}\s*:\s*/i, ''),
+        thanh_phan: thanh_phan || (noi_dung ? 'Ban Tổ chức và đại biểu' : ''),
       };
     });
   }
@@ -405,16 +524,36 @@ export function adaptWorkshopSchedule(schedule) {
   if (typeof schedule === 'string' && schedule.trim()) {
     const lines = normalizeMultiline(schedule).split('\n').map((l) => l.trim()).filter(Boolean);
     if (lines.length > 0) {
-      return lines.map((line, idx) => ({
-        stt: idx + 1,
-        thoi_gian: '',
-        noi_dung: line,
-        thanh_phan: '',
-      }));
+      return lines.map((line, idx) => parseScheduleLine(line, idx));
     }
   }
 
   return [{ stt: '', thoi_gian: '', noi_dung: '', thanh_phan: '' }];
+}
+
+function parseAssignmentLine(line, idx) {
+  const cleanLine = line.replace(/^\d+\.\s*/, '').trim();
+  if (cleanLine.includes('|')) {
+    const parts = cleanLine.split('|').map((s) => s.trim());
+    return {
+      stt: idx + 1,
+      noi_dung: parts[0] || '',
+      phu_trach: parts[1] || 'Ban Tổ chức',
+    };
+  }
+  const dashMatch = cleanLine.match(/^(.*?)\s+[-–]\s+(.+)$/);
+  if (dashMatch) {
+    return {
+      stt: idx + 1,
+      noi_dung: dashMatch[1].trim(),
+      phu_trach: dashMatch[2].trim(),
+    };
+  }
+  return {
+    stt: idx + 1,
+    noi_dung: cleanLine,
+    phu_trach: 'Nhóm tác giả & Ban Tổ chức',
+  };
 }
 
 /**
@@ -429,15 +568,18 @@ export function adaptWorkshopAssignment(assignments) {
     }
     return assignments.map((item, idx) => {
       if (!item || typeof item !== 'object') {
-        return { stt: idx + 1, noi_dung: normalizeMultiline(item), phu_trach: '' };
+        return parseAssignmentLine(normalizeMultiline(item), idx);
       }
       const noi_dung = normalizeMultiline(item.noi_dung ?? item.task ?? item.cong_viec ?? '');
       const phu_trach = normalizeMultiline(item.phu_trach ?? item.person ?? '');
+      if (!phu_trach && noi_dung && (noi_dung.includes('|') || /\s+[-–]\s+/.test(noi_dung))) {
+        return parseAssignmentLine(noi_dung, idx);
+      }
       const isAllBlank = !noi_dung && !phu_trach;
       return {
         stt: isAllBlank ? (item.stt ?? '') : (item.stt || idx + 1),
-        noi_dung,
-        phu_trach,
+        noi_dung: noi_dung.replace(/^\d+\.\s*/, ''),
+        phu_trach: phu_trach || (noi_dung ? 'Nhóm tác giả & Ban Tổ chức' : ''),
       };
     });
   }
@@ -445,11 +587,7 @@ export function adaptWorkshopAssignment(assignments) {
   if (typeof assignments === 'string' && assignments.trim()) {
     const lines = normalizeMultiline(assignments).split('\n').map((l) => l.trim()).filter(Boolean);
     if (lines.length > 0) {
-      return lines.map((line, idx) => ({
-        stt: idx + 1,
-        noi_dung: line,
-        phu_trach: '',
-      }));
+      return lines.map((line, idx) => parseAssignmentLine(line, idx));
     }
   }
 
@@ -731,21 +869,35 @@ export function prepareRenderData(code, rawFormData = {}, is1a = false) {
     formData.don_vi ||
     formData.ten_don_vi ||
     'KHOA CÔNG NGHỆ THÔNG TIN';
-  const unitAbbr =
-    formData.don_vi_viet_tat ||
-    formData.ten_don_vi ||
-    dept
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((w) => w[0])
-      .join('')
-      .toUpperCase() ||
-    'ĐV';
+  const getDeptAbbr = (name = '') => {
+    const clean = String(name).trim().toLowerCase();
+    if (!clean) return 'KHCN';
+    if (clean.includes('công nghệ thông tin') || clean.includes('cntt')) return 'KCNTT';
+    if (clean.includes('khoa học công nghệ') || clean.includes('kh&cn') || clean.includes('khcn')) return 'KHCN';
+    if (clean.includes('kế hoạch') || clean.includes('tài chính') || clean.includes('khtc') || clean.includes('tckt')) return 'TCKT';
+    if (clean.includes('răng hàm mặt') || clean.includes('rhm')) return 'RHM';
+    if (clean.includes('y tế công cộng') || clean.includes('ytcc')) return 'YTCC';
+    if (clean.includes('điều dưỡng')) return 'ĐD-KTYH';
+    if (clean.includes('khoa học cơ bản') || clean.includes('khcb')) return 'KHCB';
+    if (clean.includes('khoa dược') || clean === 'dược') return 'KD';
+    if (clean.includes('khoa y') || clean === 'y') return 'KY';
+    if (clean.includes('bệnh viện') || clean.includes('bv')) return 'BV';
+    if (clean.includes('văn phòng') || clean.includes('hành chính')) return 'VPT';
+    return (
+      String(name)
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((w) => w[0])
+        .join('')
+        .toUpperCase() || 'ĐV'
+    );
+  };
+  const unitAbbr = formData.don_vi_viet_tat || formData.ten_don_vi || getDeptAbbr(dept);
 
   if (is1a) {
     const docNumInfo = formatDocumentNumber(
-      formData.proposal_number || formData.so_to_trinh,
-      formData.so_hieu,
+      '',
+      '',
       'TTr',
       unitAbbr
     );
@@ -778,13 +930,14 @@ export function prepareRenderData(code, rawFormData = {}, is1a = false) {
         formData.funding_source || formData.financial_plan || formData.kinh_phi || ''
       ),
       truong_don_vi: formData.assigned_manager || formData.truong_don_vi || '',
+      noi_nhan_don_vi: `Như kính gửi (${unitAbbr})`,
     };
   }
 
   // Mẫu 2a
   const docNumInfo = formatDocumentNumber(
-    formData.plan_code || formData.so_ke_hoach,
-    formData.so_hieu,
+    '',
+    '',
     'KH',
     unitAbbr
   );
@@ -808,15 +961,18 @@ export function prepareRenderData(code, rawFormData = {}, is1a = false) {
             );
 
   const rawTransferCost = rawFormData?.transfer_cost ?? rawFormData?.chi_phi;
-  let formattedChiPhi = '';
-  if (rawTransferCost !== undefined && rawTransferCost !== null && rawTransferCost !== '') {
-    if (typeof rawTransferCost === 'number' || /^\d+$/.test(String(rawTransferCost).trim())) {
+  let formattedChiPhi = "Không thu phí chuyển giao. Chi phí phát sinh (nếu có) thực hiện theo quy chế chi tiêu nội bộ của Trường.";
+  if (rawTransferCost !== undefined && rawTransferCost !== null && String(rawTransferCost).trim() !== '') {
+    const trimmedCost = String(rawTransferCost).trim();
+    if (typeof rawTransferCost === 'number' || /^\d+$/.test(trimmedCost)) {
       formattedChiPhi =
-        Number(rawTransferCost) === 0
-          ? 'Không thu phí (kinh phí hoạt động Nhà trường)'
-          : `${Number(rawTransferCost).toLocaleString('vi-VN')} VNĐ`;
+        Number(trimmedCost) === 0
+          ? "Không thu phí chuyển giao. Chi phí phát sinh (nếu có) thực hiện theo quy chế chi tiêu nội bộ của Trường."
+          : `${Number(trimmedCost).toLocaleString('vi-VN')} đồng. Chi phí phát sinh (nếu có) thực hiện theo quy chế chi tiêu nội bộ của Trường.`;
+    } else if (/không thu phí/i.test(trimmedCost)) {
+      formattedChiPhi = "Không thu phí chuyển giao. Chi phí phát sinh (nếu có) thực hiện theo quy chế chi tiêu nội bộ của Trường.";
     } else {
-      formattedChiPhi = normalizeMultiline(String(rawTransferCost));
+      formattedChiPhi = normalizeMultiline(trimmedCost);
     }
   }
 
@@ -838,15 +994,16 @@ export function prepareRenderData(code, rawFormData = {}, is1a = false) {
     dien_thoai: normalizeMultiline(formData.phone || formData.dien_thoai || ''),
     email: normalizeMultiline(formData.email || ''),
     muc_dich: normalizeMultiline(formData.purpose || formData.muc_dich || ''),
-    nhom_tac_gia: normalizeMultiline(formData.authors_group || formData.nhom_tac_gia || formData.full_name || ''),
+    nhom_tac_gia: formatAuthorsGroupText(rawFormData?.ds_nhom_tac_gia ?? formData.authors_group ?? formData.nhom_tac_gia, formData.full_name || formData.creator_name || formData.ho_ten || ''),
     loai_hinh_san_pham: normalizeMultiline(formData.product_type || formData.loai_hinh_san_pham || ''),
     phuong_thuc: normalizeMultiline(formData.transfer_method || formData.phuong_thuc || ''),
     ben_nhan_chuyen_giao: normalizeMultiline(
       formData.receiving_party || formData.ben_nhan_chuyen_giao || formData.partner || ''
     ),
-    thoi_gian: formData.transfer_date
+    noi_nhan_don_vi: `${normalizeMultiline(formData.receiving_party || formData.ben_nhan_chuyen_giao || 'Đơn vị nhận chuyển giao')}, ${unitAbbr}`,
+    thoi_gian: /^\d{4}-\d{2}-\d{2}$/.test(String(formData.transfer_date || '').trim())
       ? new Date(formData.transfer_date).toLocaleDateString('vi-VN')
-      : normalizeMultiline(formData.transfer_time || formData.thoi_gian || ''),
+      : normalizeMultiline(formData.transfer_date || formData.transfer_time || formData.thoi_gian || ''),
     dia_diem: normalizeMultiline(formData.transfer_location || formData.dia_diem || ''),
     chi_phi: formattedChiPhi,
     // Nhân sự 2 cột Mục VIII
@@ -862,6 +1019,8 @@ export function prepareRenderData(code, rawFormData = {}, is1a = false) {
     // Khối điều kiện Mục IX
     co_hoi_thao: explicitCoHoiThao,
     has_hoi_thao: explicitCoHoiThao,
+    so_la_ma_rui_ro: explicitCoHoiThao ? 'X' : 'IX',
+    so_muc_rui_ro: explicitCoHoiThao ? '10' : '9',
     ds_chu_toa: pairTwoColumns(rawFormData?.ds_chu_toa ?? rawFormData?.workshop_chair ?? rawFormData?.chu_toa),
     ds_bao_cao_vien: pairTwoColumns(
       rawFormData?.ds_bao_cao_vien ?? rawFormData?.workshop_speaker ?? rawFormData?.bao_cao_vien
@@ -893,6 +1052,15 @@ export function renderDocxBuffer(formData = {}, templateId = 'tmpl-cgcn-2a', cod
   const templateBuffer = fs.readFileSync(templatePath);
 
   const zip = new PizZip(templateBuffer);
+  const preXml = zip.file('word/document.xml')?.asText() || '';
+  if (preXml.includes('thêm tên tắt đơn vị CG') || preXml.includes('Lưu VT, KHCN.')) {
+    zip.file(
+      'word/document.xml',
+      preXml
+        .replace(/-\s*\(\s*thêm tên tắt đơn vị CG v nhận CG\s*\)\s*;/g, '- {noi_nhan_don_vi};')
+        .replace(/-\s*Lưu\s+VT,\s*KHCN\./g, '- Lưu: VT, KHCN.')
+    );
+  }
   const doc = new Docxtemplater(zip, {
     paragraphLoop: true,
     linebreaks: true,

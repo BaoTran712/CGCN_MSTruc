@@ -1,31 +1,53 @@
 import { Router } from 'express';
 import { dossierController } from '../controllers/dossierController.js';
-import { requireAuth, requireAdmin } from '../middlewares/authMiddleware.js';
+import { uploadSignedAndEvidence, uploadFinalSignedPdf } from '../middlewares/uploadMiddleware.js';
+import { sanitizePayloadMiddleware } from '../utils/sanitizer.js';
 
 const router = Router();
 
-// GET /api/dossiers — Yêu cầu đăng nhập
-router.get('/', requireAuth, dossierController.getAll);
+// Áp dụng middleware làm sạch payload cho toàn bộ route quản lý đơn
+router.use(sanitizePayloadMiddleware);
 
-// GET /api/dossiers/:id — Yêu cầu đăng nhập
-router.get('/:id', requireAuth, dossierController.getById);
+// Dọn dẹp dữ liệu rác & file mồ côi
+router.post('/cleanup-garbage', dossierController.cleanupGarbage);
 
-// POST /api/dossiers (Bước 1 & 2: Khởi tạo hồ sơ) — Yêu cầu đăng nhập
-router.post('/', requireAuth, dossierController.create);
+// Lấy danh sách & chi tiết đơn
+router.get('/', dossierController.getAll);
+router.get('/:id', dossierController.getById);
 
-// PUT /api/dossiers/:id (Cập nhật form) — Yêu cầu đăng nhập
-router.put('/:id', requireAuth, dossierController.updateFormData);
+// BƯỚC 1: Thầy/Cô gửi đơn mới (SUBMITTED - v1)
+router.post('/', dossierController.create);
 
-// POST /api/dossiers/:id/precheck (Bước 2: Admin Tiền kiểm) — Chỉ ADMIN
-router.post('/:id/precheck', requireAuth, requireAdmin, dossierController.adminPrecheck);
+// BƯỚC 2A [LUỒNG FALSE]: Admin trả về sửa lỗi (RETURNED_FOR_REVISION)
+router.patch('/:id/return-revision', dossierController.returnForRevision);
+router.post('/:id/return-revision', dossierController.returnForRevision);
+router.post('/:id/precheck', dossierController.adminPrecheck);
 
-// POST /api/dossiers/:id/faculty-signed (Bước 3 & 6: User upload bản ký) — Yêu cầu đăng nhập
-router.post('/:id/faculty-signed', requireAuth, dossierController.uploadFacultySignature);
+// BƯỚC 2B [LUỒNG FALSE]: Thầy/Cô chỉnh sửa & nộp lại (SUBMITTED - v2, v3...)
+router.put('/:id/resubmit', dossierController.resubmit);
+router.post('/:id/resubmit', dossierController.resubmit);
+router.put('/:id', dossierController.updateFormData);
 
-// POST /api/dossiers/:id/school-signing (Bước 4 & 7: Admin cập nhật ký cấp Trường) — Chỉ ADMIN
-router.post('/:id/school-signing', requireAuth, requireAdmin, dossierController.updateSchoolSigning);
+// BƯỚC 3 [LUỒNG TRUE / SAU KHI SỬA XONG]: Admin nhấn Duyệt (VALIDATED + gửi Mail kèm PDF v{current_version})
+router.patch('/:id/approve', dossierController.approve);
+router.post('/:id/approve', dossierController.approve);
 
-// POST /api/dossiers/:id/complete (Bước 4 & 8: Ban hành QĐ & Đóng hồ sơ) — Chỉ ADMIN
-router.post('/:id/complete', requireAuth, requireAdmin, dossierController.completeDossier);
+// BƯỚC 4: Thầy/Cô upload bản ký phòng ban + minh chứng (PENDING_SIGNED_REVIEW - Chờ duyệt)
+router.post('/:id/reupload-signed', uploadSignedAndEvidence.array('files', 10), dossierController.reuploadSigned);
+router.post('/:id/faculty-signed', uploadSignedAndEvidence.array('files', 10), dossierController.uploadFacultySignature);
+
+// BƯỚC 5: Admin chuyển sang Chờ ký Hiệu trưởng (WAITING_RECTOR_SIGNATURE)
+router.patch('/:id/submit-to-rector', dossierController.submitToRector);
+router.post('/:id/submit-to-rector', dossierController.submitToRector);
+router.post('/:id/school-signing', dossierController.updateSchoolSigning);
+
+// BƯỚC 6: Hiệu trưởng Đã ký & Lưu trữ (SIGNED_ARCHIVED + gửi Mail kèm PDF cuối cùng)
+router.patch('/:id/confirm-signed', uploadFinalSignedPdf.single('file'), dossierController.confirmSigned);
+router.post('/:id/confirm-signed', uploadFinalSignedPdf.single('file'), dossierController.confirmSigned);
+router.post('/:id/complete', uploadFinalSignedPdf.single('file'), dossierController.completeDossier);
+
+// Xuất file PDF chuẩn theo phiên bản mới nhất
+router.get('/:id/export-pdf', dossierController.exportPdf);
+router.post('/:id/export-pdf', dossierController.exportPdf);
 
 export default router;

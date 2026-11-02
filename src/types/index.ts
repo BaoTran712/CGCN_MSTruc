@@ -1,34 +1,33 @@
 // ==========================================
 // CORE DOMAIN TYPES & INTERFACES FOR DOCUMENT WORKFLOW MANAGEMENT SYSTEM
-// Strictly adhering to REQUIREMENTS.md Specification
+// Hỗ trợ đầy đủ True Flow + False Flow (6 trạng thái) & Đồng bộ Tài liệu
 // ==========================================
 
 export type UserRole = 'USER' | 'MANAGER' | 'SECRETARY' | 'ADMIN' | 'employee' | 'manager' | 'secretary' | 'admin';
 
 export type DossierStatus =
-  // 5 mốc chính theo quy trình automation (quy_trinh.md):
-  | 'NEW'             // Bước 1-2: Mới nộp (Chờ Admin tiền kiểm)
-  | 'NEEDS_REVISION'  // Bước 2: Yêu cầu bổ sung (Bản thảo có lỗi)
-  | 'PRECHECK_PASSED' // Bước 2-4: Đã duyệt thể thức & Xuất PDF chuẩn
-  | 'FACULTY_SIGNED'  // Bước 3-6: Đã ký cấp Khoa & Nộp minh chứng
-  | 'SCHOOL_SIGNING'  // Bước 4-7: Đang trình ký cấp Trường (KH&CN, KHTC, BGH)
-  | 'COMPLETED'       // Bước 4-8: Đã ban hành QĐ CGCN & Đóng hồ sơ
+  // 6 Trạng thái chuẩn True Flow + False Flow:
+  | 'SUBMITTED'                // Bước 1 / 2B: Đã gửi / Chờ duyệt (hoặc Đã nộp lại)
+  | 'RETURNED_FOR_REVISION'    // Bước 2A [Luồng False]: Trả về sửa lỗi
+  | 'VALIDATED'                // Bước 3 [Luồng True]: Đã hợp lệ / Hồ sơ đã được duyệt
+  | 'PENDING_SIGNED_REVIEW'    // Bước 4: Chờ duyệt (Sau khi Thầy/Cô upload bản ký phòng ban)
+  | 'WAITING_RECTOR_SIGNATURE' // Bước 5: Chờ ký Hiệu trưởng
+  | 'SIGNED_ARCHIVED'          // Bước 6: Đã ký và lưu trữ
+  // Aliases tương thích ngược:
+  | 'WAITING_FOR_SUBMISSION'
+  | 'SIGNED'
+  | 'NEW'
+  | 'NEEDS_REVISION'
+  | 'PRECHECK_PASSED'
+  | 'FACULTY_SIGNED'
+  | 'SCHOOL_SIGNING'
+  | 'COMPLETED'
   | 'CANCELLED'
-  // Backward-compatible aliases
   | 'DRAFT'
-  | 'SUBMITTED'
   | 'RETURNED'
   | 'APPROVED'
   | 'USER_SIGNED'
-  | 'SECRETARY_RECEIVED'
-  | 'draft'
-  | 'submitted'
-  | 'under_review'
-  | 'changes_requested'
-  | 'resubmitted'
-  | 'approved'
-  | 'for_signature'
-  | 'completed';
+  | 'SECRETARY_RECEIVED';
 
 export type ApplicationStatus = DossierStatus;
 
@@ -43,7 +42,6 @@ export type FieldType =
   | 'FILE'
   | 'TEL'
   | 'EMAIL'
-  // Lowercase aliases
   | 'text'
   | 'textarea'
   | 'number'
@@ -53,7 +51,11 @@ export type FieldType =
   | 'radio'
   | 'file'
   | 'tel'
-  | 'email';
+  | 'email'
+  | 'risk_table'
+  | 'risk_control_table'
+  | 'RISK_TABLE'
+  | 'RISK_CONTROL_TABLE';
 
 export interface User {
   id: string;
@@ -95,11 +97,11 @@ export interface TemplateField {
   required: boolean;
   placeholder?: string;
   options?: string[];
-  defaultValue?: string | number | boolean | string[];
+  defaultValue?: string | number | boolean | any[];
   section?: string;
   helpText?: string;
   order?: number;
-  wordPlaceholder?: string; // e.g. {{ho_ten}}
+  wordPlaceholder?: string;
 }
 
 export type FormFieldConfig = TemplateField;
@@ -130,6 +132,12 @@ export type AuditAction =
   | 'CREATE'
   | 'UPDATE_DATA'
   | 'SUBMIT'
+  | 'RESUBMIT'
+  | 'RETURN_FOR_REVISION'
+  | 'APPROVE_VALIDATED'
+  | 'UPLOAD_DEPARTMENT_SIGNED'
+  | 'SUBMIT_TO_RECTOR'
+  | 'SIGN_AND_ARCHIVE'
   | 'PRECHECK_APPROVE'
   | 'PRECHECK_REJECT'
   | 'UPLOAD_FACULTY_SIGN'
@@ -160,15 +168,13 @@ export interface DossierVersion {
   dossierId: string;
   versionNumber: number;
   formData: Record<string, any>;
+  generatedDocxPath?: string;
+  generatedPdfPath?: string;
   driveFileId?: string;
   editedById: string;
   editedByName: string;
   changeSummary?: string;
   createdAt: string;
-}
-
-export interface NotificationType {
-  type: 'INFO' | 'ACTION_REQUIRED' | 'SUCCESS' | 'WARNING';
 }
 
 export interface Notification {
@@ -181,6 +187,23 @@ export interface Notification {
   type: 'INFO' | 'ACTION_REQUIRED' | 'SUCCESS' | 'WARNING';
   isRead: boolean;
   createdAt: string;
+}
+
+export interface SignedFileItem {
+  name: string;
+  url: string;
+  size?: string;
+  path?: string;
+  type?: string;
+  uploadedAt?: string;
+}
+
+export interface TimelineLogItem {
+  step: number;
+  status: string;
+  title: string;
+  timestamp: string;
+  note?: string;
 }
 
 export interface ApplicationHistory {
@@ -210,16 +233,6 @@ export interface ApplicationHistory {
 
 export type TimelineEvent = ApplicationHistory;
 
-export interface ApprovalComment {
-  id: string;
-  applicationId: string;
-  authorName: string;
-  authorRole: string;
-  comment: string;
-  createdAt: string;
-  action: 'request_revision' | 'approve' | 'sign' | 'resubmit' | 'receive' | 'complete';
-}
-
 export interface GeneratedDocument {
   id?: string;
   applicationId: string;
@@ -237,7 +250,7 @@ export interface GeneratedDocument {
 
 export interface Application {
   id: string;
-  code: string; // e.g. CGCN-2026-000001
+  code: string;
   title?: string;
   userId?: string;
   departmentId?: string;
@@ -253,15 +266,39 @@ export interface Application {
   createdAt: string;
   updatedAt?: string;
   submittedAt?: string;
+  submitted_at?: string;
   reviewedAt?: string;
   approvedAt?: string;
   signedAt?: string;
   completedAt?: string;
   status: DossierStatus;
+  current_version?: number;
+  currentVersion?: number;
+  applicant_email?: string;
+  applicantEmail?: string;
   formData: Record<string, any>;
+  form_data?: Record<string, any>;
+  generated_docx_path?: string;
+  generatedDocxPath?: string;
+  generated_pdf_path?: string;
+  generatedPdfPath?: string;
+  approved_pdf_path?: string;
+  approvedPdfPath?: string;
+  department_signed_files?: SignedFileItem[];
+  departmentSignedFiles?: SignedFileItem[];
+  resubmitted_signed_files?: SignedFileItem[];
+  resubmittedSignedFiles?: SignedFileItem[];
+  final_signed_pdf_path?: string;
+  finalSignedPdfPath?: string;
+  revision_note?: string;
+  revisionNote?: string;
+  revision_reason?: string;
+  revisionReason?: string;
   returnReason?: string;
   reviewNotes?: string;
   review_notes?: string;
+  timeline_logs?: TimelineLogItem[];
+  timelineLogs?: TimelineLogItem[];
   department_name?: string;
   departmentName?: string;
   docx_file_url?: string;
@@ -284,18 +321,13 @@ export interface Application {
   khtcSigned?: boolean;
   bgh_signed?: boolean;
   bghSigned?: boolean;
-  evidence_files?: Array<{ name: string; url: string; size?: string }>;
-  evidenceFiles?: Array<{ name: string; url: string; size?: string }>;
+  evidence_files?: SignedFileItem[];
+  evidenceFiles?: SignedFileItem[];
   drive_folder_url?: string;
   emailLogs?: any[];
-  generatedDriveFileId?: string;
-  userSignedDriveFileId?: string;
-  finalSignedDriveFileId?: string;
   versions?: DossierVersion[];
   auditLogs?: AuditLog[];
   timeline?: ApplicationHistory[];
-  syncedToSheets?: boolean;
-  syncedAt?: string;
   docxFileName?: string;
   generatedDocument?: GeneratedDocument;
 }
@@ -321,12 +353,4 @@ export type ActiveNavTab =
   | 'templates'
   | 'create_dossier'
   | 'my_dossiers'
-  | 'my_applications'
-  | 'pending_approval'
-  | 'secretary_queue'
-  | 'history_sheets'
-  | 'template_management'
-  | 'departments'
-  | 'users'
-  | 'settings';
-
+  | 'pending_approval';

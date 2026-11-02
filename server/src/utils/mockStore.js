@@ -1,6 +1,6 @@
 /**
- * In-Memory Mock Store phục vụ chạy Backend khi máy cục bộ chưa bật MySQL.
- * Tự động đồng bộ và bảo đảm 100% API hoạt động không bao giờ bị ECONNREFUSED.
+ * In-Memory Store phục vụ chạy Backend khi máy cục bộ chưa bật MySQL.
+ * Khởi tạo sạch sẽ (không chứa dữ liệu nháp/seed rác) theo chuẩn Mandatory Cleanup.
  */
 
 export const mockStore = {
@@ -84,142 +84,8 @@ export const mockStore = {
     },
   ],
 
-  dossiers: [
-    {
-      id: 'dos-2026-0001',
-      code: 'CGCN-2026-0001',
-      title: 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu',
-      user_id: 'usr_giangvien_demo',
-      template_id: 'tmpl-cgcn-1a',
-      templateId: 'tmpl-cgcn-1a',
-      templateTitle: 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu',
-      templateCode: 'Mẫu 1a-TT.CGCN',
-      department_name: 'Khoa Y',
-      status: 'NEEDS_REVISION',
-      formData: {
-        full_name: 'Trần Thị Bảo Trân',
-        department: 'Khoa Y',
-        proposal_number: '01/TTr-KY',
-        transfer_title: 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu',
-        transfer_time: 'Từ tháng 11/2026 đến tháng 12/2026',
-        transfer_location: 'Bệnh viện Trường Đại học Y Dược Cần Thơ',
-        attendees: 'Bác sĩ, Giảng viên Bộ môn Nội, Học viên sau đại học',
-        funding_source: 'Không thu phí (kinh phí hoạt động Nhà trường)',
-        co_hoi_thao: false,
-        has_workshop: false,
-      },
-      form_data: {
-        full_name: 'Trần Thị Bảo Trân',
-        department: 'Khoa Y',
-        proposal_number: '01/TTr-KY',
-        transfer_title: 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu',
-        transfer_time: 'Từ tháng 11/2026 đến tháng 12/2026',
-        transfer_location: 'Bệnh viện Trường Đại học Y Dược Cần Thơ',
-        attendees: 'Bác sĩ, Giảng viên Bộ môn Nội, Học viên sau đại học',
-        funding_source: 'Không thu phí (kinh phí hoạt động Nhà trường)',
-        co_hoi_thao: false,
-        has_workshop: false,
-      },
-      docx_file_url: '/uploads/docx/CGCN-2026-0001.docx',
-      precheck_pdf_url: null,
-      faculty_signed_pdf_url: null,
-      evidence_files: [],
-      evidenceFiles: [],
-      final_pdf_url: null,
-      decision_number: null,
-      decision_date: null,
-      has_financial_implication: false,
-      khcn_signed: false,
-      khtc_signed: false,
-      bgh_signed: false,
-      review_notes: 'sai tên',
-      drive_folder_url: 'https://drive.google.com/drive/folders/1UZfnO_hY9LshjsaHH6btODtWgii0Vv8-?usp=drive_link',
-      submitted_at: new Date(Date.now() - 3600000).toISOString(),
-      reviewed_at: new Date(Date.now() - 1800000).toISOString(),
-      created_at: new Date(Date.now() - 7200000).toISOString(),
-      createdAt: new Date(Date.now() - 7200000).toISOString(),
-      submittedAt: new Date(Date.now() - 3600000).toISOString(),
-      createdBy: {
-        id: 'usr_giangvien_demo',
-        name: 'Trần Thị Bảo Trân',
-        email: 'thayco.giangvien@ctump.edu.vn',
-        role: 'USER',
-        department: 'Khoa Y',
-        title: 'Cán bộ / Giảng viên',
-      },
-      assignedManager: {
-        name: 'Cô Trúc (Phòng KH&CN)',
-        email: 'admin@ctump.edu.vn',
-        department: 'Phòng Khoa học Công nghệ & HTQT',
-      },
-      timeline: [
-        {
-          id: 'tl-1',
-          title: 'Khởi tạo hồ sơ trực tuyến',
-          actor: 'Trần Thị Bảo Trân',
-          role: 'Cán bộ / Giảng viên',
-          timestamp: new Date(Date.now() - 7200000).toLocaleString('vi-VN'),
-          status: 'NEW',
-        },
-        {
-          id: 'tl-2',
-          title: 'Yêu cầu sửa đổi bổ sung',
-          actor: 'Cô Trúc',
-          role: 'Quản trị viên KH&CN',
-          timestamp: new Date(Date.now() - 1800000).toLocaleString('vi-VN'),
-          status: 'NEEDS_REVISION',
-          description: 'sai tên',
-        },
-      ],
-      auditLogs: [
-        {
-          id: 'al-1',
-          action: 'CREATE',
-          actorId: 'usr_giangvien_demo',
-          actorName: 'Trần Thị Bảo Trân',
-          actorRole: 'USER',
-          fromStatus: null,
-          toStatus: 'NEW',
-          notes: 'Khởi tạo hồ sơ CGCN-2026-0001.',
-          createdAt: new Date(Date.now() - 7200000).toISOString(),
-        },
-        {
-          id: 'al-2',
-          action: 'PRECHECK_REJECT',
-          actorId: 'usr_admin_truc',
-          actorName: 'Cô Trúc',
-          actorRole: 'ADMIN',
-          fromStatus: 'NEW',
-          toStatus: 'NEEDS_REVISION',
-          notes: 'Admin tiền kiểm yêu cầu sửa đổi: "sai tên"',
-          createdAt: new Date(Date.now() - 1800000).toISOString(),
-        },
-      ],
-      emailLogs: [
-        {
-          id: 'em-1',
-          recipientEmail: 'thayco.giangvien@ctump.edu.vn',
-          recipientName: 'Trần Thị Bảo Trân',
-          subject: '[CTUMP DocuGov] Yêu cầu chỉnh sửa bổ sung hồ sơ CGCN-2026-0001',
-          content: 'Quản trị viên đã tiền kiểm bản thảo Word và gửi nhận xét: "sai tên"',
-          status: 'SENT',
-          createdAt: new Date(Date.now() - 1800000).toISOString(),
-        },
-      ],
-      versions: [
-        {
-          id: 'ver-1',
-          versionNumber: 1,
-          editedByName: 'Trần Thị Bảo Trân',
-          changeSummary: 'Bản nộp đầu tiên',
-          createdAt: new Date(Date.now() - 7200000).toISOString(),
-        },
-      ],
-    },
-  ],
-
+  dossiers: [],
   auditLogs: [],
   emailLogs: [],
   versions: [],
 };
-

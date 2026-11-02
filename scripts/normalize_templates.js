@@ -436,8 +436,8 @@ function normalizeMau1a() {
     leftCellPs[2].appendChild(extractedPictRun);
   }
 
-  // Left Cell P[3]: Số: {so_to_trinh}
-  setParagraphRuns(doc, leftCellPs[3], [{ text: 'Số: {so_to_trinh}', bold: false, sz: '26' }], {
+  // Left Cell P[3]: Số tờ trình để trống phần số theo quy định
+  setParagraphRuns(doc, leftCellPs[3], [{ text: 'Số:       /TTr-{ten_don_vi}', bold: false, sz: '26' }], {
     clearPPrRPrBold: true,
     clearPPrRPrColor: true,
   });
@@ -535,7 +535,29 @@ function normalizeMau1a() {
     { clearPPrRPrBold: true }
   );
 
-  // Signature tables tables[1] (10 rows with 8 blank rows) and tables[2] (HIỆU TRƯỞNG) remain 100% intact!
+  // 11. Chuẩn hóa Bảng chữ ký tables[1] & Nơi nhận tables[2] theo Nghị định 30/2020/NĐ-CP
+  const sig1aRows = getDirectChildren(tables[1], 'w:tr');
+  if (sig1aRows[4]) {
+    const sig1aCells = getDirectChildren(sig1aRows[4], 'w:tc');
+    if (sig1aCells[0]) {
+      const p0 = getDirectChildren(sig1aCells[0], 'w:p')[0];
+      if (p0) setParagraphRuns(doc, p0, [{ text: '{truong_don_vi}', bold: true, sz: '26' }]);
+    }
+    if (sig1aCells[2]) {
+      const p2 = getDirectChildren(sig1aCells[2], 'w:p')[0];
+      if (p2) setParagraphRuns(doc, p2, [{ text: '{ho_ten}', bold: true, sz: '26' }]);
+    }
+  }
+  const receiv1aRows = getDirectChildren(tables[2], 'w:tr');
+  if (receiv1aRows[0]) {
+    const receiv1aCells = getDirectChildren(receiv1aRows[0], 'w:tc');
+    if (receiv1aCells[0]) {
+      const rPs = getDirectChildren(receiv1aCells[0], 'w:p');
+      if (rPs[0]) setParagraphRuns(doc, rPs[0], [{ text: 'Nơi nhận:', bold: true, italic: true, sz: '24' }]);
+      if (rPs[1]) setParagraphRuns(doc, rPs[1], [{ text: '- {noi_nhan_don_vi};', sz: '22' }], { clearPPrRPrItalic: true, clearPPrRPrColor: true });
+      if (rPs[4]) setParagraphRuns(doc, rPs[4], [{ text: '- Lưu: VT, KHCN.', sz: '22' }]);
+    }
+  }
   const serialized = new XMLSerializer().serializeToString(doc);
   zip.file('word/document.xml', serialized);
   return zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
@@ -601,8 +623,8 @@ function normalizeMau2a() {
   const leftCellPs = getDirectChildren(headerCells[0], 'w:p');
   const rightCellPs = getDirectChildren(headerCells[1], 'w:p');
 
-  // Left Cell P[3]: "Số:           /KH- Khoa/Đơn vị" -> "Số: {so_ke_hoach}"
-  setParagraphRuns(doc, leftCellPs[3], [{ text: 'Số: {so_ke_hoach}', sz: '24' }], {
+  // Left Cell P[3]: Số kế hoạch để trống phần số theo quy định
+  setParagraphRuns(doc, leftCellPs[3], [{ text: 'Số:           /KH-{ten_don_vi}', sz: '24' }], {
     clearPPrRPrColor: true,
   });
 
@@ -652,6 +674,21 @@ function normalizeMau2a() {
   setParagraphRuns(doc, children[17], [{ text: '{ben_nhan_chuyen_giao}', sz: '26' }], {
     clearPPrRPrBold: true,
   });
+  for (const idx of [7, 13, 15, 17, 23]) {
+    const pNode = children[idx];
+    if (!pNode) continue;
+    let pPr = getDirectChildren(pNode, 'w:pPr')[0];
+    if (!pPr) {
+      pPr = doc.createElementNS(W_NS, 'w:pPr');
+      pNode.insertBefore(pPr, pNode.firstChild);
+    }
+    let ind = getDirectChildren(pPr, 'w:ind')[0];
+    if (!ind) {
+      ind = doc.createElementNS(W_NS, 'w:ind');
+      pPr.appendChild(ind);
+    }
+    ind.setAttribute('w:firstLine', '567');
+  }
 
   // 8. Section VI. Thời gian, địa điểm chuyển giao
   // children[19]: "6.1. Thời gian: …………, ngày ….. tháng …. năm ……."
@@ -745,7 +782,17 @@ function normalizeMau2a() {
   });
   body.insertBefore(closeHoiThaoP, children[48]);
 
-  // 12. Section X. Quản lý rủi ro trong chuyển giao
+  // 12. Section X (hoặc IX nếu ẩn hội thảo). Quản lý rủi ro trong chuyển giao (Đánh số liên tục theo NĐ 30/2020/NĐ-CP)
+  for (const child of getDirectChildren(body, 'w:p')) {
+    const pText = getParagraphText(child).trim();
+    if (pText.startsWith('X. Quản lý rủi ro')) {
+      setParagraphRuns(doc, child, [{ text: '{so_la_ma_rui_ro}. Quản lý rủi ro trong chuyển giao', bold: true, sz: '26' }]);
+    } else if (pText.startsWith('10.1.')) {
+      setParagraphRuns(doc, child, [{ text: '{so_muc_rui_ro}.1. Xác định và đánh giá rủi ro', bold: true, sz: '26' }]);
+    } else if (pText.startsWith('10.2.')) {
+      setParagraphRuns(doc, child, [{ text: '{so_muc_rui_ro}.2. Biện pháp kiểm soát rủi ro', bold: true, sz: '26' }]);
+    }
+  }
   // 10.1 Xác định và đánh giá rủi ro (tables[8]): Keep TR[0] (header) and TR[1] (template loop row), remove TR[2..4]
   const tbl101Rows = getDirectChildren(tables[8], 'w:tr');
   ensureFlexibleRowPr(doc, tbl101Rows[0]);
@@ -783,7 +830,29 @@ function normalizeMau2a() {
     ['center', 'both', 'both', 'both', 'both', 'center', 'both']
   );
 
-  // Signature tables tables[10] (10 rows with 8 blank rows) and tables[11] (HIỆU TRƯỞNG) remain 100% intact!
+  // 13. Chuẩn hóa Bảng chữ ký tables[10] & Nơi nhận tables[11] theo Nghị định 30/2020/NĐ-CP
+  const sig2aRows = getDirectChildren(tables[10], 'w:tr');
+  if (sig2aRows[4]) {
+    const sig2aCells = getDirectChildren(sig2aRows[4], 'w:tc');
+    if (sig2aCells[0]) {
+      const p0 = getDirectChildren(sig2aCells[0], 'w:p')[0];
+      if (p0) setParagraphRuns(doc, p0, [{ text: '{truong_don_vi_nhan}', bold: true, sz: '26' }]);
+    }
+    if (sig2aCells[2]) {
+      const p2 = getDirectChildren(sig2aCells[2], 'w:p')[0];
+      if (p2) setParagraphRuns(doc, p2, [{ text: '{ho_ten}', bold: true, sz: '26' }]);
+    }
+  }
+  const receiv2aRows = getDirectChildren(tables[11], 'w:tr');
+  if (receiv2aRows[0]) {
+    const receiv2aCells = getDirectChildren(receiv2aRows[0], 'w:tc');
+    if (receiv2aCells[0]) {
+      const rPs = getDirectChildren(receiv2aCells[0], 'w:p');
+      if (rPs[0]) setParagraphRuns(doc, rPs[0], [{ text: 'Nơi nhận:', bold: true, italic: true, sz: '24' }]);
+      if (rPs[1]) setParagraphRuns(doc, rPs[1], [{ text: '- {noi_nhan_don_vi};', sz: '22' }], { clearPPrRPrItalic: true, clearPPrRPrColor: true });
+      if (rPs[4]) setParagraphRuns(doc, rPs[4], [{ text: '- Lưu: VT, KHCN.', sz: '22' }]);
+    }
+  }
   const serialized = new XMLSerializer().serializeToString(doc);
   zip.file('word/document.xml', serialized);
   return zip.generate({ type: 'nodebuffer', compression: 'DEFLATE' });
@@ -807,21 +876,30 @@ function main() {
     path.join(ROOT_DIR, 'docs/templates/mau_2a_chuan.docx'),
     path.join(ROOT_DIR, 'public/templates/mau_2a_chuan.docx'),
     path.join(ROOT_DIR, 'server/templates/mau_2a_chuan.docx'),
+    path.join(ROOT_DIR, 'CGCN_MSTruc/docs/templates/Mẫu 2a-KH.CGCN -Ke hoach CGCN - Trong trường.docx'),
   ];
 
   for (const t of targets1a) {
-    fs.mkdirSync(path.dirname(t), { recursive: true });
-    fs.writeFileSync(t, normalized1a);
-    console.log('[Step 2] Wrote normalized Mẫu 1a ->', path.relative(ROOT_DIR, t), `(${normalized1a.length} bytes)`);
+    try {
+      fs.mkdirSync(path.dirname(t), { recursive: true });
+      fs.writeFileSync(t, normalized1a);
+      console.log('[Step 2] Wrote normalized Mẫu 1a ->', path.relative(ROOT_DIR, t), `(${normalized1a.length} bytes)`);
+    } catch (err) {
+      console.warn('[Step 2] Skipped locked file:', path.relative(ROOT_DIR, t), err.code);
+    }
   }
 
   for (const t of targets2a) {
-    fs.mkdirSync(path.dirname(t), { recursive: true });
-    fs.writeFileSync(t, normalized2a);
-    console.log('[Step 2] Wrote normalized Mẫu 2a ->', path.relative(ROOT_DIR, t), `(${normalized2a.length} bytes)`);
+    try {
+      fs.mkdirSync(path.dirname(t), { recursive: true });
+      fs.writeFileSync(t, normalized2a);
+      console.log('[Step 2] Wrote normalized Mẫu 2a ->', path.relative(ROOT_DIR, t), `(${normalized2a.length} bytes)`);
+    } catch (err) {
+      console.warn('[Step 2] Skipped locked file:', path.relative(ROOT_DIR, t), err.code);
+    }
   }
-}
 
+}
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
   main();
 }

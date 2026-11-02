@@ -10,101 +10,120 @@ export interface StatusMeta {
 }
 
 export const STATUS_MAP: Record<string, StatusMeta> = {
-  NEW: {
-    label: 'Chờ Admin duyệt (Tiền kiểm)',
-    badgeClass: 'text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded text-xs font-semibold',
-    dotClass: 'bg-blue-600',
+  // 6 TRẠNG THÁI CỐT LÕI (TRUE FLOW + FALSE FLOW)
+  SUBMITTED: {
+    label: 'Đã gửi / Chờ duyệt',
+    badgeClass: 'text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full text-xs font-semibold',
+    dotClass: 'bg-blue-600 animate-pulse',
     stepIndex: 1,
-    description: 'Thầy/Cô đã nộp hồ sơ thành công, đang chờ Quản trị viên Phòng KH&CN tiền kiểm phê duyệt.',
+    description: 'Thầy/Cô đã nộp (hoặc nộp lại) hồ sơ qua Web Form, đang chờ Cô Admin kiểm tra và duyệt.',
   },
-  NEEDS_REVISION: {
-    label: 'Admin yêu cầu sửa đổi',
-    badgeClass: 'text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded text-xs font-semibold',
-    dotClass: 'bg-rose-600',
+  RETURNED_FOR_REVISION: {
+    label: 'Trả về sửa lỗi',
+    badgeClass: 'text-rose-700 bg-rose-50 border border-rose-300 px-2.5 py-0.5 rounded-full text-xs font-semibold',
+    dotClass: 'bg-rose-600 animate-pulse',
+    stepIndex: 1,
+    description: 'Cô Admin đã trả về hồ sơ kèm gợi ý chỗ sai cần sửa chữa. Thầy/Cô chỉnh sửa lại form và nhấn Nộp lại.',
+  },
+  VALIDATED: {
+    label: 'Đã hợp lệ',
+    badgeClass: 'text-sky-700 bg-sky-50 border border-sky-300 px-2.5 py-0.5 rounded-full text-xs font-semibold',
+    dotClass: 'bg-sky-600',
     stepIndex: 2,
-    description: 'Admin đã gửi yêu cầu chỉnh sửa kèm lý do. Thầy/Cô cần mở lại biểu mẫu để cập nhật và nộp lại.',
+    description: 'Hồ sơ đã được duyệt hợp lệ. Thầy/Cô tải file PDF chuẩn đi trình ký phòng ban và upload lại bản đã ký.',
   },
-  PRECHECK_PASSED: {
-    label: 'Admin đã duyệt hợp lệ',
-    badgeClass: 'text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded text-xs font-semibold',
-    dotClass: 'bg-indigo-600',
-    stepIndex: 3,
-    description: 'Admin đã phê duyệt thể thức. Thầy/Cô tải file PDF chuẩn để xin chữ ký Trưởng Khoa.',
-  },
-  FACULTY_SIGNED: {
-    label: 'Đã ký cấp Khoa & Nộp minh chứng',
-    badgeClass: 'text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-xs font-semibold',
+  PENDING_SIGNED_REVIEW: {
+    label: 'Chờ duyệt',
+    badgeClass: 'text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-0.5 rounded-full text-xs font-semibold',
     dotClass: 'bg-amber-600',
-    stepIndex: 4,
-    description: 'Cán bộ đã hoàn tất ký số cấp Khoa và tải lên file PDF đã ký kèm minh chứng liên quan.',
+    stepIndex: 3,
+    description: 'Thầy/Cô đã tải lên bản PDF có chữ ký phòng ban và minh chứng, đang chờ Admin kiểm tra.',
   },
-  SCHOOL_SIGNING: {
-    label: 'Đang trình ký cấp Trường',
-    badgeClass: 'text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded text-xs font-semibold',
+  WAITING_RECTOR_SIGNATURE: {
+    label: 'Chờ ký Hiệu trưởng',
+    badgeClass: 'text-purple-700 bg-purple-50 border border-purple-300 px-2.5 py-0.5 rounded-full text-xs font-semibold',
     dotClass: 'bg-purple-600',
     stepIndex: 4,
-    description: 'Admin đang điều phối luồng ký số nội bộ: Trưởng phòng KH&CN -> Phòng KHTC -> Hiệu trưởng.',
+    description: 'Admin đã kiểm tra bản ký phòng ban và chuyển hồ sơ sang trình Hiệu trưởng ký duyệt.',
   },
-  COMPLETED: {
-    label: 'Đã ban hành QĐ & Hoàn tất',
-    badgeClass: 'text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded text-xs font-semibold',
+  SIGNED_ARCHIVED: {
+    label: 'Đã ký và lưu trữ',
+    badgeClass: 'text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-full text-xs font-semibold',
     dotClass: 'bg-emerald-600',
     stepIndex: 5,
-    description: 'Hiệu trưởng đã ký duyệt và ban hành Quyết định CGCN chính thức. Đã lưu trữ Google Drive.',
+    description: 'Hiệu trưởng đã ký duyệt chính thức. Hồ sơ đã được khóa lưu trữ và gửi file PDF hoàn tất.',
   },
-  // Legacy aliases
+
+  // Aliases tương thích ngược
+  NEW: {
+    label: 'Đã gửi / Chờ duyệt',
+    badgeClass: 'text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full text-xs font-semibold',
+    dotClass: 'bg-blue-600',
+    stepIndex: 1,
+    description: 'Đã gửi / Chờ duyệt.',
+  },
+  NEEDS_REVISION: {
+    label: 'Trả về sửa lỗi',
+    badgeClass: 'text-rose-700 bg-rose-50 border border-rose-300 px-2.5 py-0.5 rounded-full text-xs font-semibold',
+    dotClass: 'bg-rose-600',
+    stepIndex: 1,
+    description: 'Trả về sửa lỗi theo gợi ý của Admin.',
+  },
+  PRECHECK_PASSED: {
+    label: 'Đã hợp lệ',
+    badgeClass: 'text-sky-700 bg-sky-50 border border-sky-300 px-2.5 py-0.5 rounded-full text-xs font-semibold',
+    dotClass: 'bg-sky-600',
+    stepIndex: 2,
+    description: 'Hồ sơ đã được duyệt hợp lệ.',
+  },
+  WAITING_FOR_SUBMISSION: {
+    label: 'Chờ duyệt',
+    badgeClass: 'text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-0.5 rounded-full text-xs font-semibold',
+    dotClass: 'bg-amber-600',
+    stepIndex: 3,
+    description: 'Đã upload bản ký phòng ban, chờ Admin duyệt.',
+  },
+  FACULTY_SIGNED: {
+    label: 'Chờ duyệt',
+    badgeClass: 'text-amber-800 bg-amber-50 border border-amber-300 px-2.5 py-0.5 rounded-full text-xs font-semibold',
+    dotClass: 'bg-amber-600',
+    stepIndex: 3,
+    description: 'Đã upload bản ký phòng ban.',
+  },
+  SCHOOL_SIGNING: {
+    label: 'Chờ ký Hiệu trưởng',
+    badgeClass: 'text-purple-700 bg-purple-50 border border-purple-300 px-2.5 py-0.5 rounded-full text-xs font-semibold',
+    dotClass: 'bg-purple-600',
+    stepIndex: 4,
+    description: 'Đang chờ ký Hiệu trưởng.',
+  },
+  SIGNED: {
+    label: 'Đã ký và lưu trữ',
+    badgeClass: 'text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-full text-xs font-semibold',
+    dotClass: 'bg-emerald-600',
+    stepIndex: 5,
+    description: 'Đã ký và lưu trữ.',
+  },
+  COMPLETED: {
+    label: 'Đã ký và lưu trữ',
+    badgeClass: 'text-emerald-800 bg-emerald-50 border border-emerald-300 px-2.5 py-0.5 rounded-full text-xs font-semibold',
+    dotClass: 'bg-emerald-600',
+    stepIndex: 5,
+    description: 'Đã ký và lưu trữ.',
+  },
   DRAFT: {
     label: 'Bản nháp',
-    badgeClass: 'text-gray-600 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded text-xs font-semibold',
+    badgeClass: 'text-gray-600 bg-gray-100 border border-gray-200 px-2.5 py-0.5 rounded-full text-xs font-semibold',
     dotClass: 'bg-gray-400',
     stepIndex: 1,
     description: 'Hồ sơ đang soạn thảo.',
   },
-  SUBMITTED: {
-    label: 'Mới nộp (Chờ tiền kiểm)',
-    badgeClass: 'text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded text-xs font-semibold',
-    dotClass: 'bg-blue-600',
-    stepIndex: 1,
-    description: 'Hồ sơ đang chờ tiền kiểm.',
-  },
-  RETURNED: {
-    label: 'Yêu cầu bổ sung',
-    badgeClass: 'text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded text-xs font-semibold',
-    dotClass: 'bg-rose-600',
-    stepIndex: 2,
-    description: 'Hồ sơ cần sửa đổi theo nhận xét.',
-  },
-  APPROVED: {
-    label: 'Đã duyệt thể thức',
-    badgeClass: 'text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded text-xs font-semibold',
-    dotClass: 'bg-indigo-600',
-    stepIndex: 3,
-    description: 'Đã duyệt hợp lệ thể thức.',
-  },
-  USER_SIGNED: {
-    label: 'Đã ký cấp Khoa',
-    badgeClass: 'text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-xs font-semibold',
-    dotClass: 'bg-amber-600',
-    stepIndex: 4,
-    description: 'Đã ký số cấp Khoa.',
-  },
-  SECRETARY_RECEIVED: {
-    label: 'Đang trình ký cấp Trường',
-    badgeClass: 'text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded text-xs font-semibold',
-    dotClass: 'bg-purple-600',
-    stepIndex: 4,
-    description: 'Đang trình ký cấp Trường.',
-  },
-  CANCELLED: {
-    label: 'Đã hủy',
-    badgeClass: 'text-gray-500 bg-gray-100 border border-gray-300 px-2 py-0.5 rounded text-xs font-semibold',
-    dotClass: 'bg-gray-400',
-    stepIndex: 0,
-    description: 'Hồ sơ đã bị hủy bỏ.',
-  },
 };
 
-export function getStatusMeta(status: string): StatusMeta {
-  const normalized = normalizeStatus(status);
-  return STATUS_MAP[normalized] || STATUS_MAP.DRAFT;
+export function getStatusMeta(status: DossierStatus | string): StatusMeta {
+  if (!status) return STATUS_MAP.SUBMITTED;
+  const upper = status.toUpperCase();
+  if (STATUS_MAP[upper]) return STATUS_MAP[upper];
+  const norm = normalizeStatus(status);
+  return STATUS_MAP[norm] || STATUS_MAP.SUBMITTED;
 }

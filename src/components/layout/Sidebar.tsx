@@ -5,10 +5,7 @@ import {
   FilePlus,
   FolderOpen,
   ClipboardCheck,
-  TableProperties,
   LogOut,
-  FileSignature,
-  Users,
   X,
 } from 'lucide-react';
 import { ActiveNavTab, User } from '../../types';
@@ -66,52 +63,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
       ],
     },
-    // --- Mục Hồ sơ cá nhân (Dành cho Cán bộ & Admin đều có thể tạo/xem hồ sơ) ---
-    ...([
-          {
-            title: 'Cán bộ / Giảng viên (Thầy / Cô)',
-            items: [
-              {
-                id: 'create_dossier' as ActiveNavTab,
-                label: 'Tạo hồ sơ CGCN',
-                icon: FilePlus,
-              },
-              {
-                id: 'my_dossiers' as ActiveNavTab,
-                label: 'Hồ sơ của tôi',
-                icon: FolderOpen,
-                badge: myDossierCount > 0 ? myDossierCount : undefined,
-              },
-            ],
-          },
-        ]),
-    // --- Mục chỉ dành cho Admin ---
+    {
+      title: 'Cán bộ / Giảng viên (Thầy / Cô)',
+      items: [
+        {
+          id: 'create_dossier',
+          label: 'Tạo hồ sơ CGCN',
+          icon: FilePlus,
+        },
+        {
+          id: 'my_dossiers',
+          label: 'Hồ sơ của tôi',
+          icon: FolderOpen,
+          badge: myDossierCount > 0 ? myDossierCount : undefined,
+        },
+      ],
+    },
     ...(isAdmin
       ? [
           {
-            title: 'Phòng KH&CN / Thẩm định (Admin)',
+            title: 'Phòng KH&CN / Quản trị (Admin)',
             items: [
               {
                 id: 'pending_approval' as ActiveNavTab,
-                label: 'Tiền kiểm hồ sơ (Admin)',
+                label: 'Xét duyệt & Trình ký (Admin)',
                 icon: ClipboardCheck,
                 badge: pendingCount > 0 ? pendingCount : undefined,
                 badgeColor: 'bg-rose-100 text-rose-800 border border-rose-300 font-semibold',
-              },
-              {
-                id: 'secretary_queue' as ActiveNavTab,
-                label: 'Trình ký & Ban hành QĐ',
-                icon: FileSignature,
-              },
-              {
-                id: 'history_sheets' as ActiveNavTab,
-                label: 'Audit Trail & Báo cáo BGH',
-                icon: TableProperties,
-              },
-              {
-                id: 'users' as ActiveNavTab,
-                label: 'Quản lý & Phân quyền User',
-                icon: Users,
               },
             ],
           },
@@ -126,7 +104,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {/* Mobile Backdrop */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-xs lg:hidden"
@@ -134,16 +111,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
       )}
 
-      {/* Sidebar Container - Light Blue Palette */}
       <aside
         className={`fixed top-0 bottom-0 left-0 z-50 w-64 bg-[#edf4fc] text-slate-700 flex flex-col border-r border-blue-200/80 shadow-xs transition-transform duration-200 ease-in-out lg:translate-x-0 ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        {/* Header: MENU */}
         <div className="pt-6 pb-2.5 px-5 flex items-center justify-between shrink-0">
           <span className="font-bold text-sm tracking-widest uppercase text-blue-950">
-            MENU
+            MENU HỆ THỐNG
           </span>
           {mobileOpen && (
             <button
@@ -157,7 +132,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* Navigation items */}
         <div className="flex-1 overflow-y-auto px-3.5 py-4 space-y-4">
           {navSections.map((sec, secIdx) => (
             <div key={secIdx} className="space-y-1">
@@ -196,8 +170,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           item.badgeColor
                             ? item.badgeColor
                             : isActive
-                            ? 'bg-blue-700 text-white'
-                            : 'bg-blue-100 text-blue-800 border border-blue-200'
+                              ? 'bg-blue-700 text-white'
+                              : 'bg-blue-100 text-blue-800 border border-blue-200'
                         }`}
                       >
                         {item.badge}
@@ -210,7 +184,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ))}
         </div>
 
-        {/* Footer with Logout */}
         <div className="p-3.5">
           {onSignOut && (
             <button

@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { Download, Printer, ZoomIn, ZoomOut, FileText, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { Dossier, WordTemplate } from '../../types';
-import { generateAndDownloadDocx } from '../../utils/docxExport';
+import { generateAndDownloadDocx, formatAuthorsGroupText } from '../../utils/docxExport';
+import { generateAndDownloadPdf } from '../../utils/pdfExport';
 import { normalizeNFC } from '../../utils/textUtils';
+import { isMau2aTemplateOrDossier, getEffectiveTemplate } from '../../utils/templateUtils';
+import { getAbbrFromDepartment } from '../common/DocumentNumberInput';
 
 interface WordDocumentPreviewProps {
   dossier: Dossier;
@@ -29,36 +32,51 @@ const VNDocHeader: React.FC<{
 }> = ({ docNumber, unitLabel, dateStr, isMinistry = true }) => {
   const { day, month, year } = parseDate(dateStr);
   return (
-    <div className="grid grid-cols-12 gap-2 items-start mb-6 text-center leading-tight">
-      {/* Cột trái: Tên cơ quan ban hành */}
+    <div className="grid grid-cols-12 gap-2 items-start mb-6 text-center leading-snug text-black">
+      {/* Cột trái: Tên cơ quan chủ quản & cơ quan ban hành theo Phụ lục I Nghị định 30/2020/NĐ-CP */}
       <div className="col-span-5 flex flex-col items-center">
-        {isMinistry && (
-          <div className="text-[12px] font-normal uppercase whitespace-nowrap">
-            BỘ Y TẾ
-          </div>
+        {isMinistry ? (
+          <>
+            <div className="text-[12px] font-normal uppercase whitespace-nowrap">
+              BỘ Y TẾ
+            </div>
+            <div className="inline-flex flex-col items-center">
+              <div className="text-[12px] font-bold uppercase whitespace-nowrap">
+                TRƯỜNG ĐẠI HỌC Y DƯỢC CẦN THƠ
+              </div>
+              <div className="w-2/5 h-[1px] bg-black mt-0.5 mb-1.5" />
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="text-[12px] font-normal uppercase whitespace-nowrap">
+              TRƯỜNG ĐẠI HỌC Y DƯỢC CẦN THƠ
+            </div>
+            <div className="inline-flex flex-col items-center">
+              <div className="text-[12px] font-bold uppercase whitespace-nowrap">
+                {normalizeNFC(unitLabel || 'KHOA / ĐƠN VỊ')}
+              </div>
+              <div className="w-2/5 h-[1px] bg-black mt-0.5 mb-1.5" />
+            </div>
+          </>
         )}
-        <div className="text-[12px] font-bold uppercase whitespace-nowrap">
-          TRƯỜNG ĐẠI HỌC Y DƯỢC CẦN THƠ
-        </div>
-        <div className="text-[11.5px] font-bold uppercase text-gray-800 whitespace-nowrap">
-          {normalizeNFC(unitLabel || 'KHOA / ĐƠN VỊ')}
-        </div>
-        <div className="w-28 h-[1px] bg-black my-1" />
-        <div className="text-[11.5px] text-gray-800 whitespace-nowrap">
+        <div className="text-[12.5px] text-black whitespace-nowrap">
           Số: {normalizeNFC(docNumber || '....... /TTr-ĐV')}
         </div>
       </div>
 
-      {/* Cột phải: Quốc hiệu & Tiêu ngữ */}
+      {/* Cột phải: Quốc hiệu, Tiêu ngữ & Địa danh ngày tháng theo Nghị định 30/2020/NĐ-CP */}
       <div className="col-span-7 flex flex-col items-center">
         <div className="text-[12px] font-bold uppercase tracking-tight whitespace-nowrap">
           CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
         </div>
-        <div className="text-[12.5px] font-bold whitespace-nowrap">
-          Độc lập – Tự do – Hạnh phúc
+        <div className="inline-flex flex-col items-center">
+          <div className="text-[13.5px] font-bold whitespace-nowrap">
+            Độc lập – Tự do – Hạnh phúc
+          </div>
+          <div className="w-full h-[1px] bg-black mt-0.5 mb-1.5" />
         </div>
-        <div className="w-36 h-[1px] bg-black my-1" />
-        <div className="text-[11.5px] italic text-gray-700 whitespace-nowrap">
+        <div className="text-[13px] italic text-black whitespace-nowrap">
           Cần Thơ, ngày {day} tháng {month} năm {year}
         </div>
       </div>
@@ -154,7 +172,7 @@ const Mau1aTTCGCN: React.FC<{ dossier: Dossier }> = ({ dossier: rawDossier }) =>
   return (
     <div className="font-document leading-normal text-black text-[13.5px]">
       <VNDocHeader
-        docNumber={d.proposal_number || dossier.code}
+        docNumber={`      /TTr-${getAbbrFromDepartment(d.department || dossier.createdBy?.department)}`}
         unitLabel={d.department || dossier.createdBy.department || 'KHOA / ĐƠN VỊ'}
         dateStr={dossier.createdAt}
         isMinistry={false}
@@ -296,11 +314,11 @@ const Mau1aTTCGCN: React.FC<{ dossier: Dossier }> = ({ dossier: rawDossier }) =>
 
         <div className="flex justify-between items-start mt-8 pt-4">
           <div className="text-[12px] text-gray-700 leading-snug">
-            <div className="font-bold">Nơi nhận:</div>
-            <div>- Như kính gửi;</div>
-            <div>- TCKT;</div>
-            <div>- TTDV&ĐTTNCXH;</div>
-            <div>- Lưu VT, KHCN.</div>
+            <div className="font-bold italic text-[12px]">Nơi nhận:</div>
+            <div className="text-[11px]">- Như kính gửi ({getAbbrFromDepartment(d.department || dossier.createdBy?.department)});</div>
+            <div className="text-[11px]">- TCKT;</div>
+            <div className="text-[11px]">- TTDV&amp;ĐTTNCXH;</div>
+            <div className="text-[11px]">- Lưu: VT, KHCN.</div>
           </div>
           <div className="text-center pr-12">
             <div className="font-bold uppercase text-[13px]">HIỆU TRƯỞNG</div>
@@ -317,39 +335,181 @@ const Mau1aTTCGCN: React.FC<{ dossier: Dossier }> = ({ dossier: rawDossier }) =>
 const Mau2aKHCGCN: React.FC<{ dossier: Dossier }> = ({ dossier: rawDossier }) => {
   const dossier = normalizeNFC(rawDossier);
   const d = dossier.formData || {};
-  const approved = ['APPROVED', 'USER_SIGNED', 'SECRETARY_RECEIVED', 'COMPLETED'].includes(dossier.status);
-  const forSig = ['USER_SIGNED', 'SECRETARY_RECEIVED', 'COMPLETED'].includes(dossier.status);
-  const dt = d.transfer_date ? new Date(d.transfer_date) : null;
+  const approved = ['APPROVED', 'VALIDATED', 'USER_SIGNED', 'PENDING_SIGNED_REVIEW', 'WAITING_RECTOR_SIGNATURE', 'SECRETARY_RECEIVED', 'COMPLETED', 'SIGNED', 'SIGNED_ARCHIVED'].includes(dossier.status);
+  const forSig = ['USER_SIGNED', 'PENDING_SIGNED_REVIEW', 'WAITING_RECTOR_SIGNATURE', 'SECRETARY_RECEIVED', 'COMPLETED', 'SIGNED', 'SIGNED_ARCHIVED'].includes(dossier.status);
+  const unitAbbr = getAbbrFromDepartment(d.department || dossier.createdBy?.department);
+
+  // Xử lý 6.1 Thời gian chuyển giao an toàn (không bị NaN khi chuỗi là khoảng thời gian)
+  const rawTime = d.transfer_date || d.transfer_time || d.thoi_gian || '';
+  const isIsoDate = /^\d{4}-\d{2}-\d{2}$/.test(String(rawTime).trim());
+  const formattedTime = isIsoDate
+    ? (() => {
+        const dt = new Date(rawTime);
+        const dd = String(dt.getDate()).padStart(2, '0');
+        const mm = String(dt.getMonth() + 1).padStart(2, '0');
+        const yyyy = dt.getFullYear();
+        return `Ngày ${dd} tháng ${mm} năm ${yyyy}`;
+      })()
+    : String(rawTime).trim() || 'Từ tháng 10/2026 đến tháng 12/2026';
+
+  // Tách danh sách nhân sự thành các dòng rõ ràng cho 8.1, 8.2, 8.3
+  const parseLines = (val: any, fallback: string[]): string[] => {
+    if (!val) return fallback;
+    if (Array.isArray(val)) return val.map(String).filter(Boolean);
+    const lines = String(val)
+      .split(/[\n;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return lines.length > 0 ? lines : fallback;
+  };
+
+  const steeringList = parseLines(d.steering_committee || d.ban_chi_dao, [
+    '1. Đại diện Ban Giám Hiệu - Trưởng ban',
+    '2. Trưởng Phòng KH&CN - Phó Trưởng ban',
+  ]);
+  const orgList = parseLines(d.organizing_committee || d.ban_to_chuc, [
+    '1. Trưởng Khoa / Đơn vị - Trưởng ban',
+    '2. Đại diện Bên nhận chuyển giao - Đồng Trưởng ban',
+  ]);
+  const staffList = parseLines(d.implementing_staff || d.nhan_su, [
+    '1. Chủ nhiệm đề tài - Phụ trách chung',
+    '2. Nhóm tác giả và chuyên viên kỹ thuật - Thực hiện chuyển giao',
+  ]);
+
+  // Kiểm tra có tổ chức hội thảo chuyển giao (Mục IX) không
+  const hasWorkshop =
+    d.co_hoi_thao !== undefined
+      ? Boolean(d.co_hoi_thao && d.co_hoi_thao !== 'Không tổ chức hội thảo (ẩn Mục IX)')
+      : d.has_workshop !== undefined
+        ? Boolean(d.has_workshop)
+        : Boolean(d.workshop_chair || d.workshop_speaker || d.workshop_program || d.workshop_budget);
+
+  const chairList = parseLines(d.workshop_chair || d.chu_toa, [
+    '1. Đại diện Ban Giám Hiệu - Chủ tọa',
+    '2. Đại diện Ban Chủ nhiệm Khoa - Đồng Chủ tọa',
+  ]);
+  const speakerList = parseLines(d.workshop_speaker || d.bao_cao_vien, [
+    '1. Chủ nhiệm đề tài - Báo cáo viên chính',
+    '2. Thành viên nhóm nghiên cứu - Báo cáo viên lâm sàng',
+  ]);
+
+  const toTwoColPairs = (lines: string[]) =>
+    lines.map((line, idx) => {
+      const stt = idx + 1;
+      const clean = line.replace(/^\d+\.\s*/, '').trim();
+      const match = clean.match(/^(.*?)(?:\s+[-–|]\s+|\s*:\s+)(.+)$/);
+      if (match) {
+        return { col1: `${stt}. ${match[1].trim()}`, col2: match[2].trim() };
+      }
+      let role = '';
+      if (/Ban Giám Hiệu/i.test(clean)) role = 'Chủ tọa';
+      else if (/Ban Chủ nhiệm Khoa|Trưởng Khoa|Lãnh đạo Khoa/i.test(clean)) role = 'Đồng Chủ tọa';
+      else if (/Chủ nhiệm đề tài/i.test(clean)) role = 'Báo cáo viên chính';
+      else if (/Báo cáo viên/i.test(clean)) role = 'Báo cáo viên';
+      return { col1: `${stt}. ${clean}`, col2: role };
+    });
+
+  const parseOneScheduleRow = (rawItem: any) => {
+    if (rawItem && typeof rawItem === 'object') {
+      const tg = String(rawItem.thoi_gian || rawItem.time || '').trim();
+      const nd = String(rawItem.noi_dung || rawItem.content || '').trim();
+      const tp = String(rawItem.thanh_phan || rawItem.attendees || '').trim();
+      if (tg) return { thoi_gian: tg, noi_dung: nd, thanh_phan: tp || 'Ban Tổ chức và đại biểu' };
+      return parseOneScheduleRow(nd);
+    }
+    const line = String(rawItem || '').trim();
+    if (line.includes('|')) {
+      const parts = line.split('|').map((s) => s.trim());
+      return { thoi_gian: parts[0] || '', noi_dung: parts[1] || '', thanh_phan: parts[2] || 'Toàn thể đại biểu' };
+    }
+    const colonIdx = line.indexOf(':');
+    if (colonIdx > 0 && colonIdx <= 25) {
+      return {
+        thoi_gian: line.slice(0, colonIdx).trim(),
+        noi_dung: line.slice(colonIdx + 1).trim(),
+        thanh_phan: 'Ban Tổ chức và đại biểu',
+      };
+    }
+    return { thoi_gian: 'Theo chương trình', noi_dung: line, thanh_phan: 'Ban Tổ chức và đại biểu' };
+  };
+
+  const scheduleRows = (() => {
+    if (Array.isArray(d.ds_chuong_trinh_hoi_thao) && d.ds_chuong_trinh_hoi_thao.length > 0) {
+      return d.ds_chuong_trinh_hoi_thao.map(parseOneScheduleRow);
+    }
+    const lines = parseLines(d.workshop_program, [
+      '08h00 - 08h30 | Đón tiếp đại biểu, tuyên bố lý do, khai mạc | Ban Tổ chức và đại biểu',
+      '08h30 - 10h00 | Báo cáo chuyên đề và hướng dẫn quy trình kỹ thuật | Nhóm tác giả đề tài',
+      '10h00 - 11h00 | Thảo luận, thực hành và ký biên bản bàn giao | Toàn thể đại biểu',
+    ]);
+    return lines.map(parseOneScheduleRow);
+  })();
+
+  const parseOneTaskRow = (rawItem: any, idx: number) => {
+    if (rawItem && typeof rawItem === 'object') {
+      const nd = String(rawItem.noi_dung || rawItem.task || '').trim();
+      const pt = String(rawItem.phu_trach || rawItem.person || '').trim();
+      if (pt) return { stt: idx + 1, noi_dung: nd.replace(/^\d+\.\s*/, ''), phu_trach: pt };
+      return parseOneTaskRow(nd, idx);
+    }
+    const line = String(rawItem || '').replace(/^\d+\.\s*/, '').trim();
+    if (line.includes('|')) {
+      const parts = line.split('|').map((s) => s.trim());
+      return { stt: idx + 1, noi_dung: parts[0] || '', phu_trach: parts[1] || 'Ban Tổ chức' };
+    }
+    const dashMatch = line.match(/^(.*?)\s+[-–]\s+(.+)$/);
+    if (dashMatch) {
+      return { stt: idx + 1, noi_dung: dashMatch[1].trim(), phu_trach: dashMatch[2].trim() };
+    }
+    return { stt: idx + 1, noi_dung: line, phu_trach: 'Nhóm tác giả & Ban Tổ chức' };
+  };
+
+  const taskRows = (() => {
+    if (Array.isArray(d.ds_phan_cong_hoi_thao) && d.ds_phan_cong_hoi_thao.length > 0) {
+      return d.ds_phan_cong_hoi_thao.map((item: any, idx: number) => parseOneTaskRow(item, idx));
+    }
+    const lines = parseLines(d.workshop_assignments, [
+      'Chuẩn bị nội dung báo cáo và bộ tài liệu hướng dẫn kỹ thuật | Nhóm tác giả đề tài',
+      'Công tác hậu cần, hội trường và danh sách đại biểu | Đơn vị tiếp nhận & Ban Tổ chức',
+    ]);
+    return lines.map((line, idx) => parseOneTaskRow(line, idx));
+  })();
+
+  const riskRoman = hasWorkshop ? 'X' : 'IX';
+  const riskSubPrefix = hasWorkshop ? '10' : '9';
 
   return (
-    <div className="font-document leading-normal text-black text-[13.5px]">
+    <div className="font-document leading-relaxed text-black text-[13.5px]">
       <VNDocHeader
-        docNumber={d.plan_code || dossier.code}
-        unitLabel={d.department || dossier.createdBy.department || 'Khoa/Đơn vị'}
+        docNumber={`           /KH-${unitAbbr}`}
+        unitLabel={d.department || dossier.createdBy?.department || 'Khoa/Đơn vị'}
         dateStr={dossier.createdAt}
         isMinistry={true}
       />
 
       <div className="text-center my-5">
-        <div className="font-bold text-[15px] uppercase tracking-wide">KẾ HOẠCH</div>
-        <div className="text-[14px] font-semibold mt-1">Về việc tổ chức chuyển giao công nghệ</div>
-        <div className="text-[14px] font-bold mt-1 text-sky-950">
-          “{d.product_name || 'Tên sản phẩm chuyển giao'}”
+        <div className="font-bold text-[15px] uppercase tracking-wide text-black">KẾ HOẠCH</div>
+        <div className="text-[14px] font-bold mt-1 text-black">Về việc tổ chức chuyển giao công nghệ</div>
+        <div className="inline-flex flex-col items-center">
+          <div className="text-[14px] font-bold mt-0.5 text-black">
+            “{d.product_name || 'Tên sản phẩm chuyển giao'}”
+          </div>
+          <div className="w-28 h-[1px] bg-black mt-1.5" />
         </div>
       </div>
 
-      <SH mt={18}>I. Mục đích</SH>
+      <SH mt={16}>I. Mục đích</SH>
       {d.purpose ? (
         <TextBlock value={d.purpose} />
       ) : (
-        <>
-          <CP hint="giới thiệu đôi nét về SPCGCN" />
-          <CP hint="giới thiệu mục đích của chuyển giao" />
-        </>
+        <CP hint="Giới thiệu đôi nét về sản phẩm chuyển giao công nghệ và mục đích của việc tổ chức chuyển giao" />
       )}
 
       <SH>II. Nhóm tác giả của sản phẩm chuyển giao</SH>
-      <TextBlock value={d.authors_group} hint="Liệt kê danh sách họ tên, học hàm học vị các tác giả..." />
+      <TextBlock
+        value={formatAuthorsGroupText(d.ds_nhom_tac_gia ?? d.authors_group ?? d.nhom_tac_gia)}
+        hint="1. Họ và tên – Chức vụ/Đơn vị – Vai trò thực hiện;"
+      />
 
       <SH>III. Loại hình sản phẩm chuyển giao công nghệ</SH>
       <CP
@@ -364,82 +524,251 @@ const Mau2aKHCGCN: React.FC<{ dossier: Dossier }> = ({ dossier: rawDossier }) =>
       />
 
       <SH>V. Bên nhận chuyển giao</SH>
-      <CP
-        hint="Các bộ môn lâm sàng & Bệnh viện Trường ĐH Y Dược Cần Thơ..."
-        value={d.receiving_party}
-      />
+      <div className="text-[13.5px] mb-2 text-black text-justify indent-7">
+        {d.receiving_party ||
+          'Bệnh viện Trường Đại học Y Dược Cần Thơ (đầu mối: Phòng Kế hoạch tổng hợp) – theo Phiếu đề xuất nhu cầu tiếp nhận chuyển giao công nghệ; người đại diện BS.CKII. Lại Văn Nông.'}
+      </div>
 
       <SH>VI. Thời gian, địa điểm chuyển giao</SH>
-      <div className="text-[13.5px] mb-1.5 flex items-baseline gap-1">
-        <span className="font-semibold">6.1. Thời gian:</span>
-        <span>ngày </span>
-        <span className="border-b border-gray-500 inline-block min-w-[28px] text-center font-medium">
-          {dt ? dt.getDate() : '.....'}
-        </span>
-        <span> tháng </span>
-        <span className="border-b border-gray-500 inline-block min-w-[28px] text-center font-medium">
-          {dt ? dt.getMonth() + 1 : '.....'}
-        </span>
-        <span> năm </span>
-        <span className="border-b border-gray-500 inline-block min-w-[40px] text-center font-medium">
-          {dt ? dt.getFullYear() : '20...'}
+      <div className="text-[13.5px] mb-1 text-black text-justify">
+        <span className="font-bold">6.1. Thời gian: </span>
+        <span>{formattedTime}</span>
+      </div>
+      <div className="text-[13.5px] mb-2 text-black text-justify">
+        <span className="font-bold">6.2. Địa điểm: </span>
+        <span>
+          {d.transfer_location ||
+            'Hội trường Trung tâm, Trường Đại học Y Dược Cần Thơ, số 179 đường Nguyễn Văn Cừ, phường An Khánh, quận Ninh Kiều, thành phố Cần Thơ.'}
         </span>
       </div>
-      <IL label="6.2. Địa điểm" value={d.transfer_location} />
 
-      <SH>VII. Chi phí chuyển giao (nếu có tùy theo thỏa thuận)</SH>
-      <div className="text-[13.5px] mb-2 text-gray-800">
-        {d.transfer_cost !== undefined && d.transfer_cost !== null ? (
-          Number(d.transfer_cost) === 0 ? (
-            'Không thu phí (sử dụng kinh phí hoạt động của Nhà trường).'
+      <SH>VII. Chi phí chuyển giao</SH>
+      <div className="text-[13.5px] mb-2 text-black text-justify indent-7">
+        {d.transfer_cost !== undefined && d.transfer_cost !== null && String(d.transfer_cost).trim() !== '' ? (
+          /^(0|không thu phí)/i.test(String(d.transfer_cost).trim()) ? (
+            "Không thu phí chuyển giao. Chi phí phát sinh (nếu có) thực hiện theo quy chế chi tiêu nội bộ của Trường."
+          ) : /^\d+$/.test(String(d.transfer_cost).trim()) ? (
+            `${Number(d.transfer_cost).toLocaleString('vi-VN')} đồng. Chi phí phát sinh (nếu có) thực hiện theo quy chế chi tiêu nội bộ của Trường.`
           ) : (
-            `${Number(d.transfer_cost).toLocaleString('vi-VN')} VNĐ`
+            String(d.transfer_cost)
           )
         ) : (
-          <span className="italic text-gray-400">(Ghi rõ chi phí hoặc nêu căn cứ thỏa thuận hợp đồng)</span>
+          "Không thu phí chuyển giao. Chi phí phát sinh (nếu có) thực hiện theo quy chế chi tiêu nội bộ của Trường."
         )}
       </div>
 
       <SH>VIII. Ban chỉ đạo – tổ chức chuyển giao</SH>
-      <TextBlock
-        value={d.steering_committee}
-        hint="8.1 Ban chỉ đạo: BGH; 8.2 Ban tổ chức: Trưởng khoa, Phòng KHCN; 8.3 Nhân sự thực hiện: Nhóm tác giả..."
-      />
-
-      <SH>IX. Hội thảo chuyển giao (nếu có tổ chức HT chuyển giao thì ghi, nếu không bỏ phần IX này)</SH>
-      {d.workshop_program ? (
-        <TextBlock value={d.workshop_program} />
-      ) : (
-        <div className="space-y-1.5 text-[13px] text-gray-600 pl-2">
-          <div><span className="font-semibold">9.1. Chủ tọa:</span> 1. BGH; 2. Đại diện Ban chủ nhiệm khoa</div>
-          <div><span className="font-semibold">9.2. Báo cáo viên:</span> 1. Chủ nhiệm đề tài; 2. Nhóm tác giả</div>
-          <div><span className="font-semibold">9.3. Chương trình chi tiết:</span> Khai mạc, Báo cáo kỹ thuật, Thảo luận, Bế mạc</div>
-          <div><span className="font-semibold">9.4. Phân công nhiệm vụ:</span> Đơn vị chủ trì và các bên phối hợp</div>
-          <div><span className="font-semibold">9.5. Dự trù kinh phí hội thảo:</span> Theo quy chế chi tiêu nội bộ</div>
+      <div className="space-y-2 text-[13.5px] text-black mb-2">
+        <div>
+          <div className="font-bold">8.1. Ban chỉ đạo</div>
+          <div className="space-y-1 pl-2 mt-0.5">
+            {toTwoColPairs(steeringList).map((row, i) => (
+              <div key={i} className="grid grid-cols-2 gap-x-4">
+                <div>{row.col1}</div>
+                <div>{row.col2}</div>
+              </div>
+            ))}
+          </div>
         </div>
+        <div>
+          <div className="font-bold">8.2. Ban tổ chức</div>
+          <div className="space-y-1 pl-2 mt-0.5">
+            {toTwoColPairs(orgList).map((row, i) => (
+              <div key={i} className="grid grid-cols-2 gap-x-4">
+                <div>{row.col1}</div>
+                <div>{row.col2}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="font-bold">8.3. Nhân sự thực hiện</div>
+          <div className="space-y-1 pl-2 mt-0.5">
+            {toTwoColPairs(staffList).map((row, i) => (
+              <div key={i} className="grid grid-cols-2 gap-x-4">
+                <div>{row.col1}</div>
+                <div>{row.col2}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {hasWorkshop && (
+        <>
+          <SH>IX. Hội thảo chuyển giao</SH>
+          <div className="space-y-2.5 text-[13.5px] text-black mb-2">
+            <div>
+              <div className="font-bold">9.1. Chủ tọa</div>
+              <div className="space-y-1 pl-2 mt-0.5">
+                {toTwoColPairs(chairList).map((row, i) => (
+                  <div key={i} className="grid grid-cols-2 gap-x-4">
+                    <div>{row.col1}</div>
+                    <div>{row.col2}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="font-bold">9.2. Báo cáo viên</div>
+              <div className="space-y-1 pl-2 mt-0.5">
+                {toTwoColPairs(speakerList).map((row, i) => (
+                  <div key={i} className="grid grid-cols-2 gap-x-4">
+                    <div>{row.col1}</div>
+                    <div>{row.col2}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="font-bold mb-1">9.3. Chương trình chi tiết của hội thảo</div>
+              <table className="w-full border-collapse border border-black text-[12.5px] my-1">
+                <thead>
+                  <tr className="bg-slate-50 font-bold text-center">
+                    <th className="border border-black p-1.5 w-32">Thời gian</th>
+                    <th className="border border-black p-1.5">Nội dung</th>
+                    <th className="border border-black p-1.5 w-40">Thành phần</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scheduleRows.map((r: any, idx: number) => (
+                    <tr key={idx}>
+                      <td className="border border-black p-1.5 text-center">{r.thoi_gian}</td>
+                      <td className="border border-black p-1.5 text-left">{r.noi_dung}</td>
+                      <td className="border border-black p-1.5 text-center">{r.thanh_phan}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <div className="font-bold mb-1">9.4. Phân công nhiệm vụ tổ chức</div>
+              <table className="w-full border-collapse border border-black text-[12.5px] my-1">
+                <thead>
+                  <tr className="bg-slate-50 font-bold text-center">
+                    <th className="border border-black p-1.5 w-12">STT</th>
+                    <th className="border border-black p-1.5">Nội dung công việc</th>
+                    <th className="border border-black p-1.5 w-44">Phụ trách</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {taskRows.map((r: any, idx: number) => (
+                    <tr key={idx}>
+                      <td className="border border-black p-1.5 text-center">{r.stt || idx + 1}</td>
+                      <td className="border border-black p-1.5 text-left">{r.noi_dung}</td>
+                      <td className="border border-black p-1.5 text-left">{r.phu_trach}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div>
+              <span className="font-bold">9.5. Dự trù kinh phí hội thảo: </span>
+              <span>{d.workshop_budget || 'Theo quy chế chi tiêu nội bộ của Trường Đại học Y Dược Cần Thơ.'}</span>
+            </div>
+          </div>
+        </>
       )}
 
-      <SH>X. Quản lý rủi ro trong chuyển giao</SH>
-      {d.risk_management ? (
-        <TextBlock value={d.risk_management} />
-      ) : (
-        <div className="text-[13px] text-gray-600 pl-2">
-          <div><span className="font-semibold">10.1. Xác định và đánh giá rủi ro:</span> Các yếu tố kỹ thuật, thời gian, nhân sự</div>
-          <div><span className="font-semibold">10.2. Biện pháp kiểm soát:</span> Phân công người giám sát và phương án dự phòng</div>
-        </div>
-      )}
+      <SH>{riskRoman}. Quản lý rủi ro trong chuyển giao</SH>
 
-      {/* Signature section */}
+      <div className="font-bold text-[13.5px] mt-2 mb-1 text-black">
+        {riskSubPrefix}.1. Xác định và đánh giá rủi ro
+      </div>
+      <div className="text-[12.5px] italic text-gray-800 mb-1.5">
+        Thang đánh giá: P (khả năng xảy ra) và S (mức độ ảnh hưởng) chấm từ 1 đến 5; R = P × S; R ≤ 4: Thấp; 5 ≤ R ≤ 9: Trung bình; R ≥ 10: Cao.
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse border border-black text-center text-[12.5px] my-1.5">
+          <thead>
+            <tr className="bg-slate-50 font-bold">
+              <th className="border border-black p-1.5 w-10 text-center">Stt</th>
+              <th className="border border-black p-1.5 text-left">Công việc /Yếu tố rủi ro</th>
+              <th className="border border-black p-1.5 w-24 text-center">Khả năng xảy ra (P)</th>
+              <th className="border border-black p-1.5 w-24 text-center">Mức độ ảnh hưởng (S)</th>
+              <th className="border border-black p-1.5 w-24 text-center">Giá trị rủi ro<br />R=PxS</th>
+              <th className="border border-black p-1.5 w-28 text-center">Phân loại rủi ro</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(Array.isArray(d.ds_danh_gia_rui_ro) && d.ds_danh_gia_rui_ro.length > 0
+              ? d.ds_danh_gia_rui_ro
+              : [
+                  { stt: 1, yeu_to_rui_ro: 'Chậm tiến độ chuyển giao do lịch giảng dạy, khám chữa bệnh dày đặc', p: 2, s: 2, r: 4, phan_loai: 'Thấp' },
+                  { stt: 2, yeu_to_rui_ro: 'Hạ tầng thiết bị, phần mềm tại đơn vị tiếp nhận chưa đồng bộ', p: 2, s: 3, r: 6, phan_loai: 'Trung bình' },
+                  { stt: 3, yeu_to_rui_ro: 'Nhân sự tiếp nhận chuyển giao luân chuyển hoặc chưa thành thạo kỹ thuật', p: 2, s: 2, r: 4, phan_loai: 'Thấp' },
+                ]
+            ).map((item: any, idx: number) => {
+              const pVal = item.p ?? '';
+              const sVal = item.s ?? '';
+              const rVal = item.r !== undefined && item.r !== '' ? item.r : (pVal && sVal ? Number(pVal) * Number(sVal) : '');
+              const level = item.phan_loai || (rVal ? (Number(rVal) <= 4 ? 'Thấp' : Number(rVal) <= 9 ? 'Trung bình' : 'Cao') : '');
+              return (
+                <tr key={idx}>
+                  <td className="border border-black p-1.5 text-center">{item.stt || idx + 1}</td>
+                  <td className="border border-black p-1.5 text-left">{item.yeu_to_rui_ro}</td>
+                  <td className="border border-black p-1.5 text-center">{pVal}</td>
+                  <td className="border border-black p-1.5 text-center">{sVal}</td>
+                  <td className="border border-black p-1.5 text-center font-bold">{rVal}</td>
+                  <td className="border border-black p-1.5 text-center">{level || 'Thấp'}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="font-bold text-[13.5px] mt-3.5 mb-1.5 text-black">
+        {riskSubPrefix}.2. Biện pháp kiểm soát rủi ro
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse border border-black text-center text-[12px] my-1.5">
+          <thead>
+            <tr className="bg-slate-50 font-bold">
+              <th className="border border-black p-1.5 w-9 text-center">Stt</th>
+              <th className="border border-black p-1.5 text-left">Yếu tố rủi ro</th>
+              <th className="border border-black p-1.5 text-left">Biện pháp kiểm soát</th>
+              <th className="border border-black p-1.5 text-center">Đơn vị<br />phụ trách</th>
+              <th className="border border-black p-1.5 text-center">Đơn vị<br />phối hợp</th>
+              <th className="border border-black p-1.5 text-center">Thời gian</th>
+              <th className="border border-black p-1.5 text-center">Sản phẩm</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(Array.isArray(d.ds_kiem_soat_rui_ro) && d.ds_kiem_soat_rui_ro.length > 0
+              ? d.ds_kiem_soat_rui_ro
+              : [
+                  { stt: 1, yeu_to_rui_ro: 'Chậm tiến độ chuyển giao', bien_phap: 'Lập tiến độ chi tiết theo tuần, phân công nhân sự dự phòng', don_vi_phu_trach: 'Chủ nhiệm đề tài', don_vi_phoi_hop: 'Đơn vị tiếp nhận', thoi_gian: 'Trước và trong đợt chuyển giao', san_pham: 'Biên bản nghiệm thu đúng hạn' },
+                  { stt: 2, yeu_to_rui_ro: 'Hạ tầng chưa đồng bộ', bien_phap: 'Khảo sát tiền trạm, cấu hình thử nghiệm và nâng cấp thiết bị', don_vi_phu_trach: 'Bộ phận kỹ thuật', don_vi_phoi_hop: 'Phòng KH&CN', thoi_gian: 'Trước khi bàn giao 01 tuần', san_pham: 'Hệ thống vận hành ổn định' },
+                  { stt: 3, yeu_to_rui_ro: 'Nhân sự chưa thành thạo', bien_phap: 'Tổ chức tập huấn thực hành cầm tay chỉ việc, bàn giao tài liệu chi tiết', don_vi_phu_trach: 'Nhóm nghiên cứu', don_vi_phoi_hop: 'Đơn vị tiếp nhận', thoi_gian: 'Trong suốt kỳ chuyển giao', san_pham: '100% nhân sự đạt yêu cầu' },
+                ]
+            ).map((item: any, idx: number) => (
+              <tr key={idx}>
+                <td className="border border-black p-1.5 text-center">{item.stt || idx + 1}</td>
+                <td className="border border-black p-1.5 text-left">{item.yeu_to_rui_ro}</td>
+                <td className="border border-black p-1.5 text-left">{item.bien_phap}</td>
+                <td className="border border-black p-1.5 text-center">{item.don_vi_phu_trach}</td>
+                <td className="border border-black p-1.5 text-center">{item.don_vi_phoi_hop}</td>
+                <td className="border border-black p-1.5 text-center">{item.thoi_gian || 'Trong đợt chuyển giao'}</td>
+                <td className="border border-black p-1.5 text-center">{item.san_pham}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Signature section theo đúng biểu mẫu Mẫu 2a & Nghị định 30/2020/NĐ-CP */}
       <div className="mt-8 pt-4">
         <div className="grid grid-cols-2 gap-6 text-center">
           <SigBlock
             title="Trưởng đơn vị nhận"
             hint="(Ký và ghi rõ họ tên)"
+            name={d.receiver_manager || d.truong_don_vi_nhan}
           />
           <SigBlock
-            title="Trưởng đơn vị giao / Chủ nhiệm đề tài"
+            title="Trưởng đơn vị giao/Chủ nhiệm đề tài"
             hint="(Ký và ghi rõ họ tên)"
-            name={d.full_name || dossier.createdBy.name}
+            name={d.full_name || dossier.createdBy?.name}
             isApproved={approved}
             approverName={dossier.assignedManager?.name}
             approvedAt={dossier.approvedAt}
@@ -454,12 +783,12 @@ const Mau2aKHCGCN: React.FC<{ dossier: Dossier }> = ({ dossier: rawDossier }) =>
         </div>
 
         <div className="flex justify-between items-start mt-8 pt-4">
-          <div className="text-[12px] text-gray-700 leading-snug">
-            <div className="font-bold">Nơi nhận:</div>
-            <div>- Như trên;</div>
-            <div>- VP, TCKT;</div>
-            <div>- TTDV&ĐTTNCXH;</div>
-            <div>- Lưu VT, KHCN.</div>
+          <div className="text-black leading-snug">
+            <div className="font-bold italic text-[12px]">Nơi nhận:</div>
+            <div className="text-[11px]">- {d.receiving_party || 'Đơn vị nhận chuyển giao'}, {unitAbbr};</div>
+            <div className="text-[11px]">- VP, TCKT;</div>
+            <div className="text-[11px]">- TTDV&amp;ĐTTNCXH;</div>
+            <div className="text-[11px]">- Lưu: VT, KHCN.</div>
           </div>
           <div className="text-center pr-12">
             <div className="font-bold uppercase text-[13px]">HIỆU TRƯỞNG</div>
@@ -555,6 +884,7 @@ export const WordDocumentPreview: React.FC<WordDocumentPreviewProps> = ({
 }) => {
   const [zoom, setZoom] = useState<number>(100);
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
 
   const handleDownload = async () => {
     try {
@@ -568,9 +898,26 @@ export const WordDocumentPreview: React.FC<WordDocumentPreviewProps> = ({
     }
   };
 
-  const templateCode = template?.code || dossier.templateId || '';
-  const isMau1a = templateCode.includes('1a') || templateCode.includes('TTR') || templateCode.includes('tri-thuc');
-  const isMau2a = templateCode.includes('2a') || templateCode.includes('KH') || templateCode.includes('trong-truong');
+  const handleDownloadPdf = async () => {
+    try {
+      setIsExportingPdf(true);
+      await generateAndDownloadPdf(dossier, template);
+    } catch (err) {
+      console.error('Failed to export pdf:', err);
+      alert('Có lỗi khi tạo file PDF. Vui lòng thử lại.');
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
+  const isMau2a = isMau2aTemplateOrDossier(dossier, template);
+  const activeTemplate = getEffectiveTemplate(dossier, template);
+  const displayCode = isMau2a ? 'Mẫu 2a-KH.CGCN' : 'Mẫu 1a-TT.CGCN';
+  const displayTitle = isMau2a
+    ? (dossier.formData?.product_name
+        ? `Kế hoạch tổ chức chuyển giao công nghệ: “${dossier.formData.product_name}”`
+        : activeTemplate.title)
+    : (activeTemplate.title || 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu');
 
   return (
     <div className={`flex flex-col h-full bg-slate-100 rounded-lg overflow-hidden border border-slate-200 ${className}`}>
@@ -580,10 +927,10 @@ export const WordDocumentPreview: React.FC<WordDocumentPreviewProps> = ({
             <FileText className="w-5 h-5 text-blue-600" />
             <div>
               <span className="font-semibold text-sm text-slate-800">
-                {normalizeNFC(template?.name || dossier.title || 'Xem trước văn bản Word')}
+                {normalizeNFC(displayTitle)}
               </span>
               <span className="ml-2 text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded font-mono font-medium border border-blue-200">
-                {templateCode || dossier.code}
+                {displayCode} • {dossier.code}
               </span>
             </div>
           </div>
@@ -622,14 +969,16 @@ export const WordDocumentPreview: React.FC<WordDocumentPreviewProps> = ({
               </button>
             )}
 
+            
+
             <button
               type="button"
               onClick={handleDownload}
               disabled={isExporting}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors disabled:opacity-50 shadow-sm"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-md transition-colors disabled:opacity-50 shadow-sm"
             >
               <Download className="w-3.5 h-3.5" />
-              {isExporting ? 'Đang xuất file...' : 'Tải file DOCX'}
+              {isExporting ? 'Đang xuất DOCX...' : 'Tải file DOCX'}
             </button>
           </div>
         </div>
@@ -644,17 +993,15 @@ export const WordDocumentPreview: React.FC<WordDocumentPreviewProps> = ({
             transition: 'transform 0.15s ease-out',
             width: '210mm',
             minHeight: '297mm',
-            padding: '25mm 20mm 20mm 25mm',
+            padding: '20mm 15mm 20mm 30mm',
             boxShadow: '0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
           }}
           className="bg-white border border-slate-300 relative print:m-0 print:border-none print:shadow-none"
         >
-          {isMau1a ? (
-            <Mau1aTTCGCN dossier={dossier} />
-          ) : isMau2a ? (
+          {isMau2a ? (
             <Mau2aKHCGCN dossier={dossier} />
           ) : (
-            <GenericDocPreview dossier={dossier} template={template} />
+            <Mau1aTTCGCN dossier={dossier} />
           )}
         </div>
       </div>
