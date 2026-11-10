@@ -64,13 +64,15 @@ export async function initDb() {
         );
         await rootConn.query(`USE \`${dbConfig.database}\`;`);
 
-        // Nạp schema.sql nếu có
+        // Ưu tiên nạp ctump_docugov_backup.sql (chứa đầy đủ dữ liệu hiện tại), fallback về schema.sql
+        const backupPath = path.resolve(__dirname, '../../ctump_docugov_backup.sql');
         const schemaPath = path.resolve(__dirname, '../../schema.sql');
-        if (fs.existsSync(schemaPath)) {
-          const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+        const sqlFileToLoad = fs.existsSync(backupPath) ? backupPath : schemaPath;
+        if (fs.existsSync(sqlFileToLoad)) {
+          const schemaSql = fs.readFileSync(sqlFileToLoad, 'utf8');
           await rootConn.query(schemaSql);
           console.log(
-            `[Database] Đã tự động nạp cấu trúc bảng và dữ liệu mẫu từ schema.sql thành công!`
+            `[Database] Đã tự động nạp cấu trúc bảng và dữ liệu từ ${path.basename(sqlFileToLoad)} thành công!`
           );
         }
         await rootConn.end();
