@@ -28,6 +28,7 @@ router.use('/users', userRoute);
 router.use('/templates', templateRoute);
 router.use('/dossiers', dossierRoute);
 router.use('/applications', dossierRoute);
+router.use('/projects', dossierRoute);
 router.use('/audit-logs', auditRoute);
 router.use('/email-logs', emailRoute);
 

@@ -27,6 +27,8 @@ export const API_ENDPOINTS = {
 
   // Bước 2B [Luồng False]: Thầy/Cô chỉnh sửa & Nộp lại
   RESUBMIT_APPLICATION: (id: string) => `${API_BASE_URL}/applications/${id}/resubmit`,
+  RESUBMIT_1A: (id: string) => `${API_BASE_URL}/applications/${id}/resubmit-1a`,
+  RESUBMIT_2A: (id: string) => `${API_BASE_URL}/applications/${id}/resubmit-2a`,
 
   // Bước 3 [Luồng True]: Admin nhấn Duyệt (VALIDATED + gửi Mail kèm PDF)
   APPROVE_APPLICATION_TRUE: (id: string) => `${API_BASE_URL}/applications/${id}/approve`,

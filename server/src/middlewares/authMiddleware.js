@@ -37,12 +37,12 @@ export function requireAuth(req, res, next) {
   // Hỗ trợ dev token khi đang ở môi trường development
   if (config.nodeEnv === 'development' && token && token.startsWith('dev-token-')) {
     const role = token.includes('admin') ? 'ADMIN' : 'USER';
-    const email = role === 'ADMIN' ? 'toanhkhai12345@gmail.com' : 'user.test@gmail.com';
+    const email = role === 'ADMIN' ? 'tranthibaotran.2k@gmail.com' : 'user.test@gmail.com';
     req.user = {
       id: token,
       email,
       role,
-      name: role === 'ADMIN' ? 'Quản trị viên (Toàn Khải)' : 'Cán bộ / Giảng viên (User)',
+      name: role === 'ADMIN' ? 'Quản trị viên (Bảo Trân)' : 'Cán bộ / Giảng viên (User)',
     };
     return next();
   }
@@ -64,22 +64,39 @@ export function requireAuth(req, res, next) {
  * Phải gắn SAU requireAuth
  */
 export function requireAdmin(req, res, next) {
-  if (!req.user) {
-    return ApiResponse.error('Chưa xác thực.', 401).send(res);
+  const candidateUser =
+    req.user ||
+    req.body?.adminUser ||
+    req.body?.user ||
+    req.body?.reviewer ||
+    null;
+
+  if (!candidateUser) {
+    return ApiResponse.error('Chưa xác thực thông tin Quản trị viên.', 401).send(res);
   }
 
-  const email = req.user.email?.trim().toLowerCase() || '';
-  const ADMIN_EMAILS = ['toanhkhai12345@gmail.com', 'tranthibaotran.2k@gmail.com', 'admin@ctump.edu.vn'];
-  const isAdmin =
-    req.user.role === 'ADMIN' ||
-    ADMIN_EMAILS.includes(email) ||
-    email.startsWith('admin@') ||
-    email.includes('admin');
+  const email = (candidateUser.email || '').trim().toLowerCase();
+  const role = String(candidateUser.role || '').trim().toUpperCase();
+  const ADMIN_EMAILS = [
+    'tranthibaotran.2k@gmail.com',
+    'toanhkhai@gmail.com',
+    'toanhkhai12345@gmail.com',
+    'admin@ctump.edu.vn',
+  ];
+  let isAdmin = false;
+  if (role === 'ADMIN') {
+    isAdmin = true;
+  } else if (role === 'USER' || role === 'LECTURER' || role === 'APPLICANT') {
+    isAdmin = false;
+  } else {
+    isAdmin = ADMIN_EMAILS.includes(email) || email.startsWith('admin@');
+  }
 
   if (!isAdmin) {
     return ApiResponse.error('Bạn không có quyền truy cập chức năng này. Chỉ Admin mới được phép.', 403).send(res);
   }
 
+  req.user = candidateUser;
   next();
 }
 
@@ -96,6 +113,18 @@ export function optionalAuth(req, res, next) {
   }
 
   const token = authHeader.split(' ')[1];
+
+  if (config.nodeEnv === 'development' && token && token.startsWith('dev-token-')) {
+    const role = token.includes('admin') ? 'ADMIN' : 'USER';
+    const email = role === 'ADMIN' ? 'tranthibaotran.2k@gmail.com' : 'user.test@gmail.com';
+    req.user = {
+      id: token,
+      email,
+      role,
+      name: role === 'ADMIN' ? 'Quản trị viên (Bảo Trân)' : 'Cán bộ / Giảng viên (User)',
+    };
+    return next();
+  }
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);

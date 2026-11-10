@@ -106,6 +106,18 @@ CREATE TABLE `dossiers` (
   `has_workshop` TINYINT(1) DEFAULT 0,
   `has_financial_implication` TINYINT(1) DEFAULT 0,
 
+  -- Dữ liệu mở rộng luồng kép 1A & 2A (Đặc tả cập nhật)
+  `ten_de_tai` VARCHAR(255) NULL COMMENT 'Tên đề tài nghiên cứu chuyển giao tri thức',
+  `truong_don_vi` VARCHAR(150) NULL COMMENT 'Họ tên Trưởng đơn vị',
+  `status_1a` VARCHAR(30) DEFAULT 'PENDING' COMMENT 'Trạng thái duyệt 1a: PENDING, APPROVED, RETURNED',
+  `status_2a` VARCHAR(30) DEFAULT 'PENDING' COMMENT 'Trạng thái duyệt 2a: PENDING, APPROVED, RETURNED',
+  `rejected_target` VARCHAR(20) NULL DEFAULT NULL COMMENT 'Biểu mẫu mục tiêu bị trả về: 1a, 2a, both',
+  `rejection_reason_1a` TEXT NULL COMMENT 'Lý do trả về riêng cho Biểu mẫu 1a',
+  `rejection_reason_2a` TEXT NULL COMMENT 'Lý do trả về riêng cho Biểu mẫu 2a',
+  `form_data_1a` JSON NULL COMMENT 'Dữ liệu biểu mẫu 1a trong bộ hồ sơ kép',
+  `form_data_2a` JSON NULL COMMENT 'Dữ liệu biểu mẫu 2a trong bộ hồ sơ kép',
+  `signature_config` JSON NULL COMMENT 'Cấu hình khung chữ ký động (phòng ban, BGH, nơi nhận)',
+
   -- Đường dẫn tài liệu đồng bộ theo phiên bản hiện tại (v1, v2...)
   `generated_docx_path` VARCHAR(500) NULL COMMENT 'Đường dẫn file Word (.docx) phiên bản mới nhất',
   `generated_pdf_path` VARCHAR(500) NULL COMMENT 'Đường dẫn file PDF (.pdf) phiên bản mới nhất',
@@ -240,6 +252,7 @@ INSERT INTO `departments` (`id`, `code`, `name`, `short_name`, `dean_name`, `ema
 ('dept-bgh', 'ban_giam_hieu', 'Ban Giám hiệu (Hiệu trưởng)', 'BGH', 'GS.TS. Hiệu trưởng CTUMP', 'bgh@ctump.edu.vn', '0292.3831.500');
 
 INSERT INTO `users` (`id`, `email`, `name`, `role`, `title`, `department_id`, `department`, `phone`) VALUES
+('usr-admin-tran', 'tranthibaotran.2k@gmail.com', 'Bảo Trân (Admin)', 'ADMIN', 'Quản trị viên Hệ thống', 'dept-khcn', 'Phòng Khoa học Công nghệ & HTQT', '0912.345.678'),
 ('usr-admin-truc', 'admin@ctump.edu.vn', 'Cô Trúc (Phòng KH&CN)', 'ADMIN', 'Chuyên viên Quản lý CGCN', 'dept-khcn', 'Phòng Khoa học Công nghệ & HTQT', '0292.3831.531'),
 ('usr-admin-dev', 'toanhkhai12345@gmail.com', 'Quản trị viên (Toàn Khải)', 'ADMIN', 'Quản trị viên Hệ thống', 'dept-khcn', 'Phòng Khoa học Công nghệ & HTQT', '0912.345.678'),
 ('usr-canbo', 'canbo@ctump.edu.vn', 'TS. Nguyễn Văn Nam', 'USER', 'Giảng viên chính', 'dept-y', 'Khoa Y', '0912.345.678'),

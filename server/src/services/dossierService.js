@@ -10,6 +10,20 @@ import { config } from '../utils/config.js';
 import { sanitizeFormPayload, sanitizeStringValue } from '../utils/sanitizer.js';
 import { resolveUploadAbsolutePath } from '../utils/cleanupGarbageData.js';
 
+function computeChangedFields(oldForm = {}, newForm = {}) {
+  const keys = new Set([...Object.keys(oldForm || {}), ...Object.keys(newForm || {})]);
+  const changed = [];
+  for (const key of keys) {
+    if (key.startsWith('_')) continue;
+    const beforeVal = JSON.stringify(oldForm?.[key] ?? '');
+    const afterVal = JSON.stringify(newForm?.[key] ?? '');
+    if (beforeVal !== afterVal) {
+      changed.push(key);
+    }
+  }
+  return changed;
+}
+
 export const dossierService = {
   // Lấy danh sách toàn bộ hồ sơ
   async getAll() {
@@ -20,20 +34,22 @@ export const dossierService = {
     return this.getAll();
   },
 
-  // Lấy chi tiết hồ sơ kèm nhật ký Audit Trail & Email Logs
+  // Lấy chi tiết hồ sơ kèm nhật ký Audit Trail, Email Logs & Lịch sử Phiên bản (Versions)
   async getById(id) {
     const dossier = await dossierRepository.findById(id);
     if (!dossier) return null;
 
-    const [auditLogs, emailLogs] = await Promise.all([
+    const [auditLogs, emailLogs, versions] = await Promise.all([
       auditRepository.findByDossierId(dossier.id),
       emailRepository.findByDossierId(dossier.id),
+      dossierRepository.findVersionsByDossierId(dossier.id),
     ]);
 
     return {
       ...dossier,
       auditLogs,
       emailLogs,
+      versions,
     };
   },
 
@@ -120,6 +136,13 @@ export const dossierService = {
       current_version: currentVersion,
       applicant_email: applicantEmail,
       form_data: docGen.sanitizedFormData,
+      form_data_1a: payload.formData1a || null,
+      form_data_2a: payload.formData2a || null,
+      status_1a: payload.status_1a || 'PENDING',
+      status_2a: payload.status_2a || 'PENDING',
+      ten_de_tai: payload.ten_de_tai || docGen.sanitizedFormData.ten_de_tai || null,
+      truong_don_vi: payload.truong_don_vi || docGen.sanitizedFormData.truong_don_vi || null,
+      signature_config: payload.signature_config || null,
       generated_docx_path: docGen.generatedDocxUrl,
       generated_pdf_path: docGen.generatedPdfUrl,
       docx_file_url: docGen.generatedDocxUrl,
@@ -145,7 +168,41 @@ export const dossierService = {
       },
     };
 
-    const saved = await dossierRepository.create(newDossier);
+    const saved = await (async () => {
+      const existingAll = await dossierRepository.findAll();
+      const nowMs = Date.now();
+      const targetTopic = String(newDossier.ten_de_tai || '').trim().toLowerCase();
+      const targetTitle = String(newDossier.title || '').trim().toLowerCase();
+      const recentDup = existingAll.find((d) => {
+        const sameUser =
+          (d.applicant_email && d.applicant_email.toLowerCase() === applicantEmail.toLowerCase()) ||
+          (d.user_id && d.user_id === newDossier.user_id);
+        if (!sameUser || d.status !== 'SUBMITTED') return false;
+        const createdMs = new Date(d.created_at || d.createdAt || 0).getTime();
+        if (!createdMs || Math.abs(nowMs - createdMs) > 45000) return false;
+        const dTopic = String(d.ten_de_tai || '').trim().toLowerCase();
+        const dTitle = String(d.title || '').trim().toLowerCase();
+        return (targetTopic && dTopic === targetTopic) || (targetTitle && dTitle === targetTitle);
+      });
+      if (recentDup) {
+        return dossierRepository.update(recentDup.id, {
+          title: newDossier.title,
+          ten_de_tai: newDossier.ten_de_tai,
+          truong_don_vi: newDossier.truong_don_vi,
+          form_data: newDossier.form_data,
+          form_data_1a: newDossier.form_data_1a,
+          form_data_2a: newDossier.form_data_2a,
+          generated_docx_path: newDossier.generated_docx_path,
+          generated_pdf_path: newDossier.generated_pdf_path,
+          docx_file_url: newDossier.docx_file_url,
+        });
+      }
+      return dossierRepository.create(newDossier);
+    })();
+
+    if (saved && saved.id !== id) {
+      return saved;
+    }
 
     // Lưu phiên bản v1 vào lịch sử phiên bản
     await dossierRepository.saveVersion({
@@ -215,7 +272,7 @@ export const dossierService = {
   // =========================================================================
   // BƯỚC 2A [LUỒNG FALSE]: Admin Trả về Sửa lỗi (RETURNED_FOR_REVISION)
   // =========================================================================
-  async returnForRevision(id, revisionNote, adminUser) {
+  async returnForRevision(id, revisionNote, adminUser, extra = {}) {
     const dossier = await dossierRepository.findById(id);
     if (!dossier) throw new Error('Không tìm thấy hồ sơ');
 
@@ -228,17 +285,66 @@ export const dossierService = {
     const prevStatus = dossier.status;
     const currentVer = Number(dossier.current_version || 1);
 
+    // Xác định biểu mẫu mục tiêu bị trả về: '1a' | '2a' | 'both'
+    let targetForm =
+      extra.target_form ||
+      extra.rejected_target ||
+      (extra.status_1a === 'RETURNED' && extra.status_2a !== 'RETURNED'
+        ? '1a'
+        : extra.status_2a === 'RETURNED' && extra.status_1a !== 'RETURNED'
+        ? '2a'
+        : null);
+
+    if (!targetForm) {
+      targetForm = '1a';
+    }
+
+    const existingS1a = dossier.status_1a === 'APPROVED' ? 'APPROVED' : 'PENDING';
+    const existingS2a = dossier.status_2a === 'APPROVED' ? 'APPROVED' : 'PENDING';
+
+    const nextStatus1a =
+      targetForm === '1a' || targetForm === 'both'
+        ? 'RETURNED'
+        : extra.status_1a && extra.status_1a !== 'RETURNED'
+        ? extra.status_1a
+        : existingS1a;
+
+    // Khi chỉ trả về 1a, 2a giữ nguyên trạng thái hợp lệ (APPROVED hoặc PENDING), không bao giờ chuyển sang RETURNED
+    const nextStatus2a =
+      targetForm === '2a' || targetForm === 'both'
+        ? 'RETURNED'
+        : extra.status_2a && extra.status_2a !== 'RETURNED'
+        ? extra.status_2a
+        : existingS2a;
+
+    const nextReason1a =
+      targetForm === '1a' || targetForm === 'both' ? cleanNote : null;
+    const nextReason2a =
+      targetForm === '2a' || targetForm === 'both' ? cleanNote : null;
+
+    const targetLabel =
+      targetForm === '1a'
+        ? 'Biểu mẫu 1a (Tờ trình)'
+        : targetForm === '2a'
+        ? 'Biểu mẫu 2a (Kế hoạch)'
+        : 'Biểu mẫu 1a & 2a';
+
     const currentTimeline = Array.isArray(dossier.timeline_logs) ? [...dossier.timeline_logs] : [];
     currentTimeline.push({
       step: 2,
       status: 'RETURNED_FOR_REVISION',
-      title: `Trả về sửa lỗi (Phiên bản v${currentVer})`,
+      title: `Trả về chỉnh sửa ${targetLabel} (Phiên bản v${currentVer})`,
       timestamp: new Date().toISOString(),
       note: cleanNote,
     });
 
     const updated = await dossierRepository.update(id, {
       status: 'RETURNED_FOR_REVISION',
+      status_1a: nextStatus1a,
+      status_2a: nextStatus2a,
+      rejected_target: targetForm,
+      rejection_reason_1a: nextReason1a,
+      rejection_reason_2a: nextReason2a,
       revision_note: cleanNote,
       review_notes: cleanNote,
       reviewed_at: new Date(),
@@ -253,26 +359,238 @@ export const dossierService = {
       action: 'RETURN_FOR_REVISION',
       fromStatus: prevStatus,
       toStatus: 'RETURNED_FOR_REVISION',
-      notes: `Admin yêu cầu trả về sửa lỗi (v${currentVer}): "${cleanNote}"`,
+      notes: `Admin yêu cầu trả về chỉnh sửa ${targetLabel} (v${currentVer}): "${cleanNote}"`,
     });
 
     await emailService.sendEmail({
       dossierId: dossier.id,
       recipientEmail: applicantEmail,
       recipientName: applicantName,
-      subject: `[CTUMP DocuGov] Hồ sơ ${dossier.code} trả về sửa lỗi - Có gợi ý chỉnh sửa từ Admin`,
+      subject: `[CTUMP DocuGov] Hồ sơ ${dossier.code}: Yêu cầu chỉnh sửa ${targetLabel}`,
       content: `
         <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <h3 style="color: #b91c1c;">Kính gửi Thầy/Cô ${applicantName},</h3>
-          <p>Hồ sơ mã <b>${dossier.code}</b> (Phiên bản v${currentVer}) đã được Cô Admin kiểm tra và chuyển sang trạng thái <b>Trả về sửa lỗi (RETURNED_FOR_REVISION)</b>.</p>
+          <p>Hồ sơ mã <b>${dossier.code}</b> (Phiên bản v${currentVer}) có yêu cầu chỉnh sửa đối với <b>${targetLabel}</b>.</p>
           <div style="background: #fef2f2; border-left: 4px solid #ef4444; padding: 14px; margin: 16px 0; color: #991b1b;">
-            <b>Gợi ý chỗ sai cần sửa chữa của Cô Admin:</b><br/>
+            <b>Gợi ý chỉnh sửa từ Cô Admin (${targetLabel}):</b><br/>
             <div style="margin-top: 6px; white-space: pre-line;">${cleanNote}</div>
           </div>
-          <p>Thầy/Cô vui lòng truy cập màn hình <b>Chi tiết đơn (${dossier.code})</b> trên hệ thống, bấm <b>"Chỉnh sửa lại"</b> để sửa trực tiếp trên Web Form và nhấn <b>"Nộp lại"</b>. Hệ thống sẽ tự động kết xuất lại bộ file Word và PDF phiên bản mới nhất.</p>
+          <p>Thầy/Cô vui lòng truy cập hệ thống để cập nhật và nộp lại <b>${targetLabel}</b>.</p>
         </div>
       `,
-      stepName: 'Bước 2A [Luồng False] - Trả về sửa lỗi',
+      stepName: `Bước 2A [Luồng False] - Trả về ${targetLabel}`,
+    });
+
+    return updated;
+  },
+
+  // =========================================================================
+  // BƯỚC 2B.1 [LUỒNG FALSE - NỘP LẠI ĐỘC LẬP BIỂU MẪU 1A]
+  // Chỉ cập nhật dữ liệu/tệp của 1a, bảo toàn nguyên vẹn 100% Biểu mẫu 2a
+  // =========================================================================
+  async resubmit1a(id, rawFormData1a, user, extra = {}) {
+    const dossier = await dossierRepository.findById(id);
+    if (!dossier) throw new Error('Không tìm thấy hồ sơ');
+
+    const prevStatus = dossier.status;
+    const prevVersion = Number(dossier.current_version || 1);
+    const nextVersion = prevVersion + 1;
+
+    const sanitized1a = sanitizeFormPayload({
+      ...(dossier.form_data_1a || dossier.formData1a || {}),
+      ...(rawFormData1a || {}),
+    });
+
+    // Giữ nguyên hoàn toàn dữ liệu và trạng thái của Biểu mẫu 2a đã nộp
+    const preservedFormData2a = dossier.form_data_2a || dossier.formData2a || null;
+    const preservedStatus2a =
+      dossier.status_2a === 'APPROVED' ? 'APPROVED' : 'PENDING';
+
+    // Trong form_data tổng hợp, giữ nguyên dữ liệu 2a, chỉ cập nhật các trường thuộc 1a
+    const mergedFormData = sanitizeFormPayload({
+      ...(dossier.form_data || dossier.formData || {}),
+      ...(preservedFormData2a || {}),
+      ...sanitized1a,
+    });
+
+    const oldDraftFiles = [
+      dossier.generated_docx_path,
+      dossier.docx_file_url,
+      dossier.generated_pdf_path,
+    ].filter(Boolean);
+
+    const effectiveTemplateId = 'tmpl-cgcn-1a';
+    const effectiveTemplateCode = 'Mẫu 1a-TT.CGCN';
+    const effectiveTemplateTitle =
+      'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu';
+
+    const docGen = await documentGeneratorService.generateVersionedDocuments({
+      code: dossier.code,
+      formData: sanitized1a,
+      templateId: effectiveTemplateId,
+      templateCode: effectiveTemplateCode,
+      templateTitle: effectiveTemplateTitle,
+      version: nextVersion,
+      previousFiles: oldDraftFiles,
+    });
+
+    const topicTitle =
+      extra.ten_de_tai ||
+      sanitized1a.ten_de_tai ||
+      dossier.ten_de_tai ||
+      'Hồ sơ chuyển giao tri thức và công nghệ';
+    const newTitle = `Bộ hồ sơ kép CGCN: “${topicTitle}” (Mẫu 1a & 2a)`;
+
+    const currentTimeline = Array.isArray(dossier.timeline_logs) ? [...dossier.timeline_logs] : [];
+    currentTimeline.push({
+      step: 1,
+      status: 'SUBMITTED',
+      title: `Đã nộp lại Biểu mẫu 1a (Phiên bản v${nextVersion})`,
+      timestamp: new Date().toISOString(),
+      note: `Thầy/Cô đã cập nhật và nộp lại Biểu mẫu 1a (v${nextVersion}). Biểu mẫu 2a giữ nguyên phiên bản đã nộp.`,
+    });
+
+    const updated = await dossierRepository.update(id, {
+      title: newTitle,
+      ten_de_tai: extra.ten_de_tai || sanitized1a.ten_de_tai || dossier.ten_de_tai,
+      truong_don_vi: extra.truong_don_vi || sanitized1a.truong_don_vi || dossier.truong_don_vi,
+      department_name: sanitized1a.department || dossier.department_name,
+      form_data: mergedFormData,
+      form_data_1a: sanitized1a,
+      form_data_2a: preservedFormData2a,
+      status_1a: 'PENDING',
+      status_2a: preservedStatus2a,
+      rejected_target: null,
+      rejection_reason_1a: null,
+      status: 'SUBMITTED',
+      current_version: nextVersion,
+      generated_docx_path: docGen.generatedDocxUrl,
+      generated_pdf_path: docGen.generatedPdfUrl,
+      docx_file_url: docGen.generatedDocxUrl,
+      to_trinh_docx_url: docGen.generatedDocxUrl,
+      submitted_at: new Date(),
+      timeline_logs: currentTimeline,
+    });
+
+    const actorName = user?.name || dossier.createdBy?.name || 'Thầy/Cô Giảng viên';
+    const changed1aKeys = computeChangedFields(dossier.form_data_1a || dossier.formData1a || {}, sanitized1a);
+    const diffLabel1a = changed1aKeys.length > 0 ? ` (Đã sửa: ${changed1aKeys.join(', ')})` : '';
+
+    await dossierRepository.saveVersion({
+      id: `ver-${Date.now()}-v${nextVersion}`,
+      dossierId: dossier.id,
+      versionNumber: nextVersion,
+      formData: mergedFormData,
+      generatedDocxPath: docGen.generatedDocxUrl,
+      generatedPdfPath: docGen.generatedPdfUrl,
+      editedById: user?.id || dossier.user_id,
+      editedByName: actorName,
+      changeSummary: `Chỉnh sửa và nộp lại độc lập Biểu mẫu 1a (Phiên bản v${nextVersion})${diffLabel1a}`,
+    });
+
+    await auditRepository.create({
+      dossierId: dossier.id,
+      actorId: user?.id || dossier.user_id,
+      actorName,
+      actorRole: user?.role || 'USER',
+      action: 'RESUBMIT',
+      fromStatus: prevStatus,
+      toStatus: 'SUBMITTED',
+      notes: `Thầy/Cô nộp lại độc lập Biểu mẫu 1a (v${nextVersion})${diffLabel1a}. Biểu mẫu 2a giữ nguyên phiên bản đã nộp.`,
+    });
+
+    await emailService.sendEmail({
+      dossierId: dossier.id,
+      recipientEmail: config.smtp.adminNotificationEmail,
+      recipientName: 'Cô Admin (Phòng KH&CN)',
+      subject: `[CTUMP DocuGov] Hồ sơ ${dossier.code}: Đã nộp lại Biểu mẫu 1a (Phiên bản v${nextVersion})`,
+      content: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+          <h3 style="color: #1e3a8a;">Kính gửi Cô Admin (Phòng KH&CN),</h3>
+          <p>Thầy/Cô <b>${actorName}</b> vừa hoàn tất chỉnh sửa và <b>Nộp lại Biểu mẫu 1a (Tờ trình)</b> cho hồ sơ mã <b>${dossier.code}</b> (<b>Phiên bản v${nextVersion}</b>).</p>
+          <p>Biểu mẫu 2a được giữ nguyên phiên bản đã nộp trước đó. Kính mời Cô Admin vào kiểm tra và xét duyệt.</p>
+        </div>
+      `,
+      stepName: `Bước 2B - Nộp lại Biểu mẫu 1a (v${nextVersion})`,
+    });
+
+    return updated;
+  },
+
+  // =========================================================================
+  // BƯỚC 2B.2 [LUỒNG FALSE - NỘP LẠI ĐỘC LẬP BIỂU MẪU 2A]
+  // =========================================================================
+  async resubmit2a(id, rawFormData2a, user) {
+    const dossier = await dossierRepository.findById(id);
+    if (!dossier) throw new Error('Không tìm thấy hồ sơ');
+
+    const prevStatus = dossier.status;
+    const prevVersion = Number(dossier.current_version || 1);
+    const nextVersion = prevVersion + 1;
+
+    const sanitized2a = sanitizeFormPayload({
+      ...(dossier.form_data_2a || dossier.formData2a || {}),
+      ...(rawFormData2a || {}),
+    });
+
+    const preservedFormData1a = dossier.form_data_1a || dossier.formData1a || null;
+    const preservedStatus1a =
+      dossier.status_1a === 'APPROVED' ? 'APPROVED' : 'PENDING';
+
+    const mergedFormData = sanitizeFormPayload({
+      ...(dossier.form_data || dossier.formData || {}),
+      ...(preservedFormData1a || {}),
+      ...sanitized2a,
+    });
+
+    const currentTimeline = Array.isArray(dossier.timeline_logs) ? [...dossier.timeline_logs] : [];
+    currentTimeline.push({
+      step: 1,
+      status: 'SUBMITTED',
+      title: `Đã nộp lại Biểu mẫu 2a (Phiên bản v${nextVersion})`,
+      timestamp: new Date().toISOString(),
+      note: `Thầy/Cô đã cập nhật và nộp lại Biểu mẫu 2a (v${nextVersion}). Biểu mẫu 1a giữ nguyên phiên bản đã nộp.`,
+    });
+
+    const updated = await dossierRepository.update(id, {
+      form_data: mergedFormData,
+      form_data_1a: preservedFormData1a,
+      form_data_2a: sanitized2a,
+      status_1a: preservedStatus1a,
+      status_2a: 'PENDING',
+      rejected_target: null,
+      rejection_reason_2a: null,
+      status: 'SUBMITTED',
+      current_version: nextVersion,
+      submitted_at: new Date(),
+      timeline_logs: currentTimeline,
+    });
+
+    const actorName = user?.name || dossier.createdBy?.name || 'Thầy/Cô Giảng viên';
+    const changed2aKeys = computeChangedFields(dossier.form_data_2a || dossier.formData2a || {}, sanitized2a);
+    const diffLabel2a = changed2aKeys.length > 0 ? ` (Đã sửa: ${changed2aKeys.join(', ')})` : '';
+
+    await dossierRepository.saveVersion({
+      id: `ver-${Date.now()}-v${nextVersion}`,
+      dossierId: dossier.id,
+      versionNumber: nextVersion,
+      formData: mergedFormData,
+      generatedDocxPath: dossier.generated_docx_path || '',
+      generatedPdfPath: dossier.generated_pdf_path || '',
+      editedById: user?.id || dossier.user_id,
+      editedByName: actorName,
+      changeSummary: `Chỉnh sửa và nộp lại độc lập Biểu mẫu 2a (Phiên bản v${nextVersion})${diffLabel2a}`,
+    });
+
+    await auditRepository.create({
+      dossierId: dossier.id,
+      actorId: user?.id || dossier.user_id,
+      actorName,
+      actorRole: user?.role || 'USER',
+      action: 'RESUBMIT',
+      fromStatus: prevStatus,
+      toStatus: 'SUBMITTED',
+      notes: `Thầy/Cô nộp lại độc lập Biểu mẫu 2a (v${nextVersion})${diffLabel2a}. Biểu mẫu 1a giữ nguyên phiên bản đã nộp.`,
     });
 
     return updated;
@@ -281,18 +599,56 @@ export const dossierService = {
   // =========================================================================
   // BƯỚC 2B [LUỒNG FALSE]: Thầy/Cô Chỉnh sửa & Nộp lại (SUBMITTED - v2, v3...)
   // =========================================================================
-  async resubmitDossier(id, rawFormData, user) {
+  async resubmitDossier(id, rawFormData, user, extra = {}) {
     const dossier = await dossierRepository.findById(id);
     if (!dossier) throw new Error('Không tìm thấy hồ sơ');
+
+    const prevStatus1a = dossier.status_1a || 'PENDING';
+    const prevStatus2a = dossier.status_2a || 'PENDING';
+    const isOnly1aReturned =
+      extra.target_form === '1a' ||
+      dossier.rejected_target === '1a' ||
+      (prevStatus1a === 'RETURNED' && prevStatus2a !== 'RETURNED');
+    const isOnly2aReturned =
+      extra.target_form === '2a' ||
+      dossier.rejected_target === '2a' ||
+      (prevStatus2a === 'RETURNED' && prevStatus1a !== 'RETURNED');
+
+    if (isOnly1aReturned) {
+      return this.resubmit1a(id, extra.formData1a || rawFormData, user, extra);
+    }
+    if (isOnly2aReturned) {
+      return this.resubmit2a(id, extra.formData2a || rawFormData, user);
+    }
 
     const prevStatus = dossier.status;
     const prevVersion = Number(dossier.current_version || 1);
     const nextVersion = prevVersion + 1;
 
+    const is1aReturned = prevStatus1a === 'RETURNED';
+    const is2aReturned = prevStatus2a === 'RETURNED';
+    const hasSpecificReturn = is1aReturned || is2aReturned;
+
+    const is1aEditable = !hasSpecificReturn || is1aReturned;
+    const is2aEditable = !hasSpecificReturn || is2aReturned;
+
+    const nextFormData1a = is1aEditable
+      ? (extra.formData1a ? sanitizeFormPayload(extra.formData1a) : (dossier.form_data_1a || null))
+      : (dossier.form_data_1a || null);
+
+    const nextFormData2a = is2aEditable
+      ? (extra.formData2a ? sanitizeFormPayload(extra.formData2a) : (dossier.form_data_2a || null))
+      : (dossier.form_data_2a || null);
+
     const mergedFormData = sanitizeFormPayload({
       ...(dossier.form_data || dossier.formData || {}),
       ...(rawFormData || {}),
+      ...(nextFormData2a || {}),
+      ...(nextFormData1a || {}),
     });
+
+    const nextStatus1a = prevStatus1a === 'RETURNED' ? 'PENDING' : prevStatus1a;
+    const nextStatus2a = prevStatus2a === 'RETURNED' ? 'PENDING' : prevStatus2a;
 
     // Tập hợp các file nháp phiên bản cũ (v{prevVersion}) để DocumentGeneratorService tự động xóa bỏ
     const oldDraftFiles = [
@@ -349,6 +705,13 @@ export const dossierService = {
       title: newTitle,
       department_name: mergedFormData.department || dossier.department_name,
       form_data: docGen.sanitizedFormData,
+      form_data_1a: nextFormData1a,
+      form_data_2a: nextFormData2a,
+      status_1a: nextStatus1a,
+      status_2a: nextStatus2a,
+      rejected_target: null,
+      rejection_reason_1a: null,
+      rejection_reason_2a: null,
       status: 'SUBMITTED',
       current_version: nextVersion,
       generated_docx_path: docGen.generatedDocxUrl,
@@ -407,6 +770,12 @@ export const dossierService = {
     return this.resubmitDossier(id, formData, user);
   },
 
+  async updateFields(id, fields) {
+    const dossier = await dossierRepository.findById(id);
+    if (!dossier) throw new Error('Không tìm thấy hồ sơ');
+    return dossierRepository.update(id, fields);
+  },
+
   // =========================================================================
   // BƯỚC 3 [LUỒNG TRUE / SAU KHI SỬA XONG]: Admin Duyệt & Gửi Mail + PDF chuẩn (VALIDATED)
   // =========================================================================
@@ -424,26 +793,38 @@ export const dossierService = {
       `Hồ sơ phiên bản v${currentVer} đạt chuẩn thể thức và nội dung quy định.`;
 
     const currentFormData = dossier.form_data || dossier.formData || {};
-    const isMau2a =
-      String(dossier.template_id || dossier.templateId).includes('2a') ||
-      String(dossier.templateCode).includes('2a') ||
-      String(dossier.title || dossier.templateTitle).toLowerCase().includes('kế hoạch') ||
-      String(dossier.title || dossier.templateTitle).toLowerCase().includes('ke hoach') ||
-      Boolean(currentFormData.plan_code || currentFormData.product_name);
+    const formData1a = {
+      ...currentFormData,
+      ...(dossier.form_data_1a || dossier.formData1a || {}),
+      _signatureConfig: dossier.signature_config || dossier.signatureConfig || null,
+      templateId: 'tmpl-cgcn-1a',
+      templateCode: 'Mẫu 1a-TT.CGCN',
+    };
+    const formData2a = {
+      ...currentFormData,
+      ...(dossier.form_data_2a || dossier.formData2a || {}),
+      _signatureConfig: dossier.signature_config || dossier.signatureConfig || null,
+      templateId: 'tmpl-cgcn-2a',
+      templateCode: 'Mẫu 2a-KH.CGCN',
+    };
 
-    const effectiveTemplateId = isMau2a ? 'tmpl-cgcn-2a' : (dossier.template_id || dossier.templateId || 'tmpl-cgcn-1a');
-    const effectiveTemplateCode = isMau2a ? 'Mẫu 2a-KH.CGCN' : (dossier.templateCode || 'Mẫu 1a-TT.CGCN');
-    const effectiveTemplateTitle = isMau2a
-      ? 'Kế hoạch tổ chức chuyển giao công nghệ trong trường'
-      : (dossier.templateTitle || dossier.title || 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu');
+    // Sinh đầy đủ 2 file PDF riêng biệt cho Mẫu 1a (Tờ trình) và Mẫu 2a (Kế hoạch) theo cấu hình phê duyệt của Admin
+    const latestDocGen1a = await documentGeneratorService.generateVersionedDocuments({
+      code: `${dossier.code}-1a`,
+      formData: formData1a,
+      templateId: 'tmpl-cgcn-1a',
+      templateCode: 'Mẫu 1a-TT.CGCN',
+      templateTitle: 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu',
+      version: currentVer,
+      previousFiles: [],
+    });
 
-    // Đảm bảo lấy chính xác file PDF phiên bản mới nhất v{currentVer} từ form_data hiện tại
-    const latestDocGen = await documentGeneratorService.generateVersionedDocuments({
-      code: dossier.code,
-      formData: currentFormData,
-      templateId: effectiveTemplateId,
-      templateCode: effectiveTemplateCode,
-      templateTitle: effectiveTemplateTitle,
+    const latestDocGen2a = await documentGeneratorService.generateVersionedDocuments({
+      code: `${dossier.code}-2a`,
+      formData: formData2a,
+      templateId: 'tmpl-cgcn-2a',
+      templateCode: 'Mẫu 2a-KH.CGCN',
+      templateTitle: 'Kế hoạch tổ chức chuyển giao công nghệ trong trường',
       version: currentVer,
       previousFiles: [],
     });
@@ -459,12 +840,17 @@ export const dossierService = {
 
     const updated = await dossierRepository.update(id, {
       status: 'VALIDATED',
+      status_1a: 'APPROVED',
+      status_2a: 'APPROVED',
+      rejected_target: null,
+      rejection_reason_1a: null,
+      rejection_reason_2a: null,
       review_notes: cleanNote,
-      generated_docx_path: latestDocGen.generatedDocxUrl,
-      generated_pdf_path: latestDocGen.generatedPdfUrl,
-      docx_file_url: latestDocGen.generatedDocxUrl,
-      approved_pdf_path: latestDocGen.generatedPdfUrl,
-      precheck_pdf_url: latestDocGen.generatedPdfUrl,
+      generated_docx_path: latestDocGen1a.generatedDocxUrl,
+      generated_pdf_path: latestDocGen1a.generatedPdfUrl,
+      docx_file_url: latestDocGen1a.generatedDocxUrl,
+      approved_pdf_path: latestDocGen1a.generatedPdfUrl,
+      precheck_pdf_url: latestDocGen1a.generatedPdfUrl,
       reviewed_at: new Date(),
       timeline_logs: currentTimeline,
     });
@@ -477,34 +863,39 @@ export const dossierService = {
       action: 'APPROVE_VALIDATED',
       fromStatus: prevStatus,
       toStatus: 'VALIDATED',
-      notes: `Admin nhấn Duyệt (VALIDATED) cho phiên bản v${currentVer}. Đã chốt file PDF chuẩn v${currentVer} và gửi Gmail SMTP kèm attachment.`,
+      notes: `Admin nhấn Duyệt (VALIDATED) cho phiên bản v${currentVer}. Đã chốt 2 file PDF chuẩn (Mẫu 1a & Mẫu 2a) v${currentVer} và gửi Gmail SMTP kèm attachment.`,
     });
 
     await emailService.sendEmail({
       dossierId: dossier.id,
       recipientEmail: applicantEmail,
       recipientName: applicantName,
-      subject: `[CTUMP DocuGov] Hồ sơ ${dossier.code} (v${currentVer}) ĐÃ ĐƯỢC DUYỆT - Kèm file PDF chuẩn đi trình ký`,
+      subject: `[CTUMP DocuGov] Hồ sơ ${dossier.code} (v${currentVer}) ĐÃ ĐƯỢC DUYỆT - Kèm PDF Mẫu 1a & Mẫu 2a đi trình ký`,
       content: `
         <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <h3 style="color: #1e3a8a;">Kính gửi Thầy/Cô ${applicantName},</h3>
           <p>Hồ sơ CGCN mã <b>${dossier.code}</b> (<b>Phiên bản v${currentVer}</b>) đã được Cô Admin xét duyệt <b>ĐÃ HỢP LỆ (VALIDATED)</b>.</p>
-          <p>File PDF chuẩn của phiên bản <b>v${currentVer}</b> (khớp 100% với nội dung Thầy/Cô đã kê khai/chỉnh sửa) được <b>đính kèm trực tiếp trong email này</b>.</p>
+          <p>Hai file PDF chuẩn (<b>Mẫu 1a - Tờ trình</b> và <b>Mẫu 2a - Kế hoạch</b>) của phiên bản <b>v${currentVer}</b> theo cấu hình duyệt của Admin đã được <b>đính kèm trực tiếp trong email này</b>.</p>
           <div style="background: #eff6ff; border-left: 4px solid #3b82f6; padding: 12px; margin: 16px 0;">
             <b>Hướng dẫn bước tiếp theo:</b>
             <ol style="margin: 8px 0 0 16px; padding: 0;">
-              <li>Tải file PDF chuẩn đính kèm trong email (hoặc bấm nút <b>"Tải file PDF chuẩn"</b> trên trang Chi tiết đơn).</li>
+              <li>Tải 2 file PDF chuẩn (Mẫu 1a & Mẫu 2a) đính kèm trong email (hoặc bấm nút <b>"Tải PDF Mẫu 1a" / "Tải PDF Mẫu 2a"</b> trên trang Chi tiết đơn).</li>
               <li>Đem trình ký Lãnh đạo Khoa / Phòng ban.</li>
               <li>Sau khi có chữ ký phòng ban, vào khung thao tác bên phải trên trang Chi tiết đơn để <b>Upload lại file đã ký + minh chứng</b>.</li>
             </ol>
           </div>
         </div>
       `,
-      stepName: `Bước 3 - Duyệt hợp lệ & Gửi PDF (v${currentVer})`,
+      stepName: `Bước 3 - Duyệt hợp lệ & Gửi PDF 1a + 2a (v${currentVer})`,
       attachments: [
         {
-          filename: `${dossier.code}_v${currentVer}_Ho_So_Chuan.pdf`,
-          path: latestDocGen.generatedPdfPath,
+          filename: `${dossier.code}_Mau_1a_v${currentVer}.pdf`,
+          path: latestDocGen1a.generatedPdfPath,
+          contentType: 'application/pdf',
+        },
+        {
+          filename: `${dossier.code}_Mau_2a_v${currentVer}.pdf`,
+          path: latestDocGen2a.generatedPdfPath,
           contentType: 'application/pdf',
         },
       ],
@@ -514,9 +905,9 @@ export const dossierService = {
   },
 
   // Hàm điều phối chung cho cả Duyệt (isValid = true) và Trả về sửa lỗi (isValid = false)
-  async adminPrecheck(id, isValid, reviewNotes, adminUser) {
+  async adminPrecheck(id, isValid, reviewNotes, adminUser, extra = {}) {
     if (!isValid) {
-      return this.returnForRevision(id, reviewNotes, adminUser);
+      return this.returnForRevision(id, reviewNotes, adminUser, extra);
     }
     return this.approveApplication(id, reviewNotes, adminUser);
   },
@@ -530,25 +921,56 @@ export const dossierService = {
 
     const prevStatus = dossier.status;
     const applicantName = user?.name || dossier.createdBy?.name || 'Thầy/Cô Giảng viên';
-    const cleanEvidence = Array.isArray(evidenceFiles) ? evidenceFiles : [];
+    const rawEvidence = Array.isArray(evidenceFiles) ? evidenceFiles : [];
+
+    const signedDir = path.join(config.uploadDir, 'signed');
+    if (!fs.existsSync(signedDir)) {
+      fs.mkdirSync(signedDir, { recursive: true });
+    }
+
+    const cleanEvidence = rawEvidence.map((ev, idx) => {
+      const rawName = String(ev?.name || `minh-chung-${idx + 1}.pdf`);
+      const safeFileName = `${dossier.code}-${Date.now()}-${rawName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      let resolvedUrl = ev?.url || `/uploads/signed/${safeFileName}`;
+
+      if (typeof ev?.dataUrl === 'string' && ev.dataUrl.includes('base64,')) {
+        try {
+          const base64Part = ev.dataUrl.split('base64,')[1];
+          const fileBuffer = Buffer.from(base64Part, 'base64');
+          const destPath = path.join(signedDir, safeFileName);
+          fs.writeFileSync(destPath, fileBuffer);
+          resolvedUrl = `/uploads/signed/${safeFileName}`;
+        } catch (writeErr) {
+          console.warn('[uploadFacultySignature] Không ghi được file base64:', writeErr.message);
+        }
+      }
+
+      return {
+        name: rawName,
+        url: resolvedUrl,
+        size: ev?.size || '',
+        mimeType: ev?.mimeType || (rawName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : ''),
+        type: rawName.toLowerCase().endsWith('.pdf') ? 'DEPARTMENT_SIGNED_PDF' : 'EVIDENCE',
+        uploadedAt: new Date().toISOString(),
+      };
+    });
+
     const signedUrl =
+      cleanEvidence.find((f) => f.url?.toLowerCase().endsWith('.pdf'))?.url ||
       facultySignedPdfUrl ||
-      cleanEvidence.find((f) => f.url?.endsWith('.pdf'))?.url ||
       `/uploads/signed/${dossier.code}-department-signed.pdf`;
 
-    const departmentSignedFiles = [
-      {
-        name: `${dossier.code}_Ban_Ky_Phong_Ban.pdf`,
-        url: signedUrl,
-        type: 'DEPARTMENT_SIGNED_PDF',
-        uploadedAt: new Date().toISOString(),
-      },
-      ...cleanEvidence.map((ev) => ({
-        ...ev,
-        type: 'EVIDENCE',
-        uploadedAt: new Date().toISOString(),
-      })),
-    ];
+    const departmentSignedFiles =
+      cleanEvidence.length > 0
+        ? cleanEvidence
+        : [
+            {
+              name: `${dossier.code}_Ban_Ky_Phong_Ban.pdf`,
+              url: signedUrl,
+              type: 'DEPARTMENT_SIGNED_PDF',
+              uploadedAt: new Date().toISOString(),
+            },
+          ];
 
     const currentTimeline = Array.isArray(dossier.timeline_logs) ? [...dossier.timeline_logs] : [];
     currentTimeline.push({
@@ -782,38 +1204,55 @@ export const dossierService = {
   },
 
   // =========================================================================
-  // Xuất trực tiếp file PDF của phiên bản mới nhất khớp 100% với dữ liệu Web Form
+  // Xuất trực tiếp file PDF của phiên bản mới nhất khớp 100% với dữ liệu Web Form & Cấu hình duyệt của Admin
   // =========================================================================
   async exportPdf(id, overrideData = {}) {
     const dossier = await dossierRepository.findById(id);
     const code = dossier?.code || overrideData.code || 'CGCN-2026-0001';
     const currentVer = Number(dossier?.current_version || overrideData.version || 1);
-    const rawForm =
+
+    const requestedCheck = `${overrideData.templateId || ''} ${overrideData.templateCode || ''} ${overrideData.templateTitle || ''} ${overrideData.formTarget || ''}`.toLowerCase();
+    let isMau2a = false;
+    if (requestedCheck.includes('1a') || requestedCheck.includes('tờ trình') || requestedCheck.includes('to trinh')) {
+      isMau2a = false;
+    } else if (requestedCheck.includes('2a') || requestedCheck.includes('kế hoạch') || requestedCheck.includes('ke hoach')) {
+      isMau2a = true;
+    } else {
+      const fallbackCheck = `${dossier?.template_id || ''} ${dossier?.templateCode || ''} ${dossier?.title || ''}`.toLowerCase();
+      isMau2a =
+        fallbackCheck.includes('2a') ||
+        fallbackCheck.includes('kế hoạch') ||
+        fallbackCheck.includes('ke hoach');
+    }
+
+    const baseForm = dossier?.form_data || dossier?.formData || {};
+    const specificForm = isMau2a
+      ? (dossier?.form_data_2a || dossier?.formData2a || {})
+      : (dossier?.form_data_1a || dossier?.formData1a || {});
+    const overrideForm =
       overrideData.formData && Object.keys(overrideData.formData).length > 0
         ? overrideData.formData
-        : dossier?.form_data || dossier?.formData || {};
-    const formData = sanitizeFormPayload(rawForm);
+        : {};
 
-    const isMau2a =
-      String(dossier?.template_id || dossier?.templateId || overrideData.templateId || overrideData.templateCode).includes('2a') ||
-      String(dossier?.templateCode || overrideData.templateCode).includes('2a') ||
-      String(dossier?.title || dossier?.templateTitle || overrideData.templateTitle).toLowerCase().includes('kế hoạch') ||
-      String(dossier?.title || dossier?.templateTitle || overrideData.templateTitle).toLowerCase().includes('ke hoach') ||
-      Boolean(formData.plan_code || formData.product_name);
+    const formData = sanitizeFormPayload({
+      ...baseForm,
+      ...specificForm,
+      ...overrideForm,
+    });
 
-    const templateTitle =
-      dossier?.templateTitle ||
-      overrideData.templateTitle ||
-      (isMau2a
-        ? 'Kế hoạch tổ chức chuyển giao công nghệ trong trường'
-        : 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu');
+    const sigConfig =
+      overrideData.signatureConfig ||
+      overrideData.signature_config ||
+      overrideForm._signatureConfig ||
+      dossier?.signature_config ||
+      dossier?.signatureConfig ||
+      null;
 
-    const templateCode =
-      dossier?.templateCode ||
-      overrideData.templateCode ||
-      dossier?.template_id ||
-      overrideData.templateId ||
-      (isMau2a ? 'Mẫu 2a-KH.CGCN' : 'Mẫu 1a-TT.CGCN');
+    const templateTitle = isMau2a
+      ? 'Kế hoạch tổ chức chuyển giao công nghệ trong trường'
+      : 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu';
+
+    const templateCode = isMau2a ? 'Mẫu 2a-KH.CGCN' : 'Mẫu 1a-TT.CGCN';
 
     const statusUpper = String(dossier?.status || '').toUpperCase();
     const isCompleted =
@@ -825,13 +1264,16 @@ export const dossierService = {
       code,
       {
         ...formData,
+        templateId: isMau2a ? 'tmpl-cgcn-2a' : 'tmpl-cgcn-1a',
+        templateCode,
+        _signatureConfig: sigConfig,
         _version: currentVer,
         _isCompleted: isCompleted,
         _decisionNumber: dossier?.decision_number || '',
       },
       templateTitle,
       templateCode,
-      `${code}-v${currentVer}.pdf`
+      `${code}-${isMau2a ? '2a' : '1a'}-v${currentVer}.pdf`
     );
 
     return {

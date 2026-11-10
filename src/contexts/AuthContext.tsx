@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { User, UserRole } from '../types';
-import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER, AUTH_STORAGE_KEY, isAdminUser } from '../constants';
+import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER, AUTH_STORAGE_KEY, isAdminUser, isAdminEmail } from '../constants';
 import { setAuthToken } from '../services/api';
 
 interface AuthContextValue {
@@ -22,6 +22,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const user = JSON.parse(saved);
         if (user?.token) {
           setAuthToken(user.token);
+        }
+        if (user?.email && !isAdminEmail(user.email) && user.role === 'ADMIN') {
+          user.role = 'USER';
+          user.title = 'Cán bộ / Giảng viên';
+          user.jobTitle = 'Cán bộ / Giảng viên';
+          try {
+            localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+          } catch {}
         }
         return user;
       }

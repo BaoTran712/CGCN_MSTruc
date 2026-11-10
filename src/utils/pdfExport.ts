@@ -14,20 +14,25 @@ export async function generateAndDownloadPdf(
 ): Promise<void> {
   const safeCode = (dossier.code || 'CGCN-2026').replace(/[^a-zA-Z0-9_-]/g, '_');
   const ver = dossier.current_version || dossier.currentVersion || 1;
-  const fileName = customFileName || `${safeCode}_v${ver}.pdf`;
-
   const isMau2a = isMau2aTemplateOrDossier(dossier, template);
+  const fileName = customFileName || `${safeCode}_Mau_${isMau2a ? '2a' : '1a'}_v${ver}.pdf`;
+
+  const specificFormData = isMau2a
+    ? { ...(dossier.formData || dossier.form_data || {}), ...(dossier.formData2a || dossier.form_data_2a || {}) }
+    : { ...(dossier.formData || dossier.form_data || {}), ...(dossier.formData1a || dossier.form_data_1a || {}) };
+
+  const sigConfig = dossier.signature_config || dossier.signatureConfig || null;
 
   const effectiveTitle = isMau2a
-    ? (dossier.formData?.product_name
-        ? `Kế hoạch tổ chức chuyển giao công nghệ: “${dossier.formData.product_name}”`
+    ? (specificFormData?.product_name
+        ? `Kế hoạch tổ chức chuyển giao công nghệ: “${specificFormData.product_name}”`
         : 'Kế hoạch tổ chức chuyển giao công nghệ trong trường')
-    : (dossier.title || template?.title || 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu');
+    : 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu';
 
   const effectiveCode = isMau2a ? 'Mẫu 2a-KH.CGCN' : 'Mẫu 1a-TT.CGCN';
 
   try {
-    // 1. Gọi Backend API lấy bản PDF chuẩn khớp 100% với dữ liệu formData mới nhất
+    // 1. Gọi Backend API lấy bản PDF chuẩn khớp 100% với dữ liệu formData mới nhất & cấu hình duyệt của Admin
     const response = await fetch(`${API_BASE_URL}/applications/${encodeURIComponent(dossier.id)}/export-pdf`, {
       method: 'POST',
       headers: {
@@ -36,7 +41,9 @@ export async function generateAndDownloadPdf(
       body: JSON.stringify({
         code: dossier.code,
         version: ver,
-        formData: dossier.formData || dossier.form_data || {},
+        formTarget: isMau2a ? '2a' : '1a',
+        formData: specificFormData,
+        signatureConfig: sigConfig,
         templateTitle: effectiveTitle,
         templateCode: effectiveCode,
         templateId: isMau2a ? 'tmpl-cgcn-2a' : 'tmpl-cgcn-1a',
@@ -55,8 +62,10 @@ export async function generateAndDownloadPdf(
     console.warn('[pdfExport] Lỗi khi gọi POST export-pdf, thử tải từ đường dẫn file đã lưu:', err);
   }
 
-  // 2. Tải trực tiếp từ đường dẫn file PDF đã sinh trên server (generated_pdf_path / approved_pdf_path / final_signed_pdf_path)
+  // 2. Tải trực tiếp từ đường dẫn file PDF tương ứng với từng mẫu (1a hoặc 2a) trên server
+  const formSpecificServerUrl = `/uploads/pdf/${dossier.code}-${isMau2a ? '2a' : '1a'}-v${ver}.pdf`;
   const existingUrl =
+    formSpecificServerUrl ||
     dossier.final_signed_pdf_path ||
     dossier.final_pdf_url ||
     dossier.approved_pdf_path ||

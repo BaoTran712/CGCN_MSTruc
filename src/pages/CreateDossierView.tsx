@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   WordTemplate,
   Dossier,
@@ -16,6 +16,10 @@ import {
   Download,
   Plus,
   Trash2,
+  Layers,
+  FileText,
+  Eye,
+  Lock,
 } from 'lucide-react';
 import { WordDocumentPreview } from '../components/document/WordDocumentPreview';
 import { TimeRangePicker, DocumentNumberInput, DepartmentSelect, LocationSelect } from '../components/common';
@@ -29,7 +33,7 @@ interface CreateDossierViewProps {
   templates: WordTemplate[];
   currentUser: UserProfile;
   editingDossier?: Dossier | null;
-  onSaveDraft: (dossier: Dossier) => void;
+  onSaveDraft: (dossier: Dossier) => void | Promise<Dossier | void>;
   onSubmitDossier: (dossier: Dossier) => void | Promise<void>;
   onCancel: () => void;
   onNavigate: (tab: ActiveNavTab) => void;
@@ -58,144 +62,251 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
     });
   }, [templates]);
 
-  const [template, setTemplate] = useState<WordTemplate>(() => {
-    if (initialTemplate) {
-      const match = safeTemplates.find((t) => t.id === initialTemplate.id || t.code === initialTemplate.code);
-      return match || initialTemplate;
-    }
-    if (editingDossier && safeTemplates.length > 0) {
-      return (
-        safeTemplates.find(
-          (t) =>
-            t.id === editingDossier.templateId ||
-            t.id === (editingDossier as any).template_id ||
-            t.code === editingDossier.templateCode
-        ) || safeTemplates[0]
-      );
-    }
-    return safeTemplates[0] || OFFICIAL_TEMPLATES[0];
-  });
+  const template1a = useMemo(() => {
+    return safeTemplates.find((t) => t.id === 'tmpl-cgcn-1a') || safeTemplates[0] || OFFICIAL_TEMPLATES[0];
+  }, [safeTemplates]);
 
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+  const template2a = useMemo(() => {
+    return safeTemplates.find((t) => t.id === 'tmpl-cgcn-2a') || safeTemplates[1] || OFFICIAL_TEMPLATES[1];
+  }, [safeTemplates]);
+
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  const [previewTab, setPreviewTab] = useState<'1a' | '2a'>('1a');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
+  const sessionIdentityRef = useRef<{ id: string; code: string; persisted: Dossier | null }>({
+    id: editingDossier?.id || `hs-${Date.now()}`,
+    code: editingDossier?.code || `CGCN-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+    persisted: editingDossier || null,
+  });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
 
-  // Chuẩn bị dữ liệu form đầy đủ (kết hợp defaultValue của mẫu + dữ liệu đã lưu của hồ sơ trả về)
-  const buildMergedFormData = (activeTemplate: WordTemplate, dossier?: Dossier | null): Record<string, any> => {
-    const is2a = isMau2aTemplateOrDossier(dossier, activeTemplate);
-
+  const buildInitialFormData1a = (): Record<string, any> => {
     const defaults: Record<string, any> = {
       full_name: currentUser.name || 'Thầy/Cô Giảng viên',
       department: currentUser.department || 'Khoa Y',
+      truong_don_vi: '',
       phone: currentUser.phone || '0912345678',
       email: currentUser.email || 'thayco.giangvien@ctump.edu.vn',
       position: currentUser.title || 'Giảng viên',
       transfer_location: 'Tại Trường Đại học Y Dược Cần Thơ',
+      transfer_form: 'Chuyển giao quyền tác giả bài giảng và giáo trình.',
+      transfer_time: 'Từ tháng 10/2026 đến tháng 12/2026',
+      ten_de_tai: '',
     };
-
-    if (is2a) {
-      defaults.transfer_date = 'Bắt đầu triển khai lúc 08 giờ 00 ngày 15/10/2026 (ekip kỹ thuật thiết lập từ 07 giờ 30 đến 11 giờ 30); vận hành thử nghiệm ngày 14/10/2026; bàn giao bộ tài liệu hướng dẫn ngày 16/10/2026.';
-      defaults.transfer_location = 'Hội trường Trung tâm, Trường Đại học Y Dược Cần Thơ, số 179 đường Nguyễn Văn Cừ, phường An Khánh, quận Ninh Kiều, thành phố Cần Thơ.';
-      defaults.transfer_cost = "Không thu phí chuyển giao. Chi phí phát sinh (nếu có) thực hiện theo quy chế chi tiêu nội bộ của Trường.";
-      defaults.ds_danh_gia_rui_ro = [
-        { stt: 1, yeu_to_rui_ro: 'Chậm tiến độ chuyển giao do lịch giảng dạy, khám chữa bệnh dày đặc', p: 2, s: 2, r: 4, phan_loai: 'Thấp' },
-        { stt: 2, yeu_to_rui_ro: 'Hạ tầng thiết bị, phần mềm tại đơn vị tiếp nhận chưa đồng bộ', p: 2, s: 3, r: 6, phan_loai: 'Trung bình' },
-        { stt: 3, yeu_to_rui_ro: 'Nhân sự tiếp nhận chuyển giao luân chuyển hoặc chưa thành thạo kỹ thuật', p: 2, s: 2, r: 4, phan_loai: 'Thấp' },
-      ];
-      defaults.ds_kiem_soat_rui_ro = [
-        { stt: 1, yeu_to_rui_ro: 'Chậm tiến độ chuyển giao', bien_phap: 'Lập tiến độ chi tiết theo tuần, phân công nhân sự dự phòng', don_vi_phu_trach: 'Chủ nhiệm đề tài', don_vi_phoi_hop: 'Đơn vị tiếp nhận', thoi_gian: 'Trước và trong đợt chuyển giao', san_pham: 'Biên bản nghiệm thu đúng hạn' },
-        { stt: 2, yeu_to_rui_ro: 'Hạ tầng chưa đồng bộ', bien_phap: 'Khảo sát tiền trạm, cấu hình thử nghiệm và nâng cấp thiết bị', don_vi_phu_trach: 'Bộ phận kỹ thuật', don_vi_phoi_hop: 'Phòng KH&CN', thoi_gian: 'Trước khi bàn giao 01 tuần', san_pham: 'Hệ thống vận hành ổn định' },
-        { stt: 3, yeu_to_rui_ro: 'Nhân sự chưa thành thạo', bien_phap: 'Tổ chức tập huấn thực hành cầm tay chỉ việc, bàn giao tài liệu chi tiết', don_vi_phu_trach: 'Nhóm nghiên cứu', don_vi_phoi_hop: 'Đơn vị tiếp nhận', thoi_gian: 'Trong suốt kỳ chuyển giao', san_pham: '100% nhân sự đạt yêu cầu' },
-      ];
-    } else {
-      defaults.transfer_form = 'Chuyển giao quyền tác giả bài giảng và giáo trình.';
-      defaults.transfer_time = 'Từ tháng 10/2026 đến tháng 12/2026';
-    }
-
-    (activeTemplate?.fields || []).forEach((f) => {
+    (template1a?.fields || []).forEach((f) => {
       const key = f.name || f.key || f.id;
       if (f.defaultValue !== undefined && f.defaultValue !== '' && defaults[key] === undefined) {
         defaults[key] = f.defaultValue;
       }
     });
 
-    const rawSaved = {
-      ...((dossier as any)?.form_data || {}),
-      ...(dossier?.formData || {}),
+    const saved = {
+      ...((editingDossier as any)?.form_data_1a || {}),
+      ...(editingDossier?.formData1a || {}),
+      ...((editingDossier as any)?.form_data || {}),
+      ...(editingDossier?.formData || {}),
     };
-    const merged: Record<string, any> = { ...defaults };
-    Object.keys(rawSaved).forEach((k) => {
-      const val = rawSaved[k];
-      if (val !== undefined && val !== null && val !== '') {
-        if (is2a && (k === 'proposal_number' || k === 'plan_code' || k === 'receiver_needs' || k === 'provider_capacity')) return;
-        if (!is2a && (k === 'plan_code' || k === 'product_name' || k === 'authors_group' || k === 'receiving_party')) return;
-        merged[k] = val;
-      }
-    });
+    if (editingDossier?.ten_de_tai) defaults.ten_de_tai = editingDossier.ten_de_tai;
+    if (editingDossier?.truong_don_vi && editingDossier.truong_don_vi !== 'PGS.TS. Nguyễn Văn A') {
+      defaults.truong_don_vi = editingDossier.truong_don_vi;
+    }
+
+    const merged = { ...defaults, ...saved };
+    if (merged.truong_don_vi === 'PGS.TS. Nguyễn Văn A') merged.truong_don_vi = '';
     return merged;
   };
 
-  useEffect(() => {
-    let resolvedTemplate = template;
-    if (initialTemplate) {
-      const match = safeTemplates.find((t) => t.id === initialTemplate.id || t.code === initialTemplate.code);
-      resolvedTemplate = match || initialTemplate;
-      setTemplate(resolvedTemplate);
-    } else if (editingDossier && safeTemplates.length > 0) {
-      const match = safeTemplates.find(
-        (t) =>
-          t.id === editingDossier.templateId ||
-          t.id === (editingDossier as any).template_id ||
-          t.code === editingDossier.templateCode
-      );
-      if (match) {
-        resolvedTemplate = match;
-        setTemplate(match);
+  const buildInitialFormData2a = (inheritedFrom1a?: Record<string, any>): Record<string, any> => {
+    const defaults: Record<string, any> = {
+      full_name: currentUser.name || 'Thầy/Cô Giảng viên',
+      department: currentUser.department || 'Khoa Y',
+      truong_don_vi: '',
+      phone: currentUser.phone || '0912345678',
+      email: currentUser.email || 'thayco.giangvien@ctump.edu.vn',
+      position: currentUser.title || 'Giảng viên',
+      transfer_location: 'Hội trường Trung tâm, Trường Đại học Y Dược Cần Thơ, số 179 đường Nguyễn Văn Cừ, phường An Khánh, quận Ninh Kiều, thành phố Cần Thơ.',
+      transfer_date: 'Bắt đầu triển khai lúc 08 giờ 00 ngày 15/10/2026 (ekip kỹ thuật thiết lập từ 07 giờ 30 đến 11 giờ 30); vận hành thử nghiệm ngày 14/10/2026; bàn giao bộ tài liệu hướng dẫn ngày 16/10/2026.',
+      transfer_cost: "Không thu phí chuyển giao. Chi phí phát sinh (nếu có) thực hiện theo quy chế chi tiêu nội bộ của Trường.",
+      ds_danh_gia_rui_ro: [
+        { stt: 1, yeu_to_rui_ro: 'Chậm tiến độ chuyển giao do lịch giảng dạy, khám chữa bệnh dày đặc', p: 2, s: 2, r: 4, phan_loai: 'Thấp' },
+        { stt: 2, yeu_to_rui_ro: 'Hạ tầng thiết bị, phần mềm tại đơn vị tiếp nhận chưa đồng bộ', p: 2, s: 3, r: 6, phan_loai: 'Trung bình' },
+        { stt: 3, yeu_to_rui_ro: 'Nhân sự tiếp nhận chuyển giao luân chuyển hoặc chưa thành thạo kỹ thuật', p: 2, s: 2, r: 4, phan_loai: 'Thấp' },
+      ],
+      ds_kiem_soat_rui_ro: [
+        { stt: 1, yeu_to_rui_ro: 'Chậm tiến độ chuyển giao', bien_phap: 'Lập tiến độ chi tiết theo tuần, phân công nhân sự dự phòng', don_vi_phu_trach: 'Chủ nhiệm đề tài', don_vi_phoi_hop: 'Đơn vị tiếp nhận', thoi_gian: 'Trước và trong đợt chuyển giao', san_pham: 'Biên bản nghiệm thu đúng hạn' },
+        { stt: 2, yeu_to_rui_ro: 'Hạ tầng chưa đồng bộ', bien_phap: 'Khảo sát tiền trạm, cấu hình thử nghiệm và nâng cấp thiết bị', don_vi_phu_trach: 'Bộ phận kỹ thuật', don_vi_phoi_hop: 'Phòng KH&CN', thoi_gian: 'Trước khi bàn giao 01 tuần', san_pham: 'Hệ thống vận hành ổn định' },
+        { stt: 3, yeu_to_rui_ro: 'Nhân sự chưa thành thạo', bien_phap: 'Tổ chức tập huấn thực hành cầm tay chỉ việc, bàn giao tài liệu chi tiết', don_vi_phu_trach: 'Nhóm nghiên cứu', don_vi_phoi_hop: 'Đơn vị tiếp nhận', thoi_gian: 'Trong suốt kỳ chuyển giao', san_pham: '100% nhân sự đạt yêu cầu' },
+      ],
+    };
+    (template2a?.fields || []).forEach((f) => {
+      const key = f.name || f.key || f.id;
+      if (f.defaultValue !== undefined && f.defaultValue !== '' && defaults[key] === undefined) {
+        defaults[key] = f.defaultValue;
       }
-    } else if ((!template || !template.id || !template.fields || template.fields.length === 0) && safeTemplates.length > 0) {
-      resolvedTemplate = safeTemplates[0];
-      setTemplate(safeTemplates[0]);
+    });
+
+    const saved = {
+      ...((editingDossier as any)?.form_data_2a || {}),
+      ...(editingDossier?.formData2a || {}),
+      ...((editingDossier as any)?.form_data || {}),
+      ...(editingDossier?.formData || {}),
+    };
+
+    const hasExisting2a =
+      Boolean((editingDossier as any)?.form_data_2a && Object.keys((editingDossier as any).form_data_2a).length > 0) ||
+      Boolean(editingDossier?.formData2a && Object.keys(editingDossier.formData2a).length > 0);
+
+    const merged = { ...defaults, ...saved };
+    if (inheritedFrom1a && !hasExisting2a) {
+      if (inheritedFrom1a.ten_de_tai) {
+        merged.product_name = inheritedFrom1a.ten_de_tai;
+        merged.ten_de_tai = inheritedFrom1a.ten_de_tai;
+      }
+      if (inheritedFrom1a.truong_don_vi) merged.truong_don_vi = inheritedFrom1a.truong_don_vi;
+      if (inheritedFrom1a.department) merged.department = inheritedFrom1a.department;
+      if (inheritedFrom1a.full_name) {
+        merged.full_name = inheritedFrom1a.full_name;
+        merged.authors_group = inheritedFrom1a.full_name;
+      }
+      if (inheritedFrom1a.phone) merged.phone = inheritedFrom1a.phone;
+      if (inheritedFrom1a.email) merged.email = inheritedFrom1a.email;
+      if (inheritedFrom1a.position) merged.position = inheritedFrom1a.position;
+      if (inheritedFrom1a.transfer_location) merged.transfer_location = inheritedFrom1a.transfer_location;
     }
+    if (merged.truong_don_vi === 'PGS.TS. Nguyễn Văn A') merged.truong_don_vi = '';
+    return merged;
+  };
+
+  const [formData1a, setFormData1a] = useState<Record<string, any>>(() => buildInitialFormData1a());
+  const [formData2a, setFormData2a] = useState<Record<string, any>>(() => buildInitialFormData2a(buildInitialFormData1a()));
+
+  // Phân quyền Chỉnh sửa / Chỉ xem cho từng file (1a & 2a) khi hồ sơ bị trả về
+  const status1a = editingDossier?.status_1a || 'PENDING';
+  const status2a = editingDossier?.status_2a || 'PENDING';
+  const rejectedTarget =
+    editingDossier?.rejected_target ||
+    editingDossier?.rejectedTarget ||
+    editingDossier?.target_form ||
+    null;
+  const is1aReturned = status1a === 'RETURNED' || rejectedTarget === '1a' || rejectedTarget === 'both';
+  const is2aReturned = status2a === 'RETURNED' || rejectedTarget === '2a' || rejectedTarget === 'both';
+  const isOnly1aRejected = Boolean(
+    editingDossier && (rejectedTarget === '1a' || (is1aReturned && !is2aReturned))
+  );
+  const isOnly2aRejected = Boolean(
+    editingDossier && (rejectedTarget === '2a' || (is2aReturned && !is1aReturned))
+  );
+  const hasPartialReturn = Boolean(editingDossier && (is1aReturned || is2aReturned));
+
+  // Nếu Admin yêu cầu trả về File 1a -> File 2a đã nộp (chưa duyệt hoặc đã duyệt) vẫn ở trạng thái Chỉ xem, không được sửa (và ngược lại)
+  const isStep1ReadOnly = Boolean(
+    editingDossier &&
+      (isOnly2aRejected ||
+        (hasPartialReturn && !is1aReturned) ||
+        (!hasPartialReturn && status1a === 'APPROVED' && status2a !== 'APPROVED'))
+  );
+  const isStep2ReadOnly = Boolean(
+    editingDossier &&
+      (isOnly1aRejected ||
+        (hasPartialReturn && !is2aReturned) ||
+        (!hasPartialReturn && status2a === 'APPROVED' && status1a !== 'APPROVED'))
+  );
+  const isCurrentStepReadOnly =
+    (currentStep === 1 && isStep1ReadOnly) || (currentStep === 2 && isStep2ReadOnly);
+
+  useEffect(() => {
     if (editingDossier) {
-      setFormData(buildMergedFormData(resolvedTemplate, editingDossier));
+      const f1 = buildInitialFormData1a();
+      setFormData1a(f1);
+      setFormData2a(buildInitialFormData2a(f1));
+      if (isStep1ReadOnly && !isStep2ReadOnly) {
+        setCurrentStep(2);
+      } else if (!isStep1ReadOnly && isStep2ReadOnly) {
+        setCurrentStep(1);
+      }
     }
-  }, [initialTemplate, editingDossier, safeTemplates]);
+  }, [editingDossier]);
 
-  const [formData, setFormData] = useState<Record<string, any>>(() => {
-    const activeTemplate = initialTemplate
-      ? safeTemplates.find((t) => t.id === initialTemplate.id) || initialTemplate
-      : safeTemplates[0] || OFFICIAL_TEMPLATES[0];
-    return buildMergedFormData(activeTemplate, editingDossier);
-  });
+  const template = currentStep === 2 ? template2a : template1a;
+  const formData = currentStep === 2 ? formData2a : formData1a;
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
-
-  const revisionNoteText =
+  const baseRevisionNoteText =
     editingDossier?.review_notes ||
     editingDossier?.revision_reason ||
     editingDossier?.returnReason ||
     editingDossier?.reviewNotes ||
     '';
 
+  const effectiveReason1a =
+    editingDossier?.rejection_reason_1a ||
+    editingDossier?.rejectionReason1a ||
+    baseRevisionNoteText;
+  const effectiveReason2a =
+    editingDossier?.rejection_reason_2a ||
+    editingDossier?.rejectionReason2a ||
+    baseRevisionNoteText;
+
+  // Khi lỗi chỉ thuộc về 1a, Bước 2 (2a) tuyệt đối không hiển thị thông báo trả về
+  const revisionNoteText =
+    currentStep === 1
+      ? isStep1ReadOnly
+        ? ''
+        : effectiveReason1a
+      : currentStep === 2
+      ? isStep2ReadOnly || isOnly1aRejected
+        ? ''
+        : effectiveReason2a
+      : baseRevisionNoteText;
+
   const nextVersionNumber = editingDossier
     ? (editingDossier.current_version || editingDossier.currentVersion || 1) + 1
     : 1;
 
-  const handleTemplateChange = (newTemplateId: string) => {
-    const found = safeTemplates.find((t) => t.id === newTemplateId);
-    if (found) {
-      setTemplate(found);
-      setFormData(buildMergedFormData(found, editingDossier));
-      setErrors({});
-    }
-  };
-
   const handleInputChange = (fieldName: string, value: any) => {
+    if (isCurrentStepReadOnly) return;
+
     const normalizedValue = normalizeNFC(value);
-    setFormData((prev) => ({
-      ...prev,
-      [fieldName]: normalizedValue,
-    }));
+    if (currentStep === 1) {
+      setFormData1a((prev) => {
+        const next = { ...prev, [fieldName]: normalizedValue };
+        if (!isStep2ReadOnly) {
+          setFormData2a((prev2) => {
+            const next2 = { ...prev2 };
+            if (fieldName === 'ten_de_tai') {
+              next2.product_name = normalizedValue;
+              next2.ten_de_tai = normalizedValue;
+            } else if (fieldName === 'truong_don_vi') {
+              next2.truong_don_vi = normalizedValue;
+            } else if (fieldName === 'department') {
+              next2.department = normalizedValue;
+            } else if (fieldName === 'full_name') {
+              next2.full_name = normalizedValue;
+              if (!next2.authors_group || next2.authors_group === prev.full_name) {
+                next2.authors_group = normalizedValue;
+              }
+            } else if (fieldName === 'phone') {
+              next2.phone = normalizedValue;
+            } else if (fieldName === 'email') {
+              next2.email = normalizedValue;
+            } else if (fieldName === 'position') {
+              next2.position = normalizedValue;
+            } else if (fieldName === 'transfer_location') {
+              next2.transfer_location = normalizedValue;
+            }
+            return next2;
+          });
+        }
+        return next;
+      });
+    } else {
+      setFormData2a((prev) => ({
+        ...prev,
+        [fieldName]: normalizedValue,
+      }));
+    }
+
     if (errors[fieldName]) {
       setErrors((prev) => {
         const next = { ...prev };
@@ -226,22 +337,47 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
     return emailRegex.test(clean);
   };
 
-  const validateForm = (): boolean => {
+  const validateForm = (stepToCheck: 1 | 2 = currentStep as (1 | 2)): boolean => {
+    // Nếu bước này đang ở chế độ Chỉ xem (không được sửa), bỏ qua kiểm tra để cho phép chuyển bước
+    if ((stepToCheck === 1 && isStep1ReadOnly) || (stepToCheck === 2 && isStep2ReadOnly)) {
+      return true;
+    }
+
+    const activeTmpl = stepToCheck === 2 ? template2a : template1a;
+    const activeData = stepToCheck === 2 ? formData2a : formData1a;
     const newErrors: Record<string, string> = {};
-    if (template && template.fields) {
-      for (const field of template.fields) {
+
+    if (activeTmpl && activeTmpl.fields) {
+      for (const field of activeTmpl.fields) {
         const key = field.name || field.key || field.id;
-        const val = formData[key];
+        const val = activeData[key];
+
+        // Step 1: ten_de_tai là bắt buộc
+        if (stepToCheck === 1 && key === 'ten_de_tai') {
+          if (!val || String(val).trim() === '') {
+            newErrors[key] = 'Tên đề tài nghiên cứu chuyển giao tri thức là trường bắt buộc';
+            continue;
+          }
+        }
 
         // Bỏ qua trường hội thảo khi không tích chọn hội thảo
         const isWorkshopHidden =
-          (formData.co_hoi_thao === false || formData.has_workshop === false) &&
+          (activeData.co_hoi_thao === false || activeData.has_workshop === false) &&
           (key.includes('workshop') || field.label.toLowerCase().includes('hội thảo'));
         if (isWorkshopHidden) continue;
 
+        // Bỏ qua trường quản lý rủi ro khi không tích chọn hội thảo
+        const isRiskHidden =
+          (activeData.co_hoi_thao === false || activeData.has_workshop === false) &&
+          (key.includes('rui_ro') ||
+            key.includes('risk') ||
+            field.label.toLowerCase().includes('rủi ro') ||
+            (field.section && field.section.toLowerCase().includes('rủi ro')));
+        if (isRiskHidden) continue;
+
         // Bỏ qua trường kinh phí khi chọn không phát sinh kinh phí
         const isFundingHidden =
-          (formData.co_kinh_phi === false || formData.has_funding === false) &&
+          (activeData.co_kinh_phi === false || activeData.has_funding === false) &&
           (key === 'transfer_cost' || key === 'funding_source');
         if (isFundingHidden) continue;
 
@@ -295,53 +431,91 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
   };
 
   const buildCurrentDossier = (status: Dossier['status']): Dossier => {
-    const code = editingDossier?.code || `CGCN-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+    const activeEditing = editingDossier || sessionIdentityRef.current.persisted;
+    const code = activeEditing?.code || sessionIdentityRef.current.code;
+    const id = activeEditing?.id || sessionIdentityRef.current.id;
     const nowStr = new Date().toISOString();
     const nowReadable = new Date().toLocaleString('vi-VN');
-    const prevVer = Number(editingDossier?.current_version || editingDossier?.currentVersion || 1);
-    const effectiveVersion = editingDossier ? prevVer + 1 : 1;
+    const prevVer = Number(activeEditing?.current_version || activeEditing?.currentVersion || 1);
+    const effectiveVersion = editingDossier ? prevVer + 1 : prevVer || 1;
 
-    const is2a = isMau2aTemplateOrDossier({ formData }, template);
-    const effectiveTitle = is2a
-      ? (formData.product_name
-          ? `Kế hoạch tổ chức chuyển giao công nghệ: “${formData.product_name}”`
-          : template.title)
-      : (formData.purpose
-          ? `Tờ trình về việc chuyển giao tri thức: “${formData.purpose.slice(0, 80)}”`
-          : template.title);
+    // Khi chỉ nộp lại 1a, bảo toàn 100% dữ liệu 2a của phiên bản đã nộp trước đó
+    const preservedFormData2a =
+      isOnly1aRejected && activeEditing
+        ? activeEditing.formData2a || activeEditing.form_data_2a || formData2a
+        : formData2a;
+    const preservedFormData1a =
+      isOnly2aRejected && activeEditing
+        ? activeEditing.formData1a || activeEditing.form_data_1a || formData1a
+        : formData1a;
+
+    const topicTitle =
+      preservedFormData1a.ten_de_tai ||
+      preservedFormData2a.product_name ||
+      'Hồ sơ chuyển giao tri thức và công nghệ';
+    const effectiveTitle = `Bộ hồ sơ kép CGCN: “${topicTitle}” (Mẫu 1a & 2a)`;
 
     return {
-      ...editingDossier,
-      id: editingDossier?.id || `hs-${Date.now()}`,
+      ...activeEditing,
+      id,
       code,
       title: effectiveTitle,
-      templateId: template.id,
-      templateTitle: template.title,
-      templateCode: template.code,
-      createdBy: editingDossier?.createdBy || currentUser,
+      ten_de_tai: preservedFormData1a.ten_de_tai || preservedFormData2a.product_name || '',
+      truong_don_vi:
+        preservedFormData1a.truong_don_vi || preservedFormData2a.truong_don_vi || '',
+      templateId: template1a.id,
+      templateTitle: template1a.title,
+      templateCode: template1a.code,
+      createdBy: activeEditing?.createdBy || currentUser,
       assignedManager: {
-        name: template.manager,
-        email: 'admin@ctump.edu.vn',
+        name: template1a.manager || 'Phòng KH&CN',
+        email: 'toanhkhai@gmail.com',
         department: 'Phòng Khoa học & Công nghệ',
       },
-      createdAt: editingDossier?.createdAt || nowStr,
+      createdAt: activeEditing?.createdAt || nowStr,
       submittedAt: nowStr,
       status,
+      target_form: isOnly1aRejected ? '1a' : isOnly2aRejected ? '2a' : editingDossier ? 'both' : undefined,
+      rejected_target: null,
+      rejectedTarget: null,
+      rejection_reason_1a: isOnly1aRejected ? null : activeEditing?.rejection_reason_1a || null,
+      status_1a:
+        isOnly1aRejected || activeEditing?.status_1a === 'RETURNED'
+          ? 'PENDING'
+          : activeEditing?.status_1a || 'PENDING',
+      status_2a: isOnly1aRejected
+        ? activeEditing?.status_2a || 'PENDING'
+        : activeEditing?.status_2a === 'RETURNED'
+        ? 'PENDING'
+        : activeEditing?.status_2a || 'PENDING',
       current_version: effectiveVersion,
       currentVersion: effectiveVersion,
       generated_docx_path: `/uploads/docx/${code}-v${effectiveVersion}.docx`,
       generated_pdf_path: `/uploads/pdf/${code}-v${effectiveVersion}.pdf`,
       docx_file_url: `/uploads/docx/${code}-v${effectiveVersion}.docx`,
-      formData,
-      form_data: formData,
-      docxFileName: `${code}_${template.code.replace(/[^a-zA-Z0-9]/g, '_')}_${formData.full_name?.replace(/\s+/g, '') || 'BieuMau'}_v${effectiveVersion}.docx`,
+      formData: { ...preservedFormData2a, ...preservedFormData1a },
+      form_data: { ...preservedFormData2a, ...preservedFormData1a },
+      formData1a: preservedFormData1a,
+      form_data_1a: preservedFormData1a,
+      formData2a: preservedFormData2a,
+      form_data_2a: preservedFormData2a,
+      signature_config: activeEditing?.signature_config || (activeEditing as any)?.signatureConfig || {
+        departments: ['Phòng KH&CN', 'Phòng TCKT'],
+        rectorRole: 'KT. HIỆU TRƯỞNG / PHÓ HIỆU TRƯỞNG',
+        recipients: ['Như kính gửi;', 'Lưu: VT, KHCN.'],
+      },
+      docxFileName: `${code}_BoHoSoKep_${preservedFormData1a.full_name?.replace(/\s+/g, '') || 'GiangVien'}_v${effectiveVersion}.docx`,
       timeline: [
-        ...(editingDossier?.timeline || []),
+        ...(activeEditing?.timeline || []),
         {
           id: `tl-${Date.now()}`,
           title: editingDossier
-            ? `Chỉnh sửa và nộp lại hồ sơ (v${effectiveVersion})`
-            : 'Hoàn thành và gửi hồ sơ trực tuyến (v1)',
+            ? isOnly1aRejected
+              ? `Cập nhật và nộp lại Biểu mẫu 1a (v${effectiveVersion}) — Giữ nguyên Biểu mẫu 2a`
+              : isOnly2aRejected
+              ? `Cập nhật và nộp lại Biểu mẫu 2a (v${effectiveVersion}) — Giữ nguyên Biểu mẫu 1a`
+              : `Chỉnh sửa và nộp lại bộ hồ sơ kép (v${effectiveVersion})`
+            : 'Hoàn thành và gửi bộ hồ sơ kép trực tuyến (1a & 2a)',
           actor: currentUser.name,
           role: currentUser.title,
           timestamp: nowReadable,
@@ -351,40 +525,99 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
     };
   };
 
-  const handleSaveDraft = () => {
-    const dossier = buildCurrentDossier('SUBMITTED');
-    onSaveDraft(dossier);
-    setSaveSuccessMsg('Đã lưu hồ sơ thành công! Bạn có thể xem lại tại mục "Hồ sơ của tôi".');
-    setTimeout(() => setSaveSuccessMsg(null), 4000);
+  const handleSaveDraft = async () => {
+    if (isSubmittingRef.current || isSubmitting) return;
+    try {
+      isSubmittingRef.current = true;
+      setIsSubmitting(true);
+      const dossier = buildCurrentDossier('SUBMITTED');
+      const saved = await onSaveDraft(dossier);
+      if (saved && typeof saved === 'object' && 'id' in saved) {
+        sessionIdentityRef.current = {
+          id: saved.id,
+          code: saved.code || sessionIdentityRef.current.code,
+          persisted: saved,
+        };
+      }
+      setSaveSuccessMsg('Đã lưu hồ sơ thành công! Bạn có thể xem lại tại mục "Hồ sơ của tôi".');
+      setTimeout(() => setSaveSuccessMsg(null), 4000);
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+    }
   };
 
-  const handleNextToReview = () => {
-    if (validateForm()) {
+  // Chuyển từ Bước 1 (1a) sang Bước 2 (2a): Chỉ kiểm tra hợp lệ và chuyển bước trên UI, KHÔNG gọi API tạo bản ghi thừa
+  const handleNextStep1To2 = () => {
+    if (validateForm(1)) {
       setCurrentStep(2);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
-  const handleNextToPreview = () => {
-    setCurrentStep(3);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Chuyển từ Bước 2 (2a) sang Bước 3 (Xem trước & Đóng gói): Chỉ kiểm tra hợp lệ và chuyển bước trên UI, KHÔNG gọi API tạo bản ghi thừa
+  const handleNextStep2To3 = () => {
+    if (validateForm(2)) {
+      setCurrentStep(3);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   const handleFinalSubmit = async () => {
-    if (!validateForm()) {
-      setCurrentStep(1);
-      return;
+    // Chặn tuyệt đối double-click / gọi API song song
+    if (isSubmittingRef.current || isSubmitting) return;
+
+    // Khi lỗi chỉ thuộc về Biểu mẫu 1a: Chỉ validate schema của Form 1a, tuyệt đối không trigger validate Form 2a
+    if (isOnly1aRejected) {
+      if (!validateForm(1)) {
+        setCurrentStep(1);
+        return;
+      }
+    } else if (isOnly2aRejected) {
+      if (!validateForm(2)) {
+        setCurrentStep(2);
+        return;
+      }
+    } else {
+      if (!validateForm(1)) {
+        setCurrentStep(1);
+        return;
+      }
+      if (!validateForm(2)) {
+        setCurrentStep(2);
+        return;
+      }
     }
     try {
+      isSubmittingRef.current = true;
       setIsSubmitting(true);
       const dossier = buildCurrentDossier('SUBMITTED');
       await onSubmitDossier(dossier);
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
 
   const previewDossier = buildCurrentDossier('SUBMITTED');
+
+  const previewDossier1a: Dossier = {
+    ...previewDossier,
+    templateId: template1a.id,
+    templateTitle: template1a.title,
+    templateCode: template1a.code,
+    formData: formData1a,
+    form_data: formData1a,
+  };
+
+  const previewDossier2a: Dossier = {
+    ...previewDossier,
+    templateId: template2a.id,
+    templateTitle: template2a.title,
+    templateCode: template2a.code,
+    formData: formData2a,
+    form_data: formData2a,
+  };
 
   const sections =
     template.sections && template.sections.length > 0
@@ -405,7 +638,13 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
             <span>Quay lại</span>
           </button>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            {editingDossier ? `Chỉnh sửa & Nộp lại hồ sơ: ${editingDossier.code}` : 'Khởi tạo hồ sơ trực tuyến'}
+            {editingDossier
+              ? isOnly1aRejected
+                ? `Chỉnh sửa & Nộp lại Biểu mẫu 1a: ${editingDossier.code}`
+                : isOnly2aRejected
+                ? `Chỉnh sửa & Nộp lại Biểu mẫu 2a: ${editingDossier.code}`
+                : `Chỉnh sửa & Nộp lại hồ sơ: ${editingDossier.code}`
+              : 'Khởi tạo hồ sơ trực tuyến'}
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
             Biểu mẫu: <span className="font-semibold text-slate-800">{template.title}</span> ({template.code})
@@ -425,7 +664,11 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
               {isSubmitting
                 ? 'Đang gửi...'
                 : editingDossier
-                ? `Gửi lại hồ sơ (v${nextVersionNumber})`
+                ? isOnly1aRejected
+                  ? `Nộp lại biểu mẫu 1a (v${nextVersionNumber})`
+                  : isOnly2aRejected
+                  ? `Nộp lại biểu mẫu 2a (v${nextVersionNumber})`
+                  : `Gửi lại hồ sơ (v${nextVersionNumber})`
                 : 'Gửi hồ sơ ngay'}
             </span>
           </button>
@@ -448,14 +691,31 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
         </div>
       )}
 
-      {/* Thanh 4 bước (Cho phép bấm trực tiếp vào bất kỳ bước nào) */}
+      {/* Thanh 3 bước: Quy trình Hồ sơ Kép (Multi-step Form) */}
       <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {[
-            { step: 1, label: '1. Điền thông tin', sub: 'Nhập & sửa nội dung' },
-            { step: 2, label: '2. Kiểm tra dữ liệu', sub: 'Rà soát tính chính xác' },
-            { step: 3, label: '3. Tạo biểu mẫu Word', sub: 'Xem trước chuẩn A4' },
-            { step: 4, label: '4. Gửi hồ sơ', sub: 'Gửi Admin xét duyệt' },
+            {
+              step: 1,
+              label: isStep1ReadOnly ? '1. Xem File 1a (Chỉ xem)' : '1. Điền File 1a',
+              sub: 'Tờ trình CG tri thức',
+              readOnly: isStep1ReadOnly,
+              returned: is1aReturned,
+            },
+            {
+              step: 2,
+              label: isStep2ReadOnly ? '2. Xem File 2a (Chỉ xem)' : '2. Điền File 2a',
+              sub: 'Kế hoạch tổ chức CGCN',
+              readOnly: isStep2ReadOnly,
+              returned: is2aReturned,
+            },
+            {
+              step: 3,
+              label: '3. Kiểm tra & Gửi duyệt',
+              sub: 'Xem trước kép & Đóng gói',
+              readOnly: false,
+              returned: false,
+            },
           ].map((s) => {
             const isCompleted = currentStep > s.step;
             const isCurrent = currentStep === s.step;
@@ -466,14 +726,23 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
                 onClick={() => {
                   if (s.step === 1) {
                     setCurrentStep(1);
-                  } else if (validateForm()) {
-                    setCurrentStep(s.step as any);
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  } else if (s.step === 2) {
+                    if (validateForm(1)) {
+                      setCurrentStep(2);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                  } else if (s.step === 3) {
+                    if (validateForm(1) && validateForm(2)) {
+                      setCurrentStep(3);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
                   }
                 }}
                 className={`flex flex-col p-2 rounded-md border transition-colors cursor-pointer ${
                   isCurrent
                     ? 'border-blue-700 bg-blue-50/60 shadow-2xs'
+                    : s.readOnly
+                    ? 'border-slate-200 bg-slate-100/70'
                     : isCompleted
                     ? 'border-emerald-300 bg-emerald-50/40'
                     : 'border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50/30'
@@ -482,17 +751,36 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
                 <div className="flex items-center justify-between mb-1">
                   <span
                     className={`w-4.5 h-4.5 rounded flex items-center justify-center text-[10px] font-bold ${
-                      isCompleted
+                      s.readOnly
+                        ? 'bg-slate-400 text-white'
+                        : isCompleted
                         ? 'bg-emerald-700 text-white'
                         : isCurrent
                         ? 'bg-blue-800 text-white'
                         : 'bg-slate-200 text-slate-700'
                     }`}
                   >
-                    {isCompleted ? <Check className="w-3 h-3" /> : s.step}
+                    {s.readOnly ? (
+                      <Lock className="w-2.5 h-2.5" />
+                    ) : isCompleted ? (
+                      <Check className="w-3 h-3" />
+                    ) : (
+                      s.step
+                    )}
                   </span>
-                  {isCompleted && <span className="text-[10px] text-emerald-800 font-medium">Hoàn tất</span>}
-                  {isCurrent && <span className="text-[10px] text-blue-900 font-semibold">Đang chọn</span>}
+                  {s.readOnly ? (
+                    <span className="text-[10px] text-slate-600 font-semibold bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                      Chỉ xem
+                    </span>
+                  ) : s.returned ? (
+                    <span className="text-[10px] text-amber-800 font-semibold bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200">
+                      Cần sửa
+                    </span>
+                  ) : isCompleted ? (
+                    <span className="text-[10px] text-emerald-800 font-medium">Hoàn tất</span>
+                  ) : isCurrent ? (
+                    <span className="text-[10px] text-blue-900 font-semibold">Đang chọn</span>
+                  ) : null}
                 </div>
                 <span className="text-xs font-semibold text-slate-900 leading-tight truncate">{s.label}</span>
                 <span className="text-[10px] text-slate-500 hidden sm:inline truncate">{s.sub}</span>
@@ -502,8 +790,8 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
         </div>
       </div>
 
-      {/* ================= STEP 1: FORM INPUTS ================= */}
-      {currentStep === 1 && (
+      {/* ================= STEP 1 & STEP 2: FORM INPUTS ================= */}
+      {(currentStep === 1 || currentStep === 2) && (
         <div className="space-y-5">
           {/* Template Info Card */}
           <div className="bg-white p-3.5 rounded-lg border border-slate-200 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -512,49 +800,111 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
                 <span className="font-mono text-xs font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                   {template.code}
                 </span>
-                <span className="text-xs text-slate-500">Mẫu Word: {template.fileName}</span>
+                <span className="text-xs text-slate-500 font-medium">
+                  {currentStep === 1 ? 'Bước 1/3: Biểu mẫu Tờ trình 1a' : 'Bước 2/3: Biểu mẫu Kế hoạch 2a'}
+                </span>
+                {isCurrentStepReadOnly && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-300">
+                    <Lock className="w-3 h-3 text-slate-500" />
+                    <span>Chế độ Chỉ xem (Không được sửa)</span>
+                  </span>
+                )}
               </div>
               <h2 className="text-sm font-bold text-slate-900">{template.title}</h2>
               <p className="text-xs text-slate-600 max-w-2xl">{template.description}</p>
             </div>
-
-            <div className="w-full md:w-auto shrink-0 flex flex-col sm:flex-row items-stretch sm:items-end gap-2">
-              <div className="w-full md:w-64">
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                  Đổi biểu mẫu khác:
-                </label>
-                <select
-                  value={template.id}
-                  onChange={(e) => handleTemplateChange(e.target.value)}
-                  className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-md bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-600 focus:border-blue-600"
-                >
-                  {safeTemplates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      [{t.code}] {t.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
           </div>
 
-          {/* Gợi ý chỗ sai cần sửa chữa khi đơn bị trả về */}
-          {revisionNoteText && (
+          {/* Thông báo Khóa chỉnh sửa (View-only) đối với file đã đẩy lên nhưng không có yêu cầu trả về */}
+          {isCurrentStepReadOnly && (
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-700">
+              <div className="flex items-center gap-2.5">
+                <Lock className="w-4 h-4 text-slate-500 shrink-0" />
+                <div>
+                  <span className="font-semibold text-slate-900">
+                    {currentStep === 1 ? 'Biểu mẫu 1a (Tờ trình)' : 'Biểu mẫu 2a (Kế hoạch)'}:
+                  </span>{' '}
+                  Giữ nguyên phiên bản hợp lệ đã nộp — Chế độ xem lại (Read-only, không cần chỉnh sửa).
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCurrentStep(currentStep === 1 ? 2 : 1)}
+                className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg shrink-0 cursor-pointer"
+              >
+                <span>Quay về {currentStep === 1 ? 'Biểu mẫu 2a' : 'Biểu mẫu 1a'}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {/* Banner kế thừa thông tin ở Bước 2 */}
+          {currentStep === 2 && !isStep2ReadOnly && (
+            <div className="p-3.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg text-xs text-blue-900 flex items-start gap-2.5 shadow-2xs">
+              <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-blue-950">
+                  Dữ liệu chung đã được tự động kế thừa từ File 1a sang File 2a:
+                </p>
+                <p className="mt-0.5 text-blue-800">
+                  • Tên đề tài / sản phẩm: <span className="font-semibold text-blue-950">{formData1a.ten_de_tai || formData2a.product_name || '(Chưa nhập)'}</span><br />
+                  • Trưởng đơn vị: <span className="font-semibold text-blue-950">{formData1a.truong_don_vi}</span> &bull; Đơn vị: <span className="font-semibold text-blue-950">{formData1a.department}</span> &bull; Cá nhân / Chủ nhiệm: <span className="font-semibold text-blue-950">{formData1a.full_name}</span>
+                </p>
+                <p className="text-[11px] text-blue-600 mt-1 italic">
+                  Thầy/Cô vui lòng tiếp tục rà soát và bổ sung các thông tin chi tiết cho Kế hoạch chuyển giao công nghệ bên dưới.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Gợi ý chỗ sai cần sửa chữa khi đơn bị trả về (Tuyệt đối ẩn ở Bước 2 nếu chỉ trả về 1a) */}
+          {revisionNoteText && !isCurrentStepReadOnly && !(currentStep === 2 && isOnly1aRejected) && (
             <div className="p-4 bg-rose-50 border border-rose-300 rounded-lg space-y-1.5 text-xs text-rose-950">
               <div className="flex items-center gap-1.5 font-bold text-rose-800">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>Gợi ý chỗ sai cần sửa chữa từ Cô Admin (Phòng KH&CN):</span>
+                <span>
+                  {isOnly1aRejected
+                    ? 'Yêu cầu chỉnh sửa Biểu mẫu 1a từ Admin (Phòng KH&CN):'
+                    : isOnly2aRejected
+                    ? 'Yêu cầu chỉnh sửa Biểu mẫu 2a từ Admin (Phòng KH&CN):'
+                    : 'Gợi ý chỗ sai cần sửa chữa từ Cô Admin (Phòng KH&CN):'}
+                </span>
               </div>
               <p className="pl-5 font-semibold text-rose-900 whitespace-pre-line">"{revisionNoteText}"</p>
               <p className="text-[11px] text-rose-700 pl-5">
-                Thầy/Cô chỉnh sửa lại các trường thông tin bên dưới và nhấn <strong>"Gửi lại hồ sơ (v{nextVersionNumber})"</strong>.
+                Thầy/Cô chỉnh sửa lại các trường thông tin bên dưới và nhấn{' '}
+                <strong>
+                  "
+                  {isOnly1aRejected
+                    ? `Nộp lại biểu mẫu 1a (v${nextVersionNumber})`
+                    : isOnly2aRejected
+                    ? `Nộp lại biểu mẫu 2a (v${nextVersionNumber})`
+                    : `Gửi lại hồ sơ (v${nextVersionNumber})`}
+                  "
+                </strong>
+                .
               </p>
             </div>
           )}
 
           {/* Form Groups by Section */}
-          <div className="space-y-4">
+          <fieldset
+            disabled={isCurrentStepReadOnly}
+            className={
+              isCurrentStepReadOnly
+                ? 'opacity-70 pointer-events-none select-none space-y-4'
+                : 'space-y-4'
+            }
+          >
             {sections.map((sectionName) => {
+              const isWorkshopDisabled =
+                formData.co_hoi_thao === false || formData.has_workshop === false;
+
+              // Tự động ẩn hoàn toàn khối Quản lý rủi ro khi không tổ chức hội thảo
+              if (isWorkshopDisabled && /rủi ro/i.test(sectionName)) {
+                return null;
+              }
+
               const fieldsInSection = template.fields.filter((f) => {
                 const fSection = f.section || 'Nội dung chi tiết';
                 return (
@@ -596,8 +946,8 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
                         </label>
                         <span className="text-[11px] font-medium text-blue-700">
                           {formData.co_hoi_thao === false || formData.has_workshop === false
-                            ? '✓ Sẽ tự động ẩn/xóa đoạn Hội thảo khi xuất file Word'
-                            : '• Đoạn Hội thảo sẽ xuất hiện trong file Word'}
+                            ? '✓ Tự động ẩn hoàn toàn Mục Hội thảo & Quản lý rủi ro trên Preview và file Word/PDF'
+                            : '• Mục Hội thảo & Quản lý rủi ro sẽ hiển thị đầy đủ'}
                         </span>
                       </div>
                     )}
@@ -638,6 +988,14 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
                           (formData.co_hoi_thao === false || formData.has_workshop === false) &&
                           (fKey.includes('workshop') || field.label.toLowerCase().includes('hội thảo'));
                         if (isWorkshopHidden) return null;
+
+                        const isRiskHidden =
+                          (formData.co_hoi_thao === false || formData.has_workshop === false) &&
+                          (fKey.includes('rui_ro') ||
+                            fKey.includes('risk') ||
+                            field.label.toLowerCase().includes('rủi ro') ||
+                            (field.section && field.section.toLowerCase().includes('rủi ro')));
+                        if (isRiskHidden) return null;
 
                         const isTimeRangeField =
                           fKey === 'transfer_time' ||
@@ -1680,7 +2038,7 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
                 </div>
               );
             })}
-          </div>
+          </fieldset>
 
           {Object.keys(errors).length > 0 && (
             <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-lg flex items-start sm:items-center gap-2.5 text-xs text-rose-900 shadow-2xs">
@@ -1697,284 +2055,255 @@ export const CreateDossierView: React.FC<CreateDossierViewProps> = ({
           )}
 
           {/* Step 1 Actions Footer */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-200">
+          {/* Footer cho Bước 1 */}
+          {currentStep === 1 && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-200">
+              {!isStep1ReadOnly ? (
+                <button
+                  type="button"
+                  onClick={handleSaveDraft}
+                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Lưu nháp File 1a</span>
+                </button>
+              ) : (
+                <span className="text-xs text-slate-500 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  <span>File 1a đang ở chế độ Chỉ xem (Không được sửa)</span>
+                </span>
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                {isOnly1aRejected && (
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={handleFinalSubmit}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>
+                      {isSubmitting
+                        ? 'Đang nộp lại 1a...'
+                        : `Nộp lại biểu mẫu 1a (v${nextVersionNumber})`}
+                    </span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleNextStep1To2}
+                  className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold rounded-lg transition-colors cursor-pointer ${
+                    isOnly1aRejected
+                      ? 'text-slate-700 bg-white border border-slate-300 hover:bg-slate-50'
+                      : 'text-white bg-blue-700 hover:bg-blue-800 shadow-xs'
+                  }`}
+                >
+                  <span>
+                    {isStep2ReadOnly
+                      ? 'Xem lại File 2a (Chỉ xem)'
+                      : 'Lưu & Tiếp tục sang Bước 2 (Điền File 2a)'}
+                  </span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Footer cho Bước 2 */}
+          {currentStep === 2 && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentStep(1);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>{isStep1ReadOnly ? 'Xem File 1a (Chỉ xem)' : 'Quay lại Bước 1 (File 1a)'}</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                {!isStep2ReadOnly && (
+                  <button
+                    type="button"
+                    onClick={handleSaveDraft}
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Lưu nháp</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleNextStep2To3}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow-xs transition-colors cursor-pointer"
+                >
+                  <span>Tiếp tục sang Bước 3: Kiểm tra &amp; Gửi duyệt</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ================= STEP 3: WORD PREVIEWS & FINAL SUBMIT ================= */}
+      {currentStep === 3 && (
+        <div className="space-y-5">
+          {/* Header tabs chuyển đổi 1a và 2a */}
+          <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPreviewTab('1a')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  previewTab === '1a'
+                    ? 'bg-blue-700 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>File 1a: Tờ trình chuyển giao tri thức</span>
+                {isStep1ReadOnly && (
+                  <span className="px-1.5 py-0.5 rounded bg-white/20 text-[10px]">Chỉ xem</span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPreviewTab('2a')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  previewTab === '2a'
+                    ? 'bg-blue-700 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>File 2a: Kế hoạch tổ chức CGCN</span>
+                {isStep2ReadOnly && (
+                  <span className="px-1.5 py-0.5 rounded bg-white/20 text-[10px]">Chỉ xem</span>
+                )}
+              </button>
+            </div>
+
             <button
               type="button"
-              onClick={handleNextToReview}
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+              onClick={() =>
+                generateAndDownloadDocx(
+                  previewTab === '1a' ? previewDossier1a : previewDossier2a,
+                  previewTab === '1a' ? template1a : template2a
+                )
+              }
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded-md transition-colors cursor-pointer"
             >
-              <span>Xem trước văn bản Word</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              <Download className="w-3.5 h-3.5" />
+              <span>Tải file Word ({previewTab.toUpperCase()})</span>
             </button>
+          </div>
+
+          {/* Bản xem trước Word chuẩn A4 */}
+          <WordDocumentPreview
+            dossier={previewTab === '1a' ? previewDossier1a : previewDossier2a}
+            template={previewTab === '1a' ? template1a : template2a}
+          />
+
+          {/* Thẻ đóng gói Bộ hồ sơ kép (Bundle Card) & Thông báo And-Join */}
+          <div className="bg-white rounded-lg border border-slate-200 shadow-2xs p-5 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 flex items-center justify-center shrink-0">
+                <Layers className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Đóng gói Bộ hồ sơ kép (Bundle: File 1a &amp; File 2a)
+                </h3>
+                <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+                  Hệ thống sẽ đóng gói cả 2 biểu mẫu vào một Bộ hồ sơ duy nhất với mã định danh{' '}
+                  <strong className="font-mono text-blue-700">{previewDossier.code}</strong>.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs">
+              <div>
+                <span className="text-slate-500">File 1a:</span>
+                <span className="font-semibold text-slate-900 ml-1.5">Tờ trình xin phê duyệt CG tri thức</span>
+              </div>
+              <div>
+                <span className="text-slate-500">File 2a:</span>
+                <span className="font-semibold text-slate-900 ml-1.5">Kế hoạch chi tiết CGCN trong trường</span>
+              </div>
+              <div>
+                <span className="text-slate-500">Đơn vị trình:</span>
+                <span className="font-semibold text-slate-900 ml-1.5">{formData1a.department}</span>
+              </div>
+              <div>
+                <span className="text-slate-500">Cá nhân / Chủ nhiệm:</span>
+                <span className="font-semibold text-slate-900 ml-1.5">{formData1a.full_name}</span>
+              </div>
+              <div className="sm:col-span-2">
+                <span className="text-slate-500">Tên đề tài / sản phẩm:</span>
+                <span className="font-bold text-blue-900 ml-1.5">{formData1a.ten_de_tai || formData2a.product_name}</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900 flex items-start gap-2">
+              <ShieldCheck className="w-4 h-4 text-blue-700 shrink-0 mt-0.5" />
+              <div className="leading-relaxed">
+                <span className="font-bold">Cơ chế duyệt đồng bộ (And-Join Synchronization): </span>
+                Khi gửi hồ sơ, Quản trị viên (Phòng KH&CN) sẽ kiểm tra thể thức và duyệt độc lập từng file (1a và 2a). Khi cả 2 file đều đạt yêu cầu, bộ hồ sơ sẽ tự động chuyển sang giai đoạn Trình ký Ban Giám hiệu.
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation Buttons */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-200">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentStep(1);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+              >
+                {isStep1ReadOnly ? <Eye className="w-3.5 h-3.5 text-slate-500" /> : <ArrowLeft className="w-3.5 h-3.5" />}
+                <span>{isStep1ReadOnly ? 'Xem File 1a (Chỉ xem)' : 'Sửa File 1a'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCurrentStep(2);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg transition-colors cursor-pointer"
+              >
+                {isStep2ReadOnly ? <Eye className="w-3.5 h-3.5 text-slate-500" /> : <ArrowLeft className="w-3.5 h-3.5" />}
+                <span>{isStep2ReadOnly ? 'Xem File 2a (Chỉ xem)' : 'Sửa File 2a'}</span>
+              </button>
+            </div>
 
             <button
               type="button"
               disabled={isSubmitting}
               onClick={handleFinalSubmit}
-              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
+              className="inline-flex items-center justify-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
             >
               <Send className="w-3.5 h-3.5" />
               <span>
                 {isSubmitting
                   ? 'Đang gửi hồ sơ...'
                   : editingDossier
-                  ? `Gửi lại hồ sơ (Phiên bản v${nextVersionNumber})`
-                  : 'Gửi hồ sơ ngay'}
-              </span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ================= STEP 2: REVIEW ENTERED DATA ================= */}
-      {currentStep === 2 && (
-        <div className="space-y-5">
-          <div className="bg-white rounded-lg border border-slate-200 shadow-2xs p-5 space-y-4">
-            <div className="border-b border-slate-100 pb-3">
-              <h2 className="text-sm font-bold text-slate-900">
-                Bước 2: Rà soát & Kiểm tra thông tin đã nhập
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Vui lòng kiểm tra kỹ lưỡng các thông tin trước khi hệ thống tạo văn bản Word & PDF chính thức.
-              </p>
-            </div>
-
-            <div className="divide-y divide-slate-100">
-              {template.fields.map((f) => {
-                const fKey = f.name || f.key || f.id;
-                const val = formData[fKey];
-
-                return (
-                  <div
-                    key={f.id}
-                    className="flex flex-col sm:flex-row sm:items-start justify-between py-2.5 gap-2"
-                  >
-                    <span className="text-xs font-semibold text-slate-600 sm:w-1/3">{f.label}</span>
-                    <span className="text-xs text-slate-900 font-medium sm:w-2/3 break-words">
-                      {Array.isArray(val) ? (
-                        fKey === 'ds_danh_gia_rui_ro' ? (
-                          <div className="overflow-x-auto w-full mt-1 border border-slate-200 rounded">
-                            <table className="w-full text-xs text-left border-collapse">
-                              <thead className="bg-slate-50 text-[11px] font-bold text-slate-700">
-                                <tr>
-                                  <th className="p-1.5 border-b border-slate-200 text-center w-10">STT</th>
-                                  <th className="p-1.5 border-b border-slate-200">Công việc / Yếu tố rủi ro</th>
-                                  <th className="p-1.5 border-b border-slate-200 text-center w-16">P</th>
-                                  <th className="p-1.5 border-b border-slate-200 text-center w-16">S</th>
-                                  <th className="p-1.5 border-b border-slate-200 text-center w-16">R=PxS</th>
-                                  <th className="p-1.5 border-b border-slate-200 text-center w-24">Phân loại</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {val.map((r: any, idx: number) => (
-                                  <tr key={idx} className="border-b border-slate-100 last:border-0">
-                                    <td className="p-1.5 font-mono text-center">{idx + 1}</td>
-                                    <td className="p-1.5 font-medium">{r.yeu_to_rui_ro}</td>
-                                    <td className="p-1.5 text-center">{r.p}</td>
-                                    <td className="p-1.5 text-center">{r.s}</td>
-                                    <td className="p-1.5 text-center font-bold">{r.r}</td>
-                                    <td className="p-1.5 text-center font-semibold text-slate-800">{r.phan_loai}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        ) : fKey === 'ds_kiem_soat_rui_ro' ? (
-                          <div className="overflow-x-auto w-full mt-1 border border-slate-200 rounded">
-                            <table className="w-full text-xs text-left border-collapse">
-                              <thead className="bg-slate-50 text-[11px] font-bold text-slate-700">
-                                <tr>
-                                  <th className="p-1.5 border-b border-slate-200 text-center w-10">Stt</th>
-                                  <th className="p-1.5 border-b border-slate-200">Yếu tố rủi ro</th>
-                                  <th className="p-1.5 border-b border-slate-200">Biện pháp kiểm soát</th>
-                                  <th className="p-1.5 border-b border-slate-200">ĐV phụ trách</th>
-                                  <th className="p-1.5 border-b border-slate-200">ĐV phối hợp</th>
-                                  <th className="p-1.5 border-b border-slate-200">Thời gian</th>
-                                  <th className="p-1.5 border-b border-slate-200">Sản phẩm</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {val.map((c: any, idx: number) => (
-                                  <tr key={idx} className="border-b border-slate-100 last:border-0">
-                                    <td className="p-1.5 font-mono text-center">{idx + 1}</td>
-                                    <td className="p-1.5 font-medium">{c.yeu_to_rui_ro}</td>
-                                    <td className="p-1.5">{c.bien_phap}</td>
-                                    <td className="p-1.5">{c.don_vi_phu_trach}</td>
-                                    <td className="p-1.5">{c.don_vi_phoi_hop}</td>
-                                    <td className="p-1.5">{c.thoi_gian}</td>
-                                    <td className="p-1.5">{c.san_pham}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        ) : (
-                          val.join(', ')
-                        )
-                      ) : val !== undefined && val !== '' ? (
-                        String(val)
-                      ) : (
-                        <span className="text-slate-400 italic">(Để trống)</span>
-                      )}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-            <button
-              type="button"
-              onClick={() => setCurrentStep(1)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-md transition-colors cursor-pointer"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Quay lại chỉnh sửa</span>
-            </button>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleNextToPreview}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-md transition-colors cursor-pointer"
-              >
-                <span>Xem trước bản Word</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-
-              <button
-                type="button"
-                disabled={isSubmitting}
-                onClick={handleFinalSubmit}
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-md shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>{editingDossier ? `Gửi lại hồ sơ (v${nextVersionNumber})` : 'Gửi hồ sơ'}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================= STEP 3: WORD TEMPLATE PREVIEW ================= */}
-      {currentStep === 3 && (
-        <div className="space-y-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">
-                Bước 3: Bản Word hoàn chỉnh dự kiến được tạo
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Các trường dữ liệu đã được tự động điền vào khung mẫu Word theo quy chuẩn hành chính.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => generateAndDownloadDocx(previewDossier, template)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-800 bg-blue-50 border border-blue-200 hover:bg-blue-100 rounded-md transition-colors cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Tải file Word (.docx)</span>
-            </button>
-          </div>
-
-          <WordDocumentPreview dossier={previewDossier} template={template} />
-
-          <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-            <button
-              type="button"
-              onClick={() => setCurrentStep(2)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-md transition-colors cursor-pointer"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Quay lại bước kiểm tra</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={handleFinalSubmit}
-              className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-md shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>{editingDossier ? `Gửi lại hồ sơ (v${nextVersionNumber})` : 'Xác nhận Gửi hồ sơ'}</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ================= STEP 4: SUBMIT CONFIRMATION ================= */}
-      {currentStep === 4 && (
-        <div className="space-y-5">
-          <div className="bg-white rounded-lg border border-slate-200 shadow-2xs p-6 space-y-5 max-w-xl mx-auto">
-            <div className="text-center space-y-1.5">
-              <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-800 flex items-center justify-center mx-auto">
-                <Send className="w-5 h-5" />
-              </div>
-              <h2 className="text-base font-bold text-slate-900">
-                {editingDossier
-                  ? `Xác nhận gửi lại hồ sơ (Phiên bản v${nextVersionNumber})`
-                  : 'Sẵn sàng gửi hồ sơ tới Quản trị viên'}
-              </h2>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Hồ sơ của Thầy/Cô sẽ được chuyển tới <strong>Cô Admin (Phòng Khoa học &amp; Công nghệ)</strong> kèm bộ file Word &amp; PDF phiên bản mới nhất.
-              </p>
-            </div>
-
-            <div className="p-3.5 bg-slate-50 rounded-md border border-slate-200 space-y-2 text-xs">
-              <div className="flex justify-between py-1 border-b border-slate-200">
-                <span className="text-slate-500">Mã hồ sơ:</span>
-                <span className="font-mono font-bold text-blue-700">{previewDossier.code}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-200">
-                <span className="text-slate-500">Phiên bản:</span>
-                <span className="font-mono font-bold text-indigo-700">v{nextVersionNumber}</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-200">
-                <span className="text-slate-500">Biểu mẫu áp dụng:</span>
-                <span className="font-medium text-slate-900 truncate max-w-[220px]">{template.title}</span>
-              </div>
-              <div className="flex justify-between py-1">
-                <span className="text-slate-500">Trạng thái sau khi gửi:</span>
-                <span className="font-semibold text-blue-800">Đã gửi đơn (Chờ Admin duyệt)</span>
-              </div>
-            </div>
-
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-900 leading-relaxed">
-              <div className="flex items-start gap-2">
-                <ShieldCheck className="w-4 h-4 text-blue-700 shrink-0 mt-0.5" />
-                <p>
-                  Hệ thống sẽ tự động kết xuất lại bộ file Word (.docx) và PDF (.pdf) khớp 100% với nội dung vừa chỉnh sửa.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between pt-4 border-t border-slate-200">
-            <button
-              type="button"
-              onClick={() => setCurrentStep(1)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-md transition-colors cursor-pointer"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Quay lại chỉnh sửa</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={isSubmitting}
-              onClick={handleFinalSubmit}
-              className="inline-flex items-center gap-1.5 px-5 py-2.5 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-md shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>
-                {isSubmitting
-                  ? 'Đang gửi...'
-                  : editingDossier
-                  ? `Xác nhận Gửi lại hồ sơ (v${nextVersionNumber})`
-                  : 'Xác nhận Gửi hồ sơ'}
+                  ? isOnly1aRejected
+                    ? `Nộp lại biểu mẫu 1a (v${nextVersionNumber})`
+                    : isOnly2aRejected
+                    ? `Nộp lại biểu mẫu 2a (v${nextVersionNumber})`
+                    : `Gửi lại bộ hồ sơ kép (v${nextVersionNumber})`
+                  : 'Gửi Bộ hồ sơ kép (Chờ duyệt)'}
               </span>
             </button>
           </div>

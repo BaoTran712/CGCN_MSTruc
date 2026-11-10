@@ -38,16 +38,114 @@ let isConnected = false;
 
 export async function initDb() {
   try {
-    const conn = await pool.getConnection();
-    await conn.ping();
-    conn.release();
+    let conn;
+    try {
+      conn = await pool.getConnection();
+      await conn.ping();
+      conn.release();
+    } catch (dbErr) {
+      // Nếu lỗi do database chưa tồn tại -> tự động tạo database & nạp schema
+      if (
+        dbErr.code === 'ER_BAD_DB_ERROR' ||
+        (dbErr.message && dbErr.message.includes('Unknown database'))
+      ) {
+        console.log(
+          `[Database] Database '${dbConfig.database}' chưa tồn tại. Đang tự động khởi tạo...`
+        );
+        const rootConn = await mysql.createConnection({
+          host: dbConfig.host,
+          port: dbConfig.port,
+          user: dbConfig.user,
+          password: dbConfig.password,
+          multipleStatements: true,
+        });
+        await rootConn.query(
+          `CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`
+        );
+        await rootConn.query(`USE \`${dbConfig.database}\`;`);
+
+        // Nạp schema.sql nếu có
+        const schemaPath = path.resolve(__dirname, '../../schema.sql');
+        if (fs.existsSync(schemaPath)) {
+          const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+          await rootConn.query(schemaSql);
+          console.log(
+            `[Database] Đã tự động nạp cấu trúc bảng và dữ liệu mẫu từ schema.sql thành công!`
+          );
+        }
+        await rootConn.end();
+
+        // Thử kết nối lại với pool
+        conn = await pool.getConnection();
+        await conn.ping();
+        conn.release();
+      } else {
+        throw dbErr;
+      }
+    }
+
+    // Kiểm tra xem bảng dossiers đã được nạp chưa, nếu chưa có bảng thì tự động nạp schema.sql
+    try {
+      const [tableCheck] = await pool.query("SHOW TABLES LIKE 'dossiers'");
+      if (!tableCheck || tableCheck.length === 0) {
+        console.log(`[Database] Bảng 'dossiers' chưa tồn tại. Đang tự động nạp schema.sql...`);
+        const schemaPath = path.resolve(__dirname, '../../schema.sql');
+        if (fs.existsSync(schemaPath)) {
+          const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+          const rootConn = await mysql.createConnection({
+            host: dbConfig.host,
+            port: dbConfig.port,
+            user: dbConfig.user,
+            password: dbConfig.password,
+            multipleStatements: true,
+          });
+          await rootConn.query(schemaSql);
+          await rootConn.end();
+          console.log(`[Database] Đã tự động khởi tạo cấu trúc bảng chuẩn từ schema.sql!`);
+        }
+      } else {
+        // Tự động bổ sung các cột hỗ trợ trả về/nộp lại độc lập từng biểu mẫu (1a / 2a) nếu bảng cũ chưa có
+        const requiredCols = [
+          {
+            name: 'rejected_target',
+            ddl: "ALTER TABLE `dossiers` ADD COLUMN `rejected_target` VARCHAR(20) NULL DEFAULT NULL COMMENT 'Biểu mẫu mục tiêu bị trả về: 1a, 2a, both' AFTER `status_2a`",
+          },
+          {
+            name: 'rejection_reason_1a',
+            ddl: "ALTER TABLE `dossiers` ADD COLUMN `rejection_reason_1a` TEXT NULL COMMENT 'Lý do trả về riêng cho Biểu mẫu 1a' AFTER `rejected_target`",
+          },
+          {
+            name: 'rejection_reason_2a',
+            ddl: "ALTER TABLE `dossiers` ADD COLUMN `rejection_reason_2a` TEXT NULL COMMENT 'Lý do trả về riêng cho Biểu mẫu 2a' AFTER `rejection_reason_1a`",
+          },
+        ];
+        for (const col of requiredCols) {
+          try {
+            const [colCheck] = await pool.query(`SHOW COLUMNS FROM \`dossiers\` LIKE ?`, [col.name]);
+            if (!colCheck || colCheck.length === 0) {
+              await pool.query(col.ddl);
+              console.log(`[Database] Đã tự động thêm cột '${col.name}' vào bảng dossiers.`);
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } catch (checkErr) {
+      console.warn(`[Database] Không thể kiểm tra bảng: ${checkErr.message}`);
+    }
+
     isConnected = true;
-    console.log(`[Database] Đã kết nối MySQL pool thành công tới database: ${dbConfig.database} (${dbConfig.host}:${dbConfig.port})`);
+    console.log(
+      `[Database] Đã kết nối MySQL pool thành công tới database: ${dbConfig.database} (${dbConfig.host}:${dbConfig.port})`
+    );
     return pool;
   } catch (err) {
     isConnected = false;
     console.warn(`[Database] MySQL chưa được khởi động (${err.message}).`);
-    console.warn(`[Database] Đã tự động kích hoạt In-Memory Store dự phòng: Toàn bộ API hoạt động bình thường.`);
+    console.warn(
+      `[Database] Đã tự động kích hoạt In-Memory Store dự phòng: Toàn bộ API hoạt động bình thường.`
+    );
     return null;
   }
 }

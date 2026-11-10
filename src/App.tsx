@@ -40,6 +40,7 @@ function AppContent() {
     uploadFacultySignature,
     updateSchoolSigning,
     completeDossier,
+    updateDossier,
   } = useDossiers();
 
   const [activeTab, setActiveTab] = useState<ActiveNavTab>('dashboard');
@@ -56,6 +57,16 @@ function AppContent() {
       setActiveTab('my_dossiers');
     }
   }, [currentUser, isAdmin, activeTab]);
+
+  useEffect(() => {
+    if (!selectedDossier) return;
+    const latest = dossiers.find(
+      (d) => d.id === selectedDossier.id || d.code === selectedDossier.code
+    );
+    if (latest && latest !== selectedDossier) {
+      setSelectedDossier(latest);
+    }
+  }, [dossiers, selectedDossier]);
 
   if (!currentUser) {
     return (
@@ -88,6 +99,7 @@ function AppContent() {
   const handleSaveDraft = async (draftDossier: Application) => {
     const saved = await saveDraft(draftDossier, currentUser);
     showToast(`Đã lưu hồ sơ ${saved.code}!`);
+    return saved;
   };
 
   // BƯỚC 1 & BƯỚC 2B: Nộp đơn & Chuyển hướng ngay sang màn hình "Chi tiết đơn đã gửi"
@@ -104,8 +116,8 @@ function AppContent() {
   };
 
   // BƯỚC 2B [LUỒNG FALSE]: Chỉnh sửa trực tiếp trên trang Chi tiết đơn & Nộp lại
-  const handleResubmitDossier = async (dossierId: string, updatedFormData: Record<string, any>) => {
-    const updated = await resubmitDossier(dossierId, updatedFormData, currentUser);
+  const handleResubmitDossier = async (dossierId: string, updatedFormData: Record<string, any>, fullPayload?: Partial<Application>) => {
+    const updated = await resubmitDossier(dossierId, updatedFormData, currentUser, fullPayload);
     setSelectedDossier(updated);
     const ver = updated.current_version || updated.currentVersion || 2;
     showToast(
@@ -139,9 +151,9 @@ function AppContent() {
     showToast('Đã đăng xuất khỏi hệ thống.');
   };
 
-  const handleAdminPrecheck = async (dossierId: string, isValid: boolean, reviewNotes?: string) => {
+  const handleAdminPrecheck = async (dossierId: string, isValid: boolean, reviewNotes?: string, targetForm?: '1a' | '2a' | 'both') => {
     try {
-      const updated = await adminPrecheck(dossierId, isValid, reviewNotes, currentUser);
+      const updated = await adminPrecheck(dossierId, isValid, reviewNotes, currentUser, targetForm);
       if (
         selectedDossier &&
         (selectedDossier.id === updated.id ||
@@ -231,6 +243,7 @@ function AppContent() {
           onUploadFacultySignature={handleUploadFacultySignature}
           onUpdateSchoolSigning={handleUpdateSchoolSigning}
           onCompleteDossier={handleCompleteDossier}
+          onUpdateDossier={updateDossier}
           onApproveDossier={handleApproveDossier}
           onReturnDossier={handleReturnDossier}
           onNavigate={(tab) => {

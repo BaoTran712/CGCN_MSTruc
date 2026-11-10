@@ -72,14 +72,18 @@ const ALLOWED_TRANSITIONS: Record<string, { target: DossierStatus; allowedRoles:
   ],
   VALIDATED: [
     { target: 'PENDING_SIGNED_REVIEW', allowedRoles: ['USER', 'ADMIN', 'employee', 'admin'] },
+    { target: 'RETURNED_FOR_REVISION', allowedRoles: ['ADMIN', 'admin'] },
   ],
   PENDING_SIGNED_REVIEW: [
     { target: 'WAITING_RECTOR_SIGNATURE', allowedRoles: ['ADMIN', 'admin'] },
     { target: 'SIGNED_ARCHIVED', allowedRoles: ['ADMIN', 'admin'] },
+    { target: 'VALIDATED', allowedRoles: ['ADMIN', 'admin'] },
     { target: 'RETURNED_FOR_REVISION', allowedRoles: ['ADMIN', 'admin'] },
   ],
   WAITING_RECTOR_SIGNATURE: [
     { target: 'SIGNED_ARCHIVED', allowedRoles: ['ADMIN', 'admin'] },
+    { target: 'PENDING_SIGNED_REVIEW', allowedRoles: ['ADMIN', 'admin'] },
+    { target: 'RETURNED_FOR_REVISION', allowedRoles: ['ADMIN', 'admin'] },
   ],
   SIGNED_ARCHIVED: [],
   CANCELLED: [],

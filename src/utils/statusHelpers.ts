@@ -127,3 +127,51 @@ export function getStatusMeta(status: DossierStatus | string): StatusMeta {
   const norm = normalizeStatus(status);
   return STATUS_MAP[norm] || STATUS_MAP.SUBMITTED;
 }
+
+/**
+ * Chuyển đổi an toàn ngày tháng sang định dạng tiếng Việt (DD/MM/YYYY).
+ * Tuyệt đối không bao giờ hiển thị "Invalid Date" nếu dữ liệu bị thiếu hoặc null.
+ */
+export function formatDateVi(val?: any, fallbackToToday = true): string {
+  if (!val || val === 'Invalid Date') {
+    return fallbackToToday ? new Date().toLocaleDateString('vi-VN') : '--';
+  }
+  const d = new Date(val);
+  if (isNaN(d.getTime())) {
+    return fallbackToToday ? new Date().toLocaleDateString('vi-VN') : '--';
+  }
+  return d.toLocaleDateString('vi-VN');
+}
+
+/**
+ * Chuyển đổi an toàn ngày giờ sang định dạng tiếng Việt (HH:mm:ss DD/MM/YYYY).
+ */
+export function formatDateTimeVi(val?: any, fallbackToToday = true): string {
+  if (!val || val === 'Invalid Date') {
+    return fallbackToToday ? new Date().toLocaleString('vi-VN') : '--';
+  }
+  const d = new Date(val);
+  if (isNaN(d.getTime())) {
+    return fallbackToToday ? new Date().toLocaleString('vi-VN') : '--';
+  }
+  return d.toLocaleString('vi-VN');
+}
+
+/**
+ * Lấy ngày nộp hoặc ngày tạo của hồ sơ một cách an toàn nhất (hỗ trợ cả camelCase và snake_case).
+ */
+export function getDossierDate(dossier: any, fallbackToToday = true): string {
+  if (!dossier) {
+    return fallbackToToday ? new Date().toLocaleDateString('vi-VN') : '--';
+  }
+  const candidate =
+    dossier.submittedAt ||
+    dossier.submitted_at ||
+    dossier.createdAt ||
+    dossier.created_at ||
+    dossier.updatedAt ||
+    dossier.updated_at;
+
+  return formatDateVi(candidate, fallbackToToday);
+}
+

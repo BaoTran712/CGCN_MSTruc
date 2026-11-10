@@ -175,6 +175,11 @@ export interface DossierVersion {
   editedByName: string;
   changeSummary?: string;
   createdAt: string;
+  isOfficial?: boolean;
+  signatureConfig?: SignatureConfig;
+  status1a?: 'PENDING' | 'APPROVED';
+  status2a?: 'PENDING' | 'APPROVED';
+  status?: string;
 }
 
 export interface Notification {
@@ -248,6 +253,14 @@ export interface GeneratedDocument {
   isSigned: boolean;
 }
 
+export interface SignatureConfig {
+  departments: string[];          // Danh sách phòng ban tham gia ký (ví dụ: ['Phòng KH&CN', 'Phòng TCKT'])
+  rectorRole: string;             // Chức danh BGH: 'HIỆU TRƯỞNG' | 'KT. HIỆU TRƯỞNG / PHÓ HIỆU TRƯỞNG' | custom
+  rectorSignerName?: string;      // Tên cụ thể người ký BGH
+  recipients: string[];           // Danh sách Nơi nhận (vd: ['Khoa Y', 'Phòng TCKT', 'TTDV&ĐTTNCXH', 'Lưu: VT, KHCN.'])
+  unitRecipient?: string;         // Tên đơn vị người nộp nhận văn bản
+}
+
 export interface Application {
   id: string;
   code: string;
@@ -264,6 +277,7 @@ export interface Application {
     department: string;
   };
   createdAt: string;
+  created_at?: string;
   updatedAt?: string;
   submittedAt?: string;
   submitted_at?: string;
@@ -329,7 +343,29 @@ export interface Application {
   auditLogs?: AuditLog[];
   timeline?: ApplicationHistory[];
   docxFileName?: string;
+  signature_config?: SignatureConfig;
+  signatureConfig?: SignatureConfig;
+  status_1a?: 'PENDING' | 'APPROVED' | 'RETURNED';
+  status_2a?: 'PENDING' | 'APPROVED' | 'RETURNED';
+  rejected_target?: '1a' | '2a' | 'both' | null;
+  rejectedTarget?: '1a' | '2a' | 'both' | null;
+  target_form?: '1a' | '2a' | 'both' | null;
+  rejection_reason_1a?: string | null;
+  rejectionReason1a?: string | null;
+  rejection_reason_2a?: string | null;
+  rejectionReason2a?: string | null;
+  ten_de_tai?: string;
+  truong_don_vi?: string;
+  formData1a?: Record<string, any>;
+  formData2a?: Record<string, any>;
+  form_data_1a?: Record<string, any>;
+  form_data_2a?: Record<string, any>;
   generatedDocument?: GeneratedDocument;
+  version_type?: 'DRAFT' | 'OFFICIAL';
+  is_official_locked?: boolean;
+  locked_at?: string;
+  locked_by?: string;
+  official_version?: number;
 }
 
 export type Dossier = Application;

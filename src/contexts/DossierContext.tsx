@@ -17,10 +17,10 @@ interface DossierContextValue {
   reloadAll: () => Promise<void>;
   saveDraft: (draft: Application, user: User) => Promise<Application>;
   submitDossier: (dossier: Application, user: User) => Promise<Application>;
-  resubmitDossier: (dossierId: string, updatedFormData: Record<string, any>, user: User) => Promise<Application>;
+  resubmitDossier: (dossierId: string, updatedFormData: Record<string, any>, user: User, fullPayload?: Partial<Application>) => Promise<Application>;
   approveDossier: (dossierId: string, comment: string | undefined, user: User) => Promise<Application>;
   returnDossier: (dossierId: string, reason: string, user: User) => Promise<Application>;
-  adminPrecheck: (id: string, isValid: boolean, reviewNotes?: string, adminUser?: User) => Promise<Application>;
+  adminPrecheck: (id: string, isValid: boolean, reviewNotes?: string, adminUser?: User, targetForm?: '1a' | '2a' | 'both') => Promise<Application>;
   uploadFacultySignature: (
     id: string,
     facultySignedPdfUrl?: string,
@@ -32,6 +32,7 @@ interface DossierContextValue {
     flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean; note?: string },
     adminUser?: User
   ) => Promise<Application>;
+  updateDossier: (id: string, partial: Partial<Application>) => Promise<Application>;
   completeDossier: (
     id: string,
     decisionNumber?: string,
@@ -69,6 +70,16 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   useEffect(() => {
     reloadAll();
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        api.getAllApplications().then((loadedApps) => {
+          if (Array.isArray(loadedApps) && loadedApps.length > 0) {
+            setDossiers(loadedApps);
+          }
+        }).catch(() => {});
+      }
+    }, 15000);
+    return () => window.clearInterval(intervalId);
   }, [reloadAll]);
 
   const upsertInState = useCallback((updated: Application, fallbackId?: string) => {
@@ -102,8 +113,8 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
   );
 
   const resubmitDossier = useCallback(
-    async (dossierId: string, updatedFormData: Record<string, any>, user: User): Promise<Application> => {
-      const resubmitted = await api.resubmitApplication(dossierId, updatedFormData, user);
+    async (dossierId: string, updatedFormData: Record<string, any>, user: User, fullPayload?: Partial<Application>): Promise<Application> => {
+      const resubmitted = await api.resubmitApplication(dossierId, updatedFormData, user, fullPayload);
       upsertInState(resubmitted, dossierId);
       return resubmitted;
     },
@@ -129,8 +140,8 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
   );
 
   const adminPrecheck = useCallback(
-    async (id: string, isValid: boolean, reviewNotes?: string, adminUser?: User): Promise<Application> => {
-      const updated = await api.adminPrecheck(id, isValid, reviewNotes, adminUser);
+    async (id: string, isValid: boolean, reviewNotes?: string, adminUser?: User, targetForm?: '1a' | '2a' | 'both'): Promise<Application> => {
+      const updated = await api.adminPrecheck(id, isValid, reviewNotes, adminUser, targetForm);
       upsertInState(updated, id);
       return updated;
     },
@@ -179,6 +190,15 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [upsertInState]
   );
 
+  const updateDossier = useCallback(
+    async (id: string, partial: Partial<Application>): Promise<Application> => {
+      const updated = await api.updateDossierFields(id, partial);
+      upsertInState(updated, id);
+      return updated;
+    },
+    [upsertInState]
+  );
+
   const pendingCount = useMemo(
     () =>
       dossiers.filter((d) => {
@@ -212,6 +232,7 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
       uploadFacultySignature,
       updateSchoolSigning,
       completeDossier,
+      updateDossier,
     }),
     [
       templates,
@@ -230,6 +251,7 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
       uploadFacultySignature,
       updateSchoolSigning,
       completeDossier,
+      updateDossier,
     ]
   );
 

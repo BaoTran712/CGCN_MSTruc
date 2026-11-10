@@ -730,51 +730,8 @@ function renderMau1a(ctx, fonts, dossierCode, rawData) {
   ctx.drawParagraph('Kính mong Ban Giám Hiệu xem xét và phê duyệt.', fonts.italic, 12, 0, 3, rgb(0, 0, 0), 24);
   ctx.drawParagraph('Trân trọng./.', fonts.italic, 12, 0, 18, rgb(0, 0, 0), 24);
 
-  // Giữ toàn bộ 3 tầng chữ ký Mẫu 1a trên cùng một mặt trang
-  ctx.ensureSpace(225);
-  const colW = ctx.CONTENT_WIDTH / 2;
-  const leftCenter = ctx.MARGIN_LEFT + colW / 2;
-  const rightCenter = ctx.MARGIN_LEFT + colW + colW / 2;
-
-  const drawSigHeader = (title, hint, centerX, topY) => {
-    const tw = fonts.bold.widthOfTextAtSize(title, 11);
-    ctx.page.drawText(title, { x: centerX - tw / 2, y: topY, size: 11, font: fonts.bold });
-    const hw = fonts.italic.widthOfTextAtSize(hint, 10);
-    ctx.page.drawText(hint, { x: centerX - hw / 2, y: topY - 13, size: 10, font: fonts.italic });
-  };
-
-  let sigY = ctx.y;
-  drawSigHeader('TRƯỞNG ĐƠN VỊ', '(Ký và ghi rõ họ tên)', leftCenter, sigY);
-  drawSigHeader('CÁ NHÂN/CHỦ NHIỆM ĐỀ TÀI', '(Ký và ghi rõ họ tên)', rightCenter, sigY);
-
-  const applicantName = String(data.ho_ten || '');
-  if (applicantName) {
-    const aw = fonts.bold.widthOfTextAtSize(applicantName, 11);
-    ctx.page.drawText(applicantName, { x: rightCenter - aw / 2, y: sigY - 56, size: 11, font: fonts.bold });
-  }
-
-  ctx.y = sigY - 74;
-
-  // Hàng chữ ký 2: Phòng KH&CN & Phòng TCKT
-  sigY = ctx.y;
-  drawSigHeader('PHÒNG KH&CN', '(Ký và ghi rõ họ tên)', leftCenter, sigY);
-  drawSigHeader('PHÒNG TCKT', '(Ký và ghi rõ họ tên)', rightCenter, sigY);
-
-  ctx.y = sigY - 68;
-
-  // Hàng 3: Nơi nhận & Hiệu trưởng
-  sigY = ctx.y;
-  ctx.page.drawText('Nơi nhận:', { x: ctx.MARGIN_LEFT, y: sigY, size: 10.5, font: fonts.boldItalic });
-  const receivLines = [`- ${data.noi_nhan_don_vi || 'Như kính gửi'};`, '- TCKT;', '- TTDV&ĐTTNCXH;', '- Lưu: VT, KHCN.'];
-  let ry = sigY - 13;
-  for (const rl of receivLines) {
-    ctx.page.drawText(rl, { x: ctx.MARGIN_LEFT, y: ry, size: 10, font: fonts.regular });
-    ry -= 12;
-  }
-
-  const htTitle = 'HIỆU TRƯỞNG';
-  const htw = fonts.bold.widthOfTextAtSize(htTitle, 11.5);
-  ctx.page.drawText(htTitle, { x: rightCenter - htw / 2, y: sigY, size: 11.5, font: fonts.bold });
+  // Giữ toàn bộ khối chữ ký trên cùng một mặt trang
+  drawDynamicSignatureSection(ctx, fonts, data, rawData, false);
 }
 
 /**
@@ -917,7 +874,14 @@ function renderMau2a(ctx, fonts, dossierCode, rawData) {
   ctx.drawTwoColumnList(staffRows, 11.5);
 
   // IX. Hội thảo chuyển giao (Đầy đủ 9.1 -> 9.5 nếu có tổ chức hội thảo)
-  const hasWorkshop = Boolean(data.co_hoi_thao);
+  const hasWorkshop =
+    data.co_hoi_thao !== undefined
+      ? Boolean(data.co_hoi_thao && data.co_hoi_thao !== 'false' && data.co_hoi_thao !== 'Không tổ chức hội thảo (ẩn Mục IX)')
+      : data.has_hoi_thao !== undefined
+        ? Boolean(data.has_hoi_thao && data.has_hoi_thao !== 'false')
+        : data.has_workshop !== undefined
+          ? Boolean(data.has_workshop && data.has_workshop !== 'false')
+          : Boolean(data.workshop_chair || data.workshop_speaker || data.workshop_program || data.chu_toa || data.bao_cao_vien);
 
   if (hasWorkshop) {
     ctx.ensureSpace(65);
@@ -986,114 +950,185 @@ function renderMau2a(ctx, fonts, dossierCode, rawData) {
     );
   }
 
-  // Quản lý rủi ro (Đánh số X nếu có hội thảo, IX nếu ẩn hội thảo)
-  const riskRoman = data.so_la_ma_rui_ro || (hasWorkshop ? 'X' : 'IX');
-  const riskSubPrefix = data.so_muc_rui_ro || (hasWorkshop ? '10' : '9');
-  ctx.ensureSpace(120);
-  ctx.drawParagraph(`${riskRoman}. Quản lý rủi ro trong chuyển giao`, fonts.bold, 12.5, 0, 4);
+  // X. Quản lý rủi ro trong chuyển giao (Chỉ hiển thị khi có tổ chức hội thảo)
+  if (hasWorkshop) {
+    ctx.ensureSpace(120);
+    ctx.drawParagraph('X. Quản lý rủi ro trong chuyển giao', fonts.bold, 12.5, 0, 4);
 
-  // 10.1. Xác định và đánh giá rủi ro
-  ctx.drawParagraph(`${riskSubPrefix}.1. Xác định và đánh giá rủi ro`, fonts.bold, 12, 16, 3);
-  ctx.drawParagraph(
-    'Thang đánh giá: P và S chấm từ 1 đến 5; R = P x S; R <= 4: Thấp; 5 <= R <= 9: Trung bình; R >= 10: Cao.',
-    fonts.italic,
-    10.5,
-    16,
-    6
-  );
+    // 10.1. Xác định và đánh giá rủi ro
+    ctx.drawParagraph('10.1. Xác định và đánh giá rủi ro', fonts.bold, 12, 16, 3);
+    ctx.drawParagraph(
+      'Thang đánh giá: P và S chấm từ 1 đến 5; R = P x S; R <= 4: Thấp; 5 <= R <= 9: Trung bình; R >= 10: Cao.',
+      fonts.italic,
+      10.5,
+      16,
+      6
+    );
 
-  ctx.drawTable(
-    [
-      { header: 'Stt', key: 'stt', width: 30, align: 'center' },
-      { header: 'Công việc / Yếu tố rủi ro', key: 'yeu_to_rui_ro', width: 240, align: 'left' },
-      { header: 'P', key: 'p', width: 40, align: 'center' },
-      { header: 'S', key: 's', width: 40, align: 'center' },
-      { header: 'R=PxS', key: 'r', width: 50, align: 'center' },
-      { header: 'Phân loại', key: 'phan_loai', width: 80, align: 'center' },
-    ],
-    data.ds_danh_gia_rui_ro,
-    { fontSize: 9.5, headerFontSize: 9.5, spaceAfter: 18 }
-  );
+    ctx.drawTable(
+      [
+        { header: 'Stt', key: 'stt', width: 30, align: 'center' },
+        { header: 'Công việc / Yếu tố rủi ro', key: 'yeu_to_rui_ro', width: 240, align: 'left' },
+        { header: 'P', key: 'p', width: 40, align: 'center' },
+        { header: 'S', key: 's', width: 40, align: 'center' },
+        { header: 'R=PxS', key: 'r', width: 50, align: 'center' },
+        { header: 'Phân loại', key: 'phan_loai', width: 80, align: 'center' },
+      ],
+      data.ds_danh_gia_rui_ro,
+      { fontSize: 9.5, headerFontSize: 9.5, spaceAfter: 18 }
+    );
 
-  // 10.2. Biện pháp kiểm soát rủi ro (Đầy đủ 7 cột gồm Thời gian, tự động xuống dòng trong từng ô)
-  ctx.ensureSpace(100);
-  ctx.drawParagraph(`${riskSubPrefix}.2. Biện pháp kiểm soát rủi ro`, fonts.bold, 12, 16, 6);
+    // 10.2. Biện pháp kiểm soát rủi ro (Đầy đủ 7 cột gồm Thời gian, tự động xuống dòng trong từng ô)
+    ctx.ensureSpace(100);
+    ctx.drawParagraph('10.2. Biện pháp kiểm soát rủi ro', fonts.bold, 12, 16, 6);
 
-  ctx.drawTable(
-    [
-      { header: 'Stt', key: 'stt', width: 26, align: 'center' },
-      { header: 'Yếu tố rủi ro', key: 'yeu_to_rui_ro', width: 84, align: 'left' },
-      { header: 'Biện pháp kiểm soát', key: 'bien_phap', width: 114, align: 'left' },
-      { header: 'ĐV phụ trách', key: 'don_vi_phu_trach', width: 64, align: 'center' },
-      { header: 'ĐV phối hợp', key: 'don_vi_phoi_hop', width: 64, align: 'center' },
-      { header: 'Thời gian', key: 'thoi_gian', width: 64, align: 'center' },
-      { header: 'Sản phẩm', key: 'san_pham', width: 64, align: 'center' },
-    ],
-    data.ds_kiem_soat_rui_ro,
-    { fontSize: 9, headerFontSize: 9.2, spaceAfter: 24 }
-  );
+    ctx.drawTable(
+      [
+        { header: 'Stt', key: 'stt', width: 26, align: 'center' },
+        { header: 'Yếu tố rủi ro', key: 'yeu_to_rui_ro', width: 84, align: 'left' },
+        { header: 'Biện pháp kiểm soát', key: 'bien_phap', width: 114, align: 'left' },
+        { header: 'ĐV phụ trách', key: 'don_vi_phu_trach', width: 64, align: 'center' },
+        { header: 'ĐV phối hợp', key: 'don_vi_phoi_hop', width: 64, align: 'center' },
+        { header: 'Thời gian', key: 'thoi_gian', width: 64, align: 'center' },
+        { header: 'Sản phẩm', key: 'san_pham', width: 64, align: 'center' },
+      ],
+      data.ds_kiem_soat_rui_ro,
+      { fontSize: 9, headerFontSize: 9.2, spaceAfter: 24 }
+    );
+  }
 
-  // Giữ toàn bộ 3 tầng chữ ký Mẫu 2a trên cùng một mặt trang
-  ctx.ensureSpace(225);
+  // Giữ toàn bộ khối chữ ký trên cùng một mặt trang
+  drawDynamicSignatureSection(ctx, fonts, data, rawData, true);
+}
+
+/**
+ * Vẽ khối chữ ký động & Nơi nhận theo cấu hình phê duyệt của Admin (signature_config)
+ * Đồng bộ 100% giữa giao diện WordDocumentPreview.tsx và bản PDF xuất ra cho Mẫu 1a & Mẫu 2a
+ */
+function drawDynamicSignatureSection(ctx, fonts, data, rawData, is2a = false) {
+  const sigConfig = rawData?._signatureConfig || rawData?.signature_config || rawData?.signatureConfig || null;
+  const depts =
+    Array.isArray(sigConfig?.departments) && sigConfig.departments.length > 0
+      ? sigConfig.departments
+      : ['Phòng KH&CN', 'Phòng TCKT'];
+
+  const rectorRole = String(sigConfig?.rectorRole || 'HIỆU TRƯỞNG').trim().toUpperCase();
+  const rectorSignerName = String(sigConfig?.rectorSignerName || '').trim();
+
+  const deptPairs = [];
+  for (let i = 0; i < depts.length; i += 2) {
+    deptPairs.push({
+      col1: String(depts[i] || '').toUpperCase(),
+      col2: depts[i + 1] ? String(depts[i + 1]).toUpperCase() : '',
+    });
+  }
+
+  const requiredSpace = Math.min(340, 145 + deptPairs.length * 68);
+  ctx.ensureSpace(requiredSpace);
+
   const colW = ctx.CONTENT_WIDTH / 2;
   const leftCenter = ctx.MARGIN_LEFT + colW / 2;
   const rightCenter = ctx.MARGIN_LEFT + colW + colW / 2;
 
-  const drawSigHeader = (title, hint, centerX, topY) => {
-    const tw = fonts.bold.widthOfTextAtSize(title, 10.5);
-    ctx.page.drawText(title, { x: centerX - tw / 2, y: topY, size: 10.5, font: fonts.bold });
-    const hw = fonts.italic.widthOfTextAtSize(hint, 9.5);
-    ctx.page.drawText(hint, { x: centerX - hw / 2, y: topY - 13, size: 9.5, font: fonts.italic });
+  const drawSigHeader = (title, hint, centerX, topY, fontSize = 10.5) => {
+    const tw = fonts.bold.widthOfTextAtSize(title, fontSize);
+    ctx.page.drawText(title, { x: centerX - tw / 2, y: topY, size: fontSize, font: fonts.bold });
+    const hw = fonts.italic.widthOfTextAtSize(hint, fontSize - 1);
+    ctx.page.drawText(hint, { x: centerX - hw / 2, y: topY - 13, size: fontSize - 1, font: fonts.italic });
   };
 
+  // Hàng 1: Đơn vị & Cá nhân/Chủ nhiệm đề tài
   let sigY = ctx.y;
-  drawSigHeader('TRƯỞNG ĐƠN VỊ NHẬN', '(Ký và ghi rõ họ tên)', leftCenter, sigY);
-  drawSigHeader('TRƯỞNG ĐƠN VỊ GIAO / CHỦ NHIỆM ĐỀ TÀI', '(Ký và ghi rõ họ tên)', rightCenter, sigY);
+  const receiverManager = String(data.truong_don_vi_nhan || '').trim();
+  const rawTruongDonVi = String(data.truong_don_vi || '').trim();
+  const truongDonViName = rawTruongDonVi === 'PGS.TS. Nguyễn Văn A' ? '' : rawTruongDonVi;
 
-  const receiverManager = String(data.truong_don_vi_nhan || '');
-  if (receiverManager) {
-    const rw = fonts.bold.widthOfTextAtSize(receiverManager, 11);
-    ctx.page.drawText(receiverManager, { x: leftCenter - rw / 2, y: sigY - 56, size: 11, font: fonts.bold });
+  const leftRoleTitle = is2a
+    ? receiverManager
+      ? 'TRƯỞNG ĐƠN VỊ NHẬN'
+      : 'TRƯỞNG ĐƠN VỊ'
+    : 'TRƯỞNG ĐƠN VỊ';
+  const rightRoleTitle = is2a
+    ? 'TRƯỞNG ĐƠN VỊ GIAO / CHỦ NHIỆM ĐỀ TÀI'
+    : 'CÁ NHÂN/CHỦ NHIỆM ĐỀ TÀI';
+
+  drawSigHeader(leftRoleTitle, '(Ký và ghi rõ họ tên)', leftCenter, sigY);
+  drawSigHeader(rightRoleTitle, '(Ký và ghi rõ họ tên)', rightCenter, sigY);
+
+  const leftSignerName = is2a && receiverManager ? receiverManager : truongDonViName;
+  if (leftSignerName) {
+    const lw = fonts.bold.widthOfTextAtSize(leftSignerName, 11);
+    ctx.page.drawText(leftSignerName, { x: leftCenter - lw / 2, y: sigY - 56, size: 11, font: fonts.bold });
   }
 
-  const applicantName = String(data.ho_ten || '');
+  const applicantName = String(data.ho_ten || '').trim();
   if (applicantName) {
     const aw = fonts.bold.widthOfTextAtSize(applicantName, 11);
     ctx.page.drawText(applicantName, { x: rightCenter - aw / 2, y: sigY - 56, size: 11, font: fonts.bold });
   }
 
-  ctx.y = sigY - 74;
+  ctx.y = sigY - 72;
 
-  // Hàng chữ ký 2: Phòng KH&CN | Phòng TCKT | Văn Phòng
-  sigY = ctx.y;
-  const thirdW = ctx.CONTENT_WIDTH / 3;
-  drawSigHeader('PHÒNG KH&CN', '(Ký duyệt)', ctx.MARGIN_LEFT + thirdW * 0.5, sigY);
-  drawSigHeader('PHÒNG TCKT', '(Ký duyệt)', ctx.MARGIN_LEFT + thirdW * 1.5, sigY);
-  drawSigHeader('VĂN PHÒNG', '(Ký duyệt)', ctx.MARGIN_LEFT + thirdW * 2.5, sigY);
+  // Các hàng chữ ký phòng ban chức năng theo cấu hình Admin
+  for (const pair of deptPairs) {
+    sigY = ctx.y;
+    if (pair.col1) {
+      drawSigHeader(pair.col1, '(Ký và ghi rõ họ tên)', leftCenter, sigY);
+    }
+    if (pair.col2) {
+      drawSigHeader(pair.col2, '(Ký và ghi rõ họ tên)', rightCenter, sigY);
+    }
+    ctx.y = sigY - 68;
+  }
 
-  ctx.y = sigY - 68;
-
-  // Hàng 3: Nơi nhận & Hiệu trưởng (Theo Nghị định 30/2020/NĐ-CP)
+  // Hàng cuối: Nơi nhận & Ban Giám hiệu
   sigY = ctx.y;
   ctx.page.drawText('Nơi nhận:', { x: ctx.MARGIN_LEFT, y: sigY, size: 10.5, font: fonts.boldItalic });
-  const cleanNoiNhanDonVi = String(data.noi_nhan_don_vi || 'Đơn vị nhận chuyển giao').replace(/\.,\s*/g, ', ');
-  const recvUnitLine = `- ${cleanNoiNhanDonVi};`;
-  const wrappedRecvUnit = wrapText(recvUnitLine, colW - 8, fonts.regular, 9.5);
-  const receivLines = [
-    ...wrappedRecvUnit,
-    '- VP, TCKT;',
+
+  const cleanNoiNhanDonVi = String(
+    data.noi_nhan_don_vi || (is2a ? 'Đơn vị nhận chuyển giao' : 'Như kính gửi')
+  ).replace(/\.,\s*/g, ', ');
+
+  const defaultRecipients = [
+    `- ${cleanNoiNhanDonVi};`,
+    ...(depts.includes('Phòng TCKT') ? ['- TCKT;'] : []),
     '- TTDV&ĐTTNCXH;',
     '- Lưu: VT, KHCN.',
   ];
+
+  const rawRecipients =
+    Array.isArray(sigConfig?.recipients) && sigConfig.recipients.length > 0
+      ? sigConfig.recipients.map((r) => {
+          const t = String(r || '').trim();
+          return t.startsWith('-') ? t : `- ${t};`;
+        })
+      : defaultRecipients;
+
   let ry = sigY - 13;
-  for (const rl of receivLines) {
-    ctx.page.drawText(rl, { x: ctx.MARGIN_LEFT, y: ry, size: 9.5, font: fonts.regular });
-    ry -= 12;
+  for (const recLine of rawRecipients) {
+    const wrappedLines = wrapText(recLine, colW - 8, fonts.regular, 9.5);
+    for (const rl of wrappedLines) {
+      ctx.page.drawText(rl, { x: ctx.MARGIN_LEFT, y: ry, size: 9.5, font: fonts.regular });
+      ry -= 12;
+    }
   }
 
-  const htTitle = 'HIỆU TRƯỞNG';
-  const htw = fonts.bold.widthOfTextAtSize(htTitle, 11.5);
-  ctx.page.drawText(htTitle, { x: rightCenter - htw / 2, y: sigY, size: 11.5, font: fonts.bold });
+  if (rectorRole.includes('KT.') || rectorRole.includes('PHÓ HIỆU TRƯỞNG')) {
+    const line1 = 'KT. HIỆU TRƯỞNG';
+    const line2 = 'PHÓ HIỆU TRƯỞNG';
+    const w1 = fonts.bold.widthOfTextAtSize(line1, 11);
+    const w2 = fonts.bold.widthOfTextAtSize(line2, 11);
+    ctx.page.drawText(line1, { x: rightCenter - w1 / 2, y: sigY, size: 11, font: fonts.bold });
+    ctx.page.drawText(line2, { x: rightCenter - w2 / 2, y: sigY - 14, size: 11, font: fonts.bold });
+  } else {
+    const htw = fonts.bold.widthOfTextAtSize(rectorRole, 11.5);
+    ctx.page.drawText(rectorRole, { x: rightCenter - htw / 2, y: sigY, size: 11.5, font: fonts.bold });
+  }
+
+  if (rectorSignerName) {
+    const rnw = fonts.bold.widthOfTextAtSize(rectorSignerName, 11);
+    ctx.page.drawText(rectorSignerName, { x: rightCenter - rnw / 2, y: sigY - 58, size: 11, font: fonts.bold });
+  }
 }
 
 /**
@@ -1119,12 +1154,16 @@ export async function generateLockedPdf(
   const fonts = await loadFonts(pdfDoc);
   const ctx = createDocRenderer(pdfDoc, fonts);
 
-  const checkStr = `${templateCode} ${templateTitle} ${formData.templateId || ''}`.toLowerCase();
-  const isMau2a =
-    checkStr.includes('2a') ||
-    checkStr.includes('kế hoạch') ||
-    checkStr.includes('ke hoach') ||
-    Boolean(formData.plan_code || formData.product_name);
+  const explicitCodeStr = `${templateCode} ${formData.templateId || ''} ${formData.templateCode || ''}`.toLowerCase();
+  const titleStr = `${templateTitle}`.toLowerCase();
+  let isMau2a = false;
+  if (explicitCodeStr.includes('1a') || titleStr.includes('tờ trình') || titleStr.includes('to trinh')) {
+    isMau2a = false;
+  } else if (explicitCodeStr.includes('2a') || titleStr.includes('kế hoạch') || titleStr.includes('ke hoach')) {
+    isMau2a = true;
+  } else {
+    isMau2a = Boolean(formData.plan_code || formData.product_name);
+  }
 
   if (isMau2a) {
     renderMau2a(ctx, fonts, dossierCode, formData);

@@ -1,12 +1,13 @@
 import { User } from '../types';
 
 export const ADMIN_EMAILS = [
-  'toanhkhai12345@gmail.com',
   'tranthibaotran.2k@gmail.com',
+  'toanhkhai@gmail.com',
+  'toanhkhai12345@gmail.com',
   'admin@ctump.edu.vn',
 ];
 
-export const ADMIN_EMAIL = 'toanhkhai12345@gmail.com';
+export const ADMIN_EMAIL = 'tranthibaotran.2k@gmail.com';
 
 export const isAdminEmail = (email?: string | null): boolean => {
   if (!email) return false;
@@ -24,13 +25,18 @@ export const isAdminEmail = (email?: string | null): boolean => {
  */
 export const isAdminUser = (user?: { role?: string; email?: string } | null): boolean => {
   if (!user) return false;
-  if (user.role === 'ADMIN') return true;
-  return isAdminEmail(user.email);
+  const roleUpper = String(user.role || '').trim().toUpperCase();
+  if (roleUpper === 'ADMIN') return true;
+  if (roleUpper === 'USER' || roleUpper === 'LECTURER' || roleUpper === 'APPLICANT') return false;
+  if (user.email) {
+    return isAdminEmail(user.email);
+  }
+  return false;
 };
 
 export const DEFAULT_DEV_USER: User = {
-  id: 'usr_admin_toanhkhai',
-  name: 'Quản trị viên (Toàn Khải)',
+  id: 'usr_admin_tran',
+  name: 'Bảo Trân (Admin)',
   email: ADMIN_EMAIL,
   role: 'ADMIN',
   department: 'Phòng Khoa học Công nghệ',

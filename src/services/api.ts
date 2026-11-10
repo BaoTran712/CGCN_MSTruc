@@ -15,7 +15,7 @@ import { OFFICIAL_TEMPLATES, AUTH_TOKEN_KEY } from '../constants';
 
 export { API_BASE_URL };
 
-const DOSSIERS_STORAGE_KEY = 'ctump_dossiers_cache_v2';
+const DOSSIERS_STORAGE_KEY = 'ctump_dossiers_cache_v3';
 
 const DEFAULT_MOCK_USER: User = {
   id: 'usr-giangvien-demo',
@@ -31,6 +31,16 @@ function deduplicateDossiers(list: Application[]): Application[] {
   for (const d of list) {
     if (!d || !d.code) continue;
     if (d.id === 'dos-2026-0001' || d.review_notes === 'sai tên') continue;
+
+    // Chuẩn hóa trường ngày tháng an toàn, không bao giờ để null hoặc Invalid Date
+    const rawDate = d.submittedAt || d.submitted_at || d.createdAt || d.created_at;
+    const isValid = rawDate && rawDate !== 'Invalid Date' && !isNaN(new Date(rawDate).getTime());
+    const safeIso = isValid ? new Date(rawDate).toISOString() : new Date().toISOString();
+    d.submittedAt = safeIso;
+    d.submitted_at = safeIso;
+    d.createdAt = d.createdAt && !isNaN(new Date(d.createdAt).getTime()) ? new Date(d.createdAt).toISOString() : safeIso;
+    d.created_at = d.createdAt;
+
     const existing = map.get(d.code);
     if (!existing) {
       map.set(d.code, d);
@@ -47,14 +57,20 @@ function deduplicateDossiers(list: Application[]): Application[] {
 
 function getLocalDossiers(): Application[] {
   try {
-    // Xóa cache rác phiên bản cũ
+    // Xóa triệt để cache rác từ các phiên bản test trước
     localStorage.removeItem('ctump_dossiers_cache');
+    localStorage.removeItem('ctump_dossiers_cache_v1');
+    localStorage.removeItem('ctump_dossiers_cache_v2');
     const raw = localStorage.getItem(DOSSIERS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         const cleaned = parsed.filter(
-          (d) => d && d.id !== 'dos-2026-0001' && d.review_notes !== 'sai tên'
+          (d) =>
+            d &&
+            d.id !== 'dos-2026-0001' &&
+            !d.id?.startsWith('dos-test-') &&
+            d.review_notes !== 'sai tên'
         );
         return deduplicateDossiers(cleaned);
       }
@@ -268,6 +284,13 @@ export async function createApplication(payload: Partial<Application>, creator?:
         templateTitle: effectiveTemplateTitle,
         templateCode: effectiveTemplateCode,
         formData: payload?.formData || {},
+        formData1a: payload?.formData1a || (payload as any)?.form_data_1a,
+        formData2a: payload?.formData2a || (payload as any)?.form_data_2a,
+        status_1a: payload?.status_1a || 'PENDING',
+        status_2a: payload?.status_2a || 'PENDING',
+        ten_de_tai: payload?.ten_de_tai || (payload?.formData as any)?.ten_de_tai,
+        truong_don_vi: payload?.truong_don_vi || (payload?.formData as any)?.truong_don_vi,
+        signature_config: payload?.signature_config || payload?.signatureConfig,
         user: creator || payload?.createdBy,
         status: 'SUBMITTED',
       }),
@@ -299,6 +322,18 @@ export async function createApplication(payload: Partial<Application>, creator?:
     createdAt: new Date().toISOString(),
     submittedAt: new Date().toISOString(),
     formData: payload?.formData || {},
+    form_data: payload?.formData || {},
+    formData1a: payload?.formData1a || (payload as any)?.form_data_1a,
+    formData2a: payload?.formData2a || (payload as any)?.form_data_2a,
+    form_data_1a: payload?.formData1a || (payload as any)?.form_data_1a,
+    form_data_2a: payload?.formData2a || (payload as any)?.form_data_2a,
+    status_1a: payload?.status_1a || 'PENDING',
+    status_2a: payload?.status_2a || 'PENDING',
+    ten_de_tai: payload?.ten_de_tai || (payload?.formData as any)?.ten_de_tai,
+    truong_don_vi: payload?.truong_don_vi || (payload?.formData as any)?.truong_don_vi,
+    signature_config: payload?.signature_config || payload?.signatureConfig,
+    signatureConfig: payload?.signature_config || payload?.signatureConfig,
+    timeline: payload?.timeline,
     generated_docx_path: `/uploads/docx/${newCode}-v1.docx`,
     generated_pdf_path: `/uploads/pdf/${newCode}-v1.pdf`,
     docx_file_url: `/uploads/docx/${newCode}-v1.docx`,
@@ -319,26 +354,35 @@ export async function submitApplication(id: string, payload?: Partial<Applicatio
   );
   const isEditingExisting =
     existsLocally ||
-    Boolean(payload?.current_version && payload.current_version >= 1) ||
-    Boolean(payload?.currentVersion && payload.currentVersion >= 1) ||
+    Boolean(payload?.current_version && payload.current_version > 1) ||
+    Boolean(payload?.currentVersion && payload.currentVersion > 1) ||
     Boolean(id && !id.startsWith('hs-') && !id.startsWith('dos-temp-'));
 
   if (!isEditingExisting) {
     return createApplication(payload || {}, actor);
   }
-  return resubmitApplication(id, payload?.formData || (payload as any)?.form_data || {}, actor);
+  return resubmitApplication(id, payload?.formData || (payload as any)?.form_data || {}, actor, payload);
 }
 
-// BƯỚC 2B [LUỒNG FALSE]: Thầy/Cô Chỉnh sửa & Nộp lại (v2, v3... -> SUBMITTED)
-export async function resubmitApplication(
+// BƯỚC 2B.1 [LUỒNG FALSE - NỘP LẠI ĐỘC LẬP BIỂU MẪU 1A]:
+// Chỉ cập nhật dữ liệu của Biểu mẫu 1a, giữ nguyên 100% dữ liệu và trạng thái của Biểu mẫu 2a
+export async function resubmitForm1a(
   id: string,
-  formData: Record<string, any>,
-  user?: User
+  formData1a: Record<string, any>,
+  user?: User,
+  extra?: Partial<Application>
 ): Promise<Application> {
   try {
-    const updated = await request<Application>(API_ENDPOINTS.RESUBMIT_APPLICATION(id), {
-      method: 'PUT',
-      body: JSON.stringify({ formData, user }),
+    const updated = await request<Application>(API_ENDPOINTS.RESUBMIT_1A(id), {
+      method: 'PATCH',
+      body: JSON.stringify({
+        formData1a,
+        form_data_1a: formData1a,
+        ten_de_tai: extra?.ten_de_tai || formData1a?.ten_de_tai,
+        truong_don_vi: extra?.truong_don_vi || formData1a?.truong_don_vi,
+        target_form: '1a',
+        user,
+      }),
     });
     if (updated) {
       const local = getLocalDossiers();
@@ -356,14 +400,162 @@ export async function resubmitApplication(
   const existing = local.find(
     (d) => d.id === id || d.code === id || (id && id.includes(d.code))
   );
+  if (!existing) {
+    throw new Error('Không tìm thấy hồ sơ để nộp lại Biểu mẫu 1a');
+  }
+
+  const prevVer = Number(existing.current_version || existing.currentVersion || 1);
+  const nextVer = prevVer + 1;
+
+  // Chỉ cập nhật dữ liệu 1a, bảo toàn nguyên vẹn 100% dữ liệu 2a và trạng thái 2a
+  const updatedFormData1a = {
+    ...(existing.formData1a || existing.form_data_1a || {}),
+    ...(formData1a || {}),
+  };
+  const preservedFormData2a = existing.formData2a || existing.form_data_2a || {};
+  const preservedStatus2a =
+    existing.status_2a === 'APPROVED' ? 'APPROVED' : 'PENDING';
+
+  const mergedFormData = {
+    ...(existing.formData || existing.form_data || {}),
+    ...preservedFormData2a,
+    ...updatedFormData1a,
+  };
+
+  const topicTitle =
+    extra?.ten_de_tai ||
+    updatedFormData1a.ten_de_tai ||
+    existing.ten_de_tai ||
+    'Hồ sơ chuyển giao tri thức và công nghệ';
+
+  const updated: Application = {
+    ...existing,
+    title: `Bộ hồ sơ kép CGCN: “${topicTitle}” (Mẫu 1a & 2a)`,
+    ten_de_tai: extra?.ten_de_tai || updatedFormData1a.ten_de_tai || existing.ten_de_tai,
+    truong_don_vi: extra?.truong_don_vi || updatedFormData1a.truong_don_vi || existing.truong_don_vi,
+    formData: mergedFormData,
+    form_data: mergedFormData,
+    formData1a: updatedFormData1a,
+    form_data_1a: updatedFormData1a,
+    formData2a: preservedFormData2a,
+    form_data_2a: preservedFormData2a,
+    status: 'SUBMITTED',
+    status_1a: 'PENDING',
+    status_2a: preservedStatus2a,
+    rejected_target: null,
+    rejectedTarget: null,
+    target_form: null,
+    rejection_reason_1a: null,
+    rejectionReason1a: null,
+    current_version: nextVer,
+    currentVersion: nextVer,
+    generated_docx_path: `/uploads/docx/${existing.code}-v${nextVer}.docx`,
+    generated_pdf_path: `/uploads/pdf/${existing.code}-v${nextVer}.pdf`,
+    docx_file_url: `/uploads/docx/${existing.code}-v${nextVer}.docx`,
+    submittedAt: new Date().toISOString(),
+    submitted_at: new Date().toISOString(),
+  };
+
+  const filtered = local.filter(
+    (d) => d.id !== existing.id && d.code !== existing.code && d.id !== id
+  );
+  saveLocalDossiers([updated, ...filtered]);
+  return updated;
+}
+
+// BƯỚC 2B [LUỒNG FALSE]: Thầy/Cô Chỉnh sửa & Nộp lại (v2, v3... -> SUBMITTED)
+export async function resubmitApplication(
+  id: string,
+  formData: Record<string, any>,
+  user?: User,
+  fullPayload?: Partial<Application>
+): Promise<Application> {
+  const local = getLocalDossiers();
+  const existing = local.find(
+    (d) => d.id === id || d.code === id || (id && id.includes(d.code))
+  );
+
+  const isOnly1aReturn =
+    fullPayload?.target_form === '1a' ||
+    fullPayload?.rejected_target === '1a' ||
+    existing?.rejected_target === '1a' ||
+    (existing?.status_1a === 'RETURNED' && existing?.status_2a !== 'RETURNED');
+
+  if (isOnly1aReturn) {
+    const payload1a =
+      fullPayload?.formData1a ||
+      (fullPayload as any)?.form_data_1a ||
+      formData;
+    return resubmitForm1a(id, payload1a, user, fullPayload);
+  }
+
+  try {
+    const updated = await request<Application>(API_ENDPOINTS.RESUBMIT_APPLICATION(id), {
+      method: 'PUT',
+      body: JSON.stringify({
+        formData,
+        user,
+        formData1a: fullPayload?.formData1a || (fullPayload as any)?.form_data_1a,
+        formData2a: fullPayload?.formData2a || (fullPayload as any)?.form_data_2a,
+        ten_de_tai: fullPayload?.ten_de_tai || (formData as any)?.ten_de_tai,
+        truong_don_vi: fullPayload?.truong_don_vi || (formData as any)?.truong_don_vi,
+        signature_config: fullPayload?.signature_config || fullPayload?.signatureConfig,
+      }),
+    });
+    if (updated) {
+      const latestLocal = getLocalDossiers();
+      const filtered = latestLocal.filter(
+        (d) => d.id !== updated.id && d.code !== updated.code && d.id !== id
+      );
+      saveLocalDossiers([updated, ...filtered]);
+      return updated;
+    }
+  } catch {
+    // fallback
+  }
+
   if (existing) {
     const prevVer = Number(existing.current_version || existing.currentVersion || 1);
     const nextVer = prevVer + 1;
+    const prevS1a = existing.status_1a || 'PENDING';
+    const prevS2a = existing.status_2a || 'PENDING';
+    const is1aReturned = prevS1a === 'RETURNED';
+    const is2aReturned = prevS2a === 'RETURNED';
+    const hasSpecificReturn = is1aReturned || is2aReturned;
+
+    const is1aEditable = !hasSpecificReturn || is1aReturned;
+    const is2aEditable = !hasSpecificReturn || is2aReturned;
+
+    const nextFormData1a = is1aEditable
+      ? (fullPayload?.formData1a || (fullPayload as any)?.form_data_1a || existing.formData1a || existing.form_data_1a)
+      : (existing.formData1a || existing.form_data_1a);
+
+    const nextFormData2a = is2aEditable
+      ? (fullPayload?.formData2a || (fullPayload as any)?.form_data_2a || existing.formData2a || existing.form_data_2a)
+      : (existing.formData2a || existing.form_data_2a);
+
+    const nextS1a = prevS1a === 'RETURNED' ? 'PENDING' : prevS1a;
+    const nextS2a = prevS2a === 'RETURNED' ? 'PENDING' : prevS2a;
+
     const updated: Application = {
       ...existing,
+      ...(fullPayload || {}),
       formData: { ...existing.formData, ...formData },
       form_data: { ...existing.formData, ...formData },
+      formData1a: nextFormData1a,
+      formData2a: nextFormData2a,
+      form_data_1a: nextFormData1a,
+      form_data_2a: nextFormData2a,
       status: 'SUBMITTED',
+      status_1a: nextS1a,
+      status_2a: nextS2a,
+      rejected_target: null,
+      rejectedTarget: null,
+      target_form: null,
+      rejection_reason_1a: null,
+      rejectionReason1a: null,
+      rejection_reason_2a: null,
+      rejectionReason2a: null,
       current_version: nextVer,
       currentVersion: nextVer,
       generated_docx_path: `/uploads/docx/${existing.code}-v${nextVer}.docx`,
@@ -379,7 +571,61 @@ export async function resubmitApplication(
     return updated;
   }
 
-  return createApplication({ formData }, user);
+  return createApplication({ formData, ...(fullPayload || {}) }, user);
+}
+
+// Cập nhật các trường hồ sơ (Cấu hình chữ ký, trạng thái duyệt từng phần status_1a, status_2a...)
+export async function updateDossierFields(
+  id: string,
+  fields: Partial<Application>
+): Promise<Application> {
+  try {
+    const res = await request<Application>(API_ENDPOINTS.GET_DOSSIER_DETAIL(id), {
+      method: 'PUT',
+      body: JSON.stringify(fields),
+    });
+    if (res && res.id) {
+      const local = getLocalDossiers();
+      const filtered = local.filter((d) => d.id !== res.id && d.code !== res.code && d.id !== id);
+      saveLocalDossiers([res, ...filtered]);
+      return res;
+    }
+  } catch {
+    // fallback to localStorage
+  }
+
+  const local = getLocalDossiers();
+  const existing = local.find((d) => d.id === id || d.code === id);
+  if (!existing) {
+    throw new Error('Không tìm thấy hồ sơ để cập nhật');
+  }
+  const updated: Application = {
+    ...existing,
+    ...fields,
+  };
+  saveLocalDossiers(local.map((d) => (d.id === existing.id ? updated : d)));
+  return updated;
+}
+
+function getEffectiveAdminUser(adminUser?: User): User {
+  if (adminUser && adminUser.email) return adminUser;
+  try {
+    const raw = localStorage.getItem('ctump_auth_user_v1');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.email) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return {
+    id: 'usr-admin',
+    name: 'Quản trị viên (Cô Admin)',
+    email: 'tranthibaotran.2k@gmail.com',
+    role: 'ADMIN',
+    title: 'Quản trị viên Hệ thống',
+    department: 'Phòng Khoa học Công nghệ',
+  };
 }
 
 // BƯỚC 2A [LUỒNG FALSE] & BƯỚC 3 [LUỒNG TRUE]: Admin Duyệt (VALIDATED) hoặc Trả về sửa lỗi (RETURNED_FOR_REVISION)
@@ -387,11 +633,35 @@ export async function adminPrecheck(
   id: string,
   isValid: boolean,
   reviewNotes?: string,
-  adminUser?: User
+  adminUser?: User,
+  targetForm?: '1a' | '2a' | 'both'
 ): Promise<Application> {
+  const resolvedAdmin = getEffectiveAdminUser(adminUser);
   const endpoint = isValid
     ? API_ENDPOINTS.APPROVE_APPLICATION_TRUE(id)
     : API_ENDPOINTS.RETURN_REVISION(id);
+
+  const localBefore = getLocalDossiers();
+  const targetBefore = localBefore.find((d) => d.id === id || d.code === id);
+  const existingS1a = targetBefore?.status_1a === 'APPROVED' ? 'APPROVED' : 'PENDING';
+  const existingS2a = targetBefore?.status_2a === 'APPROVED' ? 'APPROVED' : 'PENDING';
+
+  const resolvedTargetForm: '1a' | '2a' | 'both' =
+    targetForm ||
+    (targetBefore?.status_1a === 'RETURNED' && targetBefore?.status_2a !== 'RETURNED'
+      ? '1a'
+      : targetBefore?.status_2a === 'RETURNED' && targetBefore?.status_1a !== 'RETURNED'
+      ? '2a'
+      : '1a');
+
+  const reqStatus1a =
+    resolvedTargetForm === '1a' || resolvedTargetForm === 'both'
+      ? 'RETURNED'
+      : existingS1a;
+  const reqStatus2a =
+    resolvedTargetForm === '2a' || resolvedTargetForm === 'both'
+      ? 'RETURNED'
+      : existingS2a;
 
   try {
     const res = await request<Application>(endpoint, {
@@ -400,7 +670,12 @@ export async function adminPrecheck(
         isValid,
         reviewNotes,
         revisionNote: reviewNotes,
-        adminUser,
+        rejection_reason: reviewNotes,
+        target_form: isValid ? null : resolvedTargetForm,
+        rejected_target: isValid ? null : resolvedTargetForm,
+        status_1a: isValid ? 'APPROVED' : reqStatus1a,
+        status_2a: isValid ? 'APPROVED' : reqStatus2a,
+        adminUser: resolvedAdmin,
       }),
     });
     if (res && res.id) {
@@ -416,17 +691,148 @@ export async function adminPrecheck(
   const target = local.find((d) => d.id === id || d.code === id);
   if (!target) throw new Error('Không tìm thấy hồ sơ');
 
-  const ver = target.current_version || 1;
+  const ver = Number(target.current_version || target.currentVersion || 1);
+  let updated: Application;
+
+  if (isValid) {
+    // APPROVE MODE: Chốt Bản cứng chính thức (Official / Final Version)
+    const officialSnapshot: any = {
+      id: `ver-official-${Date.now()}`,
+      dossierId: target.id,
+      versionNumber: ver,
+      formData: { ...(target.formData || {}) },
+      signatureConfig: target.signature_config || (target as any).signatureConfig,
+      editedById: adminUser?.id || 'admin',
+      editedByName: adminUser?.name || 'Cô Admin (Phòng KH&CN)',
+      changeSummary: `Chốt Bản cứng chính thức v${ver} (Đã duyệt thể thức)`,
+      createdAt: new Date().toISOString(),
+      isOfficial: true,
+      status: 'VALIDATED',
+    };
+
+    const existingVersions = (target.versions || []).filter((v: any) => v.versionNumber !== ver);
+
+    updated = {
+      ...target,
+      status: 'VALIDATED',
+      status_1a: 'APPROVED',
+      status_2a: 'APPROVED',
+      rejected_target: null,
+      rejectedTarget: null,
+      target_form: null,
+      rejection_reason_1a: null,
+      rejectionReason1a: null,
+      rejection_reason_2a: null,
+      rejectionReason2a: null,
+      version_type: 'OFFICIAL',
+      is_official_locked: true,
+      locked_at: new Date().toISOString(),
+      locked_by: adminUser?.name || 'Cô Admin (Phòng KH&CN)',
+      official_version: ver,
+      review_notes: reviewNotes || 'Hồ sơ đã được duyệt hợp lệ.',
+      reviewNotes: reviewNotes || 'Hồ sơ đã được duyệt hợp lệ.',
+      reviewedAt: new Date().toISOString(),
+      approved_pdf_path: `/uploads/pdf/${target.code}-v${ver}.pdf`,
+      versions: [...existingVersions, officialSnapshot],
+    };
+  } else {
+    // XỬ LÝ ROLLBACK / SAI SÓT: Nhân bản bản cứng hiện tại ra thành một Bản nháp mới (v+1) để tiếp tục lưu đè
+    const nextVer = ver + 1;
+    const archivedSnapshot: any = {
+      id: `ver-archived-${Date.now()}`,
+      dossierId: target.id,
+      versionNumber: ver,
+      formData: { ...(target.formData || {}) },
+      signatureConfig: target.signature_config || (target as any).signatureConfig,
+      editedById: adminUser?.id || 'admin',
+      editedByName: adminUser?.name || 'Cô Admin (Phòng KH&CN)',
+      changeSummary: `Bản cứng lưu vết v${ver} (Trước khi yêu cầu sửa lỗi: "${reviewNotes || ''}")`,
+      createdAt: new Date().toISOString(),
+      isOfficial: true,
+      status: target.status,
+    };
+
+    const existingVersions = (target.versions || []).filter((v: any) => v.versionNumber !== ver);
+
+    updated = {
+      ...target,
+      current_version: nextVer,
+      currentVersion: nextVer,
+      version_type: 'DRAFT',
+      is_official_locked: false,
+      status: 'RETURNED_FOR_REVISION',
+      status_1a: reqStatus1a,
+      status_2a: reqStatus2a,
+      rejected_target: resolvedTargetForm,
+      rejectedTarget: resolvedTargetForm,
+      target_form: resolvedTargetForm,
+      rejection_reason_1a:
+        resolvedTargetForm === '1a' || resolvedTargetForm === 'both'
+          ? reviewNotes || 'Trả về sửa lỗi Biểu mẫu 1a.'
+          : null,
+      rejectionReason1a:
+        resolvedTargetForm === '1a' || resolvedTargetForm === 'both'
+          ? reviewNotes || 'Trả về sửa lỗi Biểu mẫu 1a.'
+          : null,
+      rejection_reason_2a:
+        resolvedTargetForm === '2a' || resolvedTargetForm === 'both'
+          ? reviewNotes || 'Trả về sửa lỗi Biểu mẫu 2a.'
+          : null,
+      rejectionReason2a:
+        resolvedTargetForm === '2a' || resolvedTargetForm === 'both'
+          ? reviewNotes || 'Trả về sửa lỗi Biểu mẫu 2a.'
+          : null,
+      revision_note: reviewNotes,
+      revisionNote: reviewNotes,
+      revision_reason: reviewNotes,
+      revisionReason: reviewNotes,
+      reviewNotes: reviewNotes || 'Trả về sửa lỗi.',
+      review_notes: reviewNotes || 'Trả về sửa lỗi.',
+      reviewedAt: new Date().toISOString(),
+      versions: [...existingVersions, archivedSnapshot],
+    };
+  }
+
+  saveLocalDossiers(local.map((d) => (d.id === target.id ? updated : d)));
+  return updated;
+}
+
+// Rollback / Phục hồi hồ sơ về bản cứng trước đó
+export async function rollbackDossierVersion(
+  id: string,
+  targetVersionNumber: number,
+  user?: User
+): Promise<Application> {
+  const local = getLocalDossiers();
+  const target = local.find((d) => d.id === id || d.code === id);
+  if (!target) throw new Error('Không tìm thấy hồ sơ');
+
+  const snapshot = (target.versions || []).find((v: any) => v.versionNumber === targetVersionNumber);
+  if (!snapshot) {
+    throw new Error(`Không tìm thấy bản lưu trữ v${targetVersionNumber}`);
+  }
+
   const updated: Application = {
     ...target,
-    status: isValid ? 'VALIDATED' : 'RETURNED_FOR_REVISION',
-    revision_note: isValid ? undefined : reviewNotes,
-    revisionNote: isValid ? undefined : reviewNotes,
-    reviewNotes: reviewNotes || (isValid ? 'Hồ sơ đã được duyệt hợp lệ.' : 'Trả về sửa lỗi.'),
-    review_notes: reviewNotes || (isValid ? 'Hồ sơ đã được duyệt hợp lệ.' : 'Trả về sửa lỗi.'),
-    reviewedAt: new Date().toISOString(),
-    approved_pdf_path: isValid ? `/uploads/pdf/${target.code}-v${ver}.pdf` : undefined,
+    formData: { ...snapshot.formData },
+    form_data: { ...snapshot.formData },
+    signature_config: snapshot.signatureConfig || target.signature_config,
+    signatureConfig: snapshot.signatureConfig || target.signatureConfig,
+    version_type: 'DRAFT',
+    is_official_locked: false,
+    timeline: [
+      ...(target.timeline || []),
+      {
+        id: `tl-${Date.now()}`,
+        title: `Rollback phục hồi dữ liệu từ bản cứng v${targetVersionNumber}`,
+        actor: user?.name || 'Admin',
+        role: user?.title || 'Quản trị viên',
+        timestamp: new Date().toLocaleString('vi-VN'),
+        status: target.status,
+      },
+    ],
   };
+
   saveLocalDossiers(local.map((d) => (d.id === target.id ? updated : d)));
   return updated;
 }
@@ -473,10 +879,11 @@ export async function updateSchoolSigning(
   flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean; note?: string },
   adminUser?: User
 ): Promise<Application> {
+  const resolvedAdmin = getEffectiveAdminUser(adminUser);
   try {
     const res = await request<Application>(API_ENDPOINTS.SUBMIT_TO_RECTOR(id), {
       method: 'PATCH',
-      body: JSON.stringify({ ...flags, adminUser }),
+      body: JSON.stringify({ ...flags, adminUser: resolvedAdmin }),
     });
     if (res) {
       const local = getLocalDossiers();
@@ -509,10 +916,11 @@ export async function completeDossier(
   finalPdfUrl?: string,
   adminUser?: User
 ): Promise<Application> {
+  const resolvedAdmin = getEffectiveAdminUser(adminUser);
   try {
     const res = await request<Application>(API_ENDPOINTS.CONFIRM_SIGNED(id), {
       method: 'PATCH',
-      body: JSON.stringify({ decisionNumber, decisionDate, finalPdfUrl, adminUser }),
+      body: JSON.stringify({ decisionNumber, decisionDate, finalPdfUrl, adminUser: resolvedAdmin }),
     });
     if (res) {
       const local = getLocalDossiers();
@@ -554,7 +962,11 @@ export async function login(
   extraData?: { name?: string; avatar?: string; googleId?: string }
 ): Promise<User> {
   const cleanEmail = (email || '').trim().toLowerCase();
-  const isAdmin = cleanEmail === 'toanhkhai12345@gmail.com' || cleanEmail === 'admin@ctump.edu.vn';
+  const isAdmin =
+    cleanEmail === 'tranthibaotran.2k@gmail.com' ||
+    cleanEmail === 'toanhkhai@gmail.com' ||
+    cleanEmail === 'toanhkhai12345@gmail.com' ||
+    cleanEmail === 'admin@ctump.edu.vn';
 
   try {
     const res = await fetch(`${API_BASE_URL}/users/login`, {

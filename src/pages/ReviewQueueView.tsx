@@ -21,9 +21,32 @@ export const ReviewQueueView: React.FC<ReviewQueueViewProps> = ({
   dossiers = [],
   onInspectDossier,
 }) => {
+
+  // State for signature configuration modal
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [selectedDossier, setSelectedDossier] = useState<Dossier | null>(null);
+  // Placeholder departments (could be fetched from API)
+  const departments = ['Phòng KH&CN', 'Phòng TCKT', 'Phòng Đào tạo'];
+
+  const openSignatureModal = (dossier: Dossier) => {
+    setSelectedDossier(dossier);
+    setShowSignatureModal(true);
+  };
+
+  const closeSignatureModal = () => {
+    setShowSignatureModal(false);
+    setSelectedDossier(null);
+  };
+
+  const handleSignatureSave = (config: any) => {
+    // TODO: send config to backend (e.g., POST /api/signature-config)
+    console.log('Signature config saved for', selectedDossier?.id, config);
+    closeSignatureModal();
+  };
+
+
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState<string>('all');
-
   const safeDossiers = Array.isArray(dossiers) ? dossiers : [];
 
   const filtered = safeDossiers.filter((d) => {
@@ -52,59 +75,56 @@ export const ReviewQueueView: React.FC<ReviewQueueViewProps> = ({
   const waitingRectorCount = safeDossiers.filter((d) => normalizeStatus(d.status) === 'WAITING_RECTOR_SIGNATURE').length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+    <div className="space-y-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
-              Phòng Khoa học Công nghệ & HTQT
-            </span>
-            {pendingSignedCount > 0 && (
-              <span className="text-xs text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded border border-amber-300 font-semibold">
-                Có {pendingSignedCount} hồ sơ đã upload bản ký phòng ban chờ duyệt
-              </span>
-            )}
-          </div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            Quản lý Xét duyệt & Trình ký Hồ sơ (Admin)
+            Xét duyệt &amp; Trình ký Hồ sơ
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Duyệt hồ sơ hợp lệ (gửi PDF chuẩn), trả về sửa lỗi, chuyển trình ký Hiệu trưởng và xác nhận đã ký lưu trữ
+            Kiểm tra thể thức biểu mẫu 1a &amp; 2a, duyệt bản ký phòng ban và trình ký Hiệu trưởng
           </p>
         </div>
+
+        {pendingSignedCount > 0 && (
+          <span className="inline-flex items-center gap-1.5 text-xs text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200 font-medium self-start sm:self-auto">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+            <span>{pendingSignedCount} hồ sơ đã nộp bản ký chờ duyệt</span>
+          </span>
+        )}
       </div>
 
-      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+      <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs">
         <div className="flex flex-col md:flex-row items-center justify-between gap-3">
-          <div className="relative w-full md:w-80">
+          <div className="relative w-full md:w-72">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm theo mã CGCN, cán bộ, tên đề tài..."
-              className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-600 focus:border-blue-600 text-slate-900"
+              placeholder="Tìm mã hồ sơ, giảng viên, tên đề tài..."
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50/70 border border-slate-200 rounded-xl focus:outline-none focus:bg-white focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 text-slate-900 transition-all"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
+          <div className="flex items-center gap-1 overflow-x-auto w-full md:w-auto p-1 bg-slate-100/80 rounded-xl text-xs">
             {[
               { id: 'all', label: `Tất cả (${safeDossiers.length})` },
-              { id: 'submitted', label: `Đã gửi / Chờ duyệt (${submittedCount})` },
-              { id: 'revision', label: 'Trả về sửa lỗi' },
+              { id: 'submitted', label: `Chờ duyệt (${submittedCount})` },
+              { id: 'revision', label: 'Đã trả về' },
               { id: 'validated', label: 'Đã hợp lệ' },
-              { id: 'pending_signed', label: `Chờ duyệt bản ký (${pendingSignedCount})` },
-              { id: 'waiting_rector', label: `Chờ ký Hiệu trưởng (${waitingRectorCount})` },
-              { id: 'signed_archived', label: 'Đã ký và lưu trữ' },
+              { id: 'pending_signed', label: `Duyệt bản ký (${pendingSignedCount})` },
+              { id: 'waiting_rector', label: `Chờ ký HT (${waitingRectorCount})` },
+              { id: 'signed_archived', label: 'Lưu trữ' },
             ].map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTabFilter(tab.id)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+                className={`px-3 py-1.5 text-xs rounded-lg whitespace-nowrap transition-all cursor-pointer ${
                   activeTabFilter === tab.id
-                    ? 'bg-blue-700 text-white shadow-2xs'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    ? 'bg-white text-slate-900 font-semibold shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 font-medium'
                 }`}
               >
                 {tab.label}
@@ -114,13 +134,13 @@ export const ReviewQueueView: React.FC<ReviewQueueViewProps> = ({
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
                 <th className="py-3 px-4">Mã hồ sơ & Phiên bản</th>
-                <th className="py-3 px-4">Đề tài / Nội dung CGCN</th>
+                <th className="py-3 px-4">Tên đề tài</th>
                 <th className="py-3 px-4">Giảng viên nộp</th>
                 <th className="py-3 px-4">Đơn vị</th>
                 <th className="py-3 px-4">Trạng thái</th>
@@ -163,7 +183,33 @@ export const ReviewQueueView: React.FC<ReviewQueueViewProps> = ({
                         {d.department_name || d.createdBy?.department || 'Khoa Y'}
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap">
-                        <StatusBadge status={d.status} />
+                        {(() => {
+                          const norm = normalizeStatus(d.status);
+                          if (norm === 'SUBMITTED') {
+                            const s1a = (d as any).status_1a;
+                            const s2a = (d as any).status_2a;
+                            if (s1a === 'APPROVED' && s2a !== 'APPROVED') {
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                                  Đã duyệt 1a (Chờ 2a)
+                                </span>
+                              );
+                            }
+                            if (s2a === 'APPROVED' && s1a !== 'APPROVED') {
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                                  Đã duyệt 2a (Chờ 1a)
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                                Chờ duyệt (1a &amp; 2a)
+                              </span>
+                            );
+                          }
+                          return <StatusBadge status={d.status} />;
+                        })()}
                       </td>
                       <td className="py-3 px-4 text-center whitespace-nowrap">
                         {['VALIDATED', 'PENDING_SIGNED_REVIEW', 'WAITING_RECTOR_SIGNATURE', 'SIGNED_ARCHIVED'].includes(

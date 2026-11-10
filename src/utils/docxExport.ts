@@ -550,9 +550,79 @@ function getDirectChildren(parent: any, tagName?: string): any[] {
  * 3. Protect Signature Blocks from Page Breaks (<w:keepLines/>, <w:keepNext/>)
  * 4. Preserve <w:sectPr> (<w:pgSz>, <w:pgMar>) 100% untouched byte-for-byte
  */
-export function applyPaginationAndSignatureProtection(zip: any): void {
+function updateCellTextContent(element: any, newText: string, domDoc?: any): void {
+  const tNodes = element.getElementsByTagName('w:t');
+  if (tNodes.length > 0) {
+    tNodes[0].textContent = newText;
+    for (let i = 1; i < tNodes.length; i++) {
+      tNodes[i].textContent = '';
+    }
+  } else if (domDoc && newText) {
+    const r = domDoc.createElementNS(W_NS, 'w:r');
+    const t = domDoc.createElementNS(W_NS, 'w:t');
+    t.textContent = newText;
+    r.appendChild(t);
+    element.appendChild(r);
+  }
+}
+
+export function applyPaginationAndSignatureProtection(zip: any, dossier?: Dossier): void {
   const xmlString = zip.file('word/document.xml').asText();
   const domDoc = new DOMParser().parseFromString(xmlString, 'text/xml');
+
+  // Kiểm tra nếu là Mẫu 2a và không tổ chức hội thảo -> Tự động ẩn luôn Quản lý rủi ro (Tiêu đề và 2 bảng rủi ro)
+  const rawData = { ...(dossier?.formData || {}), ...(dossier?.formData2a || {}) };
+  const hasHoiThao =
+    rawData.co_hoi_thao !== undefined
+      ? Boolean(
+          rawData.co_hoi_thao &&
+            rawData.co_hoi_thao !== 'Không tổ chức hội thảo (ẩn Mục IX)' &&
+            rawData.co_hoi_thao !== 'false'
+        )
+      : rawData.has_hoi_thao !== undefined
+        ? Boolean(rawData.has_hoi_thao && rawData.has_hoi_thao !== 'false')
+        : rawData.has_workshop !== undefined
+          ? Boolean(rawData.has_workshop && rawData.has_workshop !== 'false')
+          : Boolean(
+              rawData.workshop_chair ||
+                rawData.workshop_speaker ||
+                rawData.workshop_program ||
+                rawData.chu_toa ||
+                rawData.bao_cao_vien ||
+                (Array.isArray(rawData.ds_chu_toa) && rawData.ds_chu_toa.length > 0) ||
+                (Array.isArray(rawData.ds_bao_cao_vien) && rawData.ds_bao_cao_vien.length > 0) ||
+                (Array.isArray(rawData.ds_chuong_trinh_hoi_thao) &&
+                  rawData.ds_chuong_trinh_hoi_thao.length > 0)
+            );
+
+  const body = domDoc.getElementsByTagName('w:body')[0];
+  if (!hasHoiThao && body) {
+    const nodesToRemove: any[] = [];
+    const children = Array.from(body.childNodes);
+    for (const node of children) {
+      const text = (node.textContent || '').trim();
+      if (node.nodeName === 'w:p') {
+        if (
+          /quản lý rủi ro/i.test(text) ||
+          /xác định và đánh giá rủi ro/i.test(text) ||
+          /biện pháp kiểm soát rủi ro/i.test(text) ||
+          /thang đánh giá:\s*p/i.test(text)
+        ) {
+          nodesToRemove.push(node);
+        }
+      } else if (node.nodeName === 'w:tbl') {
+        if (
+          /khả năng xảy ra\s*\(p\)/i.test(text) ||
+          /biện pháp kiểm soát/i.test(text)
+        ) {
+          nodesToRemove.push(node);
+        }
+      }
+    }
+    for (const node of nodesToRemove) {
+      body.removeChild(node);
+    }
+  }
 
   const signatureKeywords = [
     'Trưởng đơn vị nhận',
@@ -772,6 +842,80 @@ export function applyPaginationAndSignatureProtection(zip: any): void {
     }
   }
 
+  // 4.5: Dynamic Signature Block & Recipient list customization
+  const sigConfig = (dossier as any)?.signature_config || (dossier as any)?.signatureConfig;
+  if (sigConfig && signatureTables.length >= 2) {
+    const table1 = signatureTables[signatureTables.length - 2];
+    const table2 = signatureTables[signatureTables.length - 1];
+
+    // Table 1: Department row
+    const t1Rows = getDirectChildren(table1, 'w:tr');
+    for (const tr of t1Rows) {
+      const rowText = tr.textContent || '';
+      if (
+        rowText.includes('Phòng KH&CN') ||
+        rowText.includes('Phòng TCKT') ||
+        rowText.includes('Văn Phòng')
+      ) {
+        const cells = getDirectChildren(tr, 'w:tc');
+        const depts: string[] = sigConfig.departments || ['Phòng KH&CN', 'Phòng TCKT'];
+        if (cells.length >= 3) {
+          updateCellTextContent(cells[0], depts[0] || '', domDoc);
+          updateCellTextContent(cells[2], depts[1] || '', domDoc);
+        }
+        break;
+      }
+    }
+
+    // Table 2: Nơi nhận & Ban Giám hiệu
+    const t2Rows = getDirectChildren(table2, 'w:tr');
+    if (t2Rows.length > 0) {
+      const firstRow = t2Rows[0];
+      const t2Cells = getDirectChildren(firstRow, 'w:tc');
+      if (t2Cells.length >= 3) {
+        // Cell 0: Nơi nhận
+        if (sigConfig.recipients && Array.isArray(sigConfig.recipients)) {
+          const c0Ps = getDirectChildren(t2Cells[0], 'w:p');
+          if (c0Ps.length > 1) {
+            const lines = sigConfig.recipients
+              .map((r: string) => {
+                const trimmed = String(r || '').trim();
+                if (!trimmed) return '';
+                const withDash = trimmed.startsWith('-') ? trimmed : `- ${trimmed}`;
+                return withDash.endsWith(';') || withDash.endsWith('.') ? withDash : `${withDash};`;
+              })
+              .filter(Boolean);
+
+            for (let i = 0; i < lines.length; i++) {
+              if (i + 1 < c0Ps.length) {
+                updateCellTextContent(c0Ps[i + 1], lines[i], domDoc);
+              } else {
+                const newP = c0Ps[1].cloneNode(true) as any;
+                updateCellTextContent(newP, lines[i], domDoc);
+                t2Cells[0].appendChild(newP);
+              }
+            }
+            for (let i = lines.length + 1; i < c0Ps.length; i++) {
+              updateCellTextContent(c0Ps[i], '', domDoc);
+            }
+          }
+        }
+
+        // Cell 2: Rector role & signer name
+        const c2Ps = getDirectChildren(t2Cells[2], 'w:p');
+        if (c2Ps.length > 0) {
+          const rectorRole = sigConfig.rectorRole || 'HIỆU TRƯỞNG';
+          updateCellTextContent(c2Ps[0], rectorRole, domDoc);
+
+          if (sigConfig.rectorSignerName) {
+            const lastP = c2Ps[c2Ps.length - 1];
+            updateCellTextContent(lastP, sigConfig.rectorSignerName, domDoc);
+          }
+        }
+      }
+    }
+  }
+
   const updatedXml = new XMLSerializer().serializeToString(domDoc);
   zip.file('word/document.xml', updatedXml);
 }
@@ -809,6 +953,26 @@ export function buildDocxRenderData(dossier: Dossier, isMau1a: boolean): Record<
     'ĐV';
   const fullName = d.full_name || d.ho_ten || dossier.createdBy?.name || '';
 
+  const sigConfig = (dossier as any).signature_config || (dossier as any).signatureConfig;
+  const dsPhongBanKy = sigConfig?.departments || ['Phòng KH&CN', 'Phòng TCKT'];
+  const chucDanhBgh = sigConfig?.rectorRole || 'HIỆU TRƯỞNG';
+  const dsNoiNhan = sigConfig?.recipients || [
+    `Như kính gửi (${unitAbbr})`,
+    ...(dsPhongBanKy.includes('Phòng TCKT') ? ['TCKT'] : []),
+    'TTDV&ĐTTNCXH',
+    'Lưu: VT, KHCN.'
+  ];
+  const tenDeTai = normalizeMultiline(
+    d.ten_de_tai || d.research_title || d.product_name || (dossier as any).ten_de_tai || ''
+  );
+  const rawTruongDonVi = normalizeMultiline(
+    d.truong_don_vi || (dossier as any).truong_don_vi || ''
+  );
+  const truongDonVi =
+    rawTruongDonVi.trim() === 'PGS.TS. Nguyễn Văn A' || rawTruongDonVi.trim() === 'Phòng KH&CN'
+      ? ''
+      : rawTruongDonVi;
+
   if (isMau1a) {
     const docNumInfo = formatDocumentNumber(
       '',
@@ -830,6 +994,7 @@ export function buildDocxRenderData(dossier: Dossier, isMau1a: boolean): Record<
       chuc_danh: d.position || d.chuc_danh || '',
       dien_thoai: d.phone || d.dien_thoai || '',
       email: d.email || '',
+      ten_de_tai: tenDeTai,
       muc_dich: normalizeMultiline(d.purpose || d.muc_dich || ''),
       nhu_cau_tiep_nhan: normalizeMultiline(d.receiver_needs || d.nhu_cau_tiep_nhan || ''),
       dap_ung_thuc_hien: normalizeMultiline(d.provider_capacity || d.dap_ung_thuc_hien || ''),
@@ -842,8 +1007,11 @@ export function buildDocxRenderData(dossier: Dossier, isMau1a: boolean): Record<
       dia_diem: normalizeMultiline(d.transfer_location || d.dia_diem || ''),
       thanh_phan: normalizeMultiline(d.attendees || d.thanh_phan || ''),
       kinh_phi: normalizeMultiline(d.funding_source || d.financial_plan || d.kinh_phi || ''),
-      truong_don_vi: dossier.assignedManager?.name || d.assigned_manager || d.truong_don_vi || '',
+      truong_don_vi: truongDonVi,
       noi_nhan_don_vi: `Như kính gửi (${unitAbbr})`,
+      ds_phong_ban_ky: dsPhongBanKy,
+      chuc_danh_bgh: chucDanhBgh,
+      ds_noi_nhan: dsNoiNhan,
     };
   }
 
@@ -857,11 +1025,15 @@ export function buildDocxRenderData(dossier: Dossier, isMau1a: boolean): Record<
 
   const hasHoiThao =
     rawFormData.co_hoi_thao !== undefined
-      ? Boolean(rawFormData.co_hoi_thao)
+      ? Boolean(
+          rawFormData.co_hoi_thao &&
+            rawFormData.co_hoi_thao !== 'Không tổ chức hội thảo (ẩn Mục IX)' &&
+            rawFormData.co_hoi_thao !== 'false'
+        )
       : rawFormData.has_hoi_thao !== undefined
-        ? Boolean(rawFormData.has_hoi_thao)
+        ? Boolean(rawFormData.has_hoi_thao && rawFormData.has_hoi_thao !== 'false')
         : rawFormData.has_workshop !== undefined
-          ? Boolean(rawFormData.has_workshop)
+          ? Boolean(rawFormData.has_workshop && rawFormData.has_workshop !== 'false')
           : Boolean(
               d.workshop_chair ||
                 d.workshop_speaker ||
@@ -925,11 +1097,11 @@ export function buildDocxRenderData(dossier: Dossier, isMau1a: boolean): Record<
     ds_nhan_su: pairTwoColumns(
       rawFormData.ds_nhan_su ?? rawFormData.implementing_staff ?? rawFormData.nhan_su
     ),
-    // Khối điều kiện Mục IX
+    // Khối điều kiện Mục IX & Mục X
     co_hoi_thao: hasHoiThao,
     has_hoi_thao: hasHoiThao,
-    so_la_ma_rui_ro: hasHoiThao ? 'X' : 'IX',
-    so_muc_rui_ro: hasHoiThao ? '10' : '9',
+    so_la_ma_rui_ro: 'X',
+    so_muc_rui_ro: '10',
     ds_chu_toa: pairTwoColumns(rawFormData.ds_chu_toa ?? rawFormData.workshop_chair ?? rawFormData.chu_toa),
     ds_bao_cao_vien: pairTwoColumns(
       rawFormData.ds_bao_cao_vien ?? rawFormData.workshop_speaker ?? rawFormData.bao_cao_vien
@@ -948,6 +1120,11 @@ export function buildDocxRenderData(dossier: Dossier, isMau1a: boolean): Record<
     ds_kiem_soat_rui_ro: adaptRiskControlTable(
       rawFormData.ds_kiem_soat_rui_ro ?? rawFormData.risk_controls ?? rawFormData.kiem_soat_rui_ro
     ),
+    ten_de_tai: tenDeTai,
+    truong_don_vi: truongDonVi,
+    ds_phong_ban_ky: dsPhongBanKy,
+    chuc_danh_bgh: chucDanhBgh,
+    ds_noi_nhan: dsNoiNhan,
   };
 }
 
@@ -983,7 +1160,7 @@ export async function generateSingleDocxBlob(
   doc.render(renderData);
 
   // Hậu xử lý DOM OpenXML: khóa kích thước bảng (fixed dxa), cantSplit và bảo vệ chữ ký
-  applyPaginationAndSignatureProtection(doc.getZip());
+  applyPaginationAndSignatureProtection(doc.getZip(), dossier);
 
   const blob = doc.getZip().generate({
     type: 'blob',

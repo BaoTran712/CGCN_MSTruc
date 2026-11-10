@@ -131,36 +131,129 @@ const SigBlock: React.FC<{
   approverName?: string;
   approvedAt?: string;
   isForSig?: boolean;
-}> = ({ title, hint, name, isApproved, approverName, approvedAt, isForSig }) => (
-  <div className="text-center flex-1 px-2">
-    <div className="font-bold uppercase text-[12.5px] text-gray-900">{normalizeNFC(title)}</div>
-    <div className="italic text-[11.5px] text-gray-600 mb-2">{normalizeNFC(hint)}</div>
-    <div className="h-20 flex items-center justify-center">
-      {isApproved ? (
-        <div className="border-2 border-emerald-600 rounded px-2.5 py-1 -rotate-3 bg-emerald-50 inline-flex items-center gap-1.5 shadow-sm">
-          <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          <div className="text-left">
-            <div className="text-[9.5px] font-bold uppercase tracking-wider text-emerald-800">ĐÃ PHÊ DUYỆT</div>
-            <div className="text-[8.5px] text-emerald-700 font-mono">
-              {normalizeNFC(approverName)} · {approvedAt ? new Date(approvedAt).toLocaleDateString('vi-VN') : ''}
-            </div>
+}> = ({ title, hint, name }) => {
+  const cleanName =
+    name && name.trim() !== 'PGS.TS. Nguyễn Văn A' && name.trim() !== 'Phòng KH&CN'
+      ? name.trim()
+      : '';
+  return (
+    <div className="text-center flex-1 px-2">
+      <div className="font-bold uppercase text-[12.5px] text-gray-900">{normalizeNFC(title)}</div>
+      <div className="italic text-[11.5px] text-gray-600 mb-2">{normalizeNFC(hint)}</div>
+      <div className="h-20 flex items-center justify-center">
+        <span className="text-gray-300 italic text-[12px]">Ký và ghi rõ họ tên</span>
+      </div>
+      <div className="font-bold text-[13.5px] text-gray-900">
+        {cleanName ? normalizeNFC(cleanName) : '...................................................'}
+      </div>
+    </div>
+  );
+};
+
+/* ── Bảng chữ ký động phòng ban & BGH (Dynamic Signature Block) theo Nghị định 30 ── */
+const DynamicSignatureBlock: React.FC<{ dossier: Dossier; is2a?: boolean }> = ({ dossier, is2a }) => {
+  const d = dossier.formData || {};
+
+  const sigConfig = dossier.signature_config || dossier.signatureConfig;
+  const depts: string[] = sigConfig?.departments ?? ['Phòng KH&CN', 'Phòng TCKT'];
+  const rectorRole: string = sigConfig?.rectorRole || 'HIỆU TRƯỞNG';
+  const rectorSignerName: string = sigConfig?.rectorSignerName || '';
+
+  const unitAbbr = getAbbrFromDepartment(d.department || dossier.createdBy?.department);
+  const defaultRecipients = [
+    `- Như kính gửi (${unitAbbr});`,
+    ...(depts.includes('Phòng TCKT') ? ['- TCKT;'] : []),
+    '- TTDV&ĐTTNCXH;',
+    '- Lưu: VT, KHCN.',
+  ];
+  const recipients: string[] = sigConfig?.recipients && sigConfig.recipients.length > 0
+    ? sigConfig.recipients.map((r) => r.trim().startsWith('-') ? r.trim() : `- ${r.trim()};`)
+    : defaultRecipients;
+
+  const deptPairs: { col1: string; col2?: string }[] = [];
+  for (let i = 0; i < depts.length; i += 2) {
+    deptPairs.push({
+      col1: depts[i],
+      col2: depts[i + 1],
+    });
+  }
+
+  const rawTruongDonVi = d.truong_don_vi || '';
+  const truongDonViName =
+    rawTruongDonVi.trim() === 'PGS.TS. Nguyễn Văn A' ? '' : rawTruongDonVi.trim();
+  const chuNhiemName = d.full_name || dossier.createdBy?.name || '';
+  const receiverManagerName = d.receiver_manager || d.truong_don_vi_nhan || '';
+
+  return (
+    <div className="mt-8 pt-4">
+      {/* BẢNG 1: Khối chữ ký Đơn vị, Cá nhân và Các Phòng ban chức năng (Bố cục 3 cột) */}
+      <table className="w-full border-collapse border-0 text-center mb-6">
+        <tbody>
+          {/* Hàng 1: Đơn vị & Chủ nhiệm đề tài */}
+          <tr>
+            <td className="w-[45%] align-top text-center">
+              <SigBlock
+                title={is2a ? (receiverManagerName ? 'Trưởng đơn vị nhận' : 'Trưởng đơn vị') : 'Trưởng đơn vị'}
+                hint="(Ký và ghi rõ họ tên)"
+                name={is2a && receiverManagerName ? receiverManagerName : truongDonViName}
+              />
+            </td>
+            <td className="w-[10%]"></td>
+            <td className="w-[45%] align-top text-center">
+              <SigBlock
+                title={is2a ? 'Trưởng đơn vị giao/Chủ nhiệm đề tài' : 'Cá nhân/Chủ nhiệm đề tài'}
+                hint="(Ký và ghi rõ họ tên)"
+                name={chuNhiemName}
+              />
+            </td>
+          </tr>
+
+          {/* Hàng tiêu đề 2 (Động): Các phòng ban chức năng */}
+          {deptPairs.map((pair, pIdx) => (
+            <tr key={pIdx}>
+              <td className="w-[45%] align-top text-center pt-6">
+                <SigBlock title={pair.col1} hint="(Ký và ghi rõ họ tên)" />
+              </td>
+              <td className="w-[10%]"></td>
+              <td className="w-[45%] align-top text-center pt-6">
+                {pair.col2 ? (
+                  <SigBlock title={pair.col2} hint="(Ký và ghi rõ họ tên)" />
+                ) : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* BẢNG 2: Khối Nơi nhận và Chữ ký Ban Giám hiệu (Bố cục 4 cột) */}
+      <div className="flex justify-between items-start mt-8 pt-4 border-t border-gray-100">
+        {/* Cột 1: Nơi nhận */}
+        <div className="text-[12px] text-gray-800 leading-snug">
+          <div className="font-bold italic text-[12px]">Nơi nhận:</div>
+          {recipients.map((rec, rIdx) => (
+            <div key={rIdx} className="text-[11px]">{rec}</div>
+          ))}
+        </div>
+
+        {/* Cột 3: Chức danh Ban Giám hiệu */}
+        <div className="text-center pr-12">
+          {rectorRole.includes('KT.') || rectorRole.includes('PHÓ HIỆU TRƯỞNG') ? (
+            <>
+              <div className="font-bold uppercase text-[12.5px]">KT. HIỆU TRƯỞNG</div>
+              <div className="font-bold uppercase text-[12.5px]">PHÓ HIỆU TRƯỞNG</div>
+            </>
+          ) : (
+            <div className="font-bold uppercase text-[13px]">{rectorRole}</div>
+          )}
+          <div className="h-16" />
+          <div className="font-bold text-[13.5px]">
+            {rectorSignerName || '...................................................'}
           </div>
         </div>
-      ) : (
-        <span className="text-gray-300 italic text-[12px]">Ký và ghi rõ họ tên</span>
-      )}
-    </div>
-    <div className="font-bold text-[13.5px] text-gray-900">
-      {normalizeNFC(name) || '...................................................'}
-    </div>
-    {isForSig && (
-      <div className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-sky-700 bg-sky-50 border border-sky-200 rounded px-2 py-0.5">
-        <CheckCircle2 className="w-3 h-3" />
-        Đã chuyển Trình ký cấp trên
       </div>
-    )}
-  </div>
-);
+    </div>
+  );
+};
 
 /* ── Mẫu 1a-TT.CGCN: Tờ trình chuyển giao tri thức ── */
 const Mau1aTTCGCN: React.FC<{ dossier: Dossier }> = ({ dossier: rawDossier }) => {
@@ -181,10 +274,11 @@ const Mau1aTTCGCN: React.FC<{ dossier: Dossier }> = ({ dossier: rawDossier }) =>
       <div className="text-center my-5">
         <div className="font-bold text-[15px] uppercase tracking-wide">TỜ TRÌNH</div>
         <div className="text-[13.5px] font-semibold mt-1">
-          Về việc chuyển giao tri thức: từ kết quả đề tài nghiên cứu vào bài giảng,
-        </div>
-        <div className="text-[13.5px] font-semibold">
-          giáo trình, tài liệu tập huấn giảng dạy
+          Về việc chuyển giao tri thức: từ kết quả đề tài nghiên cứu{' '}
+          <span className="font-bold">
+            {d.ten_de_tai || d.research_title || '...................................................'}
+          </span>{' '}
+          vào bài giảng – giáo trình, tài liệu tập huấn giảng dạy
         </div>
       </div>
 
@@ -282,51 +376,8 @@ const Mau1aTTCGCN: React.FC<{ dossier: Dossier }> = ({ dossier: rawDossier }) =>
         Trân trọng./.
       </div>
 
-      {/* Signature section */}
-      <div className="mt-6 pt-4">
-        <div className="grid grid-cols-2 gap-6 text-center">
-          <SigBlock
-            title="Trưởng đơn vị"
-            hint="(Ký và ghi rõ họ tên)"
-            name={approved ? dossier.assignedManager?.name : undefined}
-            isApproved={approved}
-            approverName={dossier.assignedManager?.name}
-            approvedAt={dossier.approvedAt}
-            isForSig={forSig}
-          />
-          <SigBlock
-            title="Cá nhân/Chủ nhiệm đề tài"
-            hint="(Ký và ghi rõ họ tên)"
-            name={d.full_name || dossier.createdBy.name}
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-6 text-center mt-8">
-          <SigBlock
-            title="Phòng KH&CN"
-            hint="(Ký và ghi rõ họ tên)"
-          />
-          <SigBlock
-            title="Phòng TCKT"
-            hint="(Ký và ghi rõ họ tên)"
-          />
-        </div>
-
-        <div className="flex justify-between items-start mt-8 pt-4">
-          <div className="text-[12px] text-gray-700 leading-snug">
-            <div className="font-bold italic text-[12px]">Nơi nhận:</div>
-            <div className="text-[11px]">- Như kính gửi ({getAbbrFromDepartment(d.department || dossier.createdBy?.department)});</div>
-            <div className="text-[11px]">- TCKT;</div>
-            <div className="text-[11px]">- TTDV&amp;ĐTTNCXH;</div>
-            <div className="text-[11px]">- Lưu: VT, KHCN.</div>
-          </div>
-          <div className="text-center pr-12">
-            <div className="font-bold uppercase text-[13px]">HIỆU TRƯỞNG</div>
-            <div className="h-16" />
-            <div className="font-bold text-[13.5px]">...................................................</div>
-          </div>
-        </div>
-      </div>
+      {/* Khối chữ ký động (Dynamic Signature Block) */}
+      <DynamicSignatureBlock dossier={dossier} is2a={false} />
     </div>
   );
 };
@@ -334,7 +385,10 @@ const Mau1aTTCGCN: React.FC<{ dossier: Dossier }> = ({ dossier: rawDossier }) =>
 /* ── Mẫu 2a-KH.CGCN: Kế hoạch tổ chức chuyển giao công nghệ Trong trường ── */
 const Mau2aKHCGCN: React.FC<{ dossier: Dossier }> = ({ dossier: rawDossier }) => {
   const dossier = normalizeNFC(rawDossier);
-  const d = dossier.formData || {};
+  const d =
+    dossier.formData2a && Object.keys(dossier.formData2a).length > 0
+      ? { ...dossier.formData, ...dossier.formData2a }
+      : dossier.formData || {};
   const approved = ['APPROVED', 'VALIDATED', 'USER_SIGNED', 'PENDING_SIGNED_REVIEW', 'WAITING_RECTOR_SIGNATURE', 'SECRETARY_RECEIVED', 'COMPLETED', 'SIGNED', 'SIGNED_ARCHIVED'].includes(dossier.status);
   const forSig = ['USER_SIGNED', 'PENDING_SIGNED_REVIEW', 'WAITING_RECTOR_SIGNATURE', 'SECRETARY_RECEIVED', 'COMPLETED', 'SIGNED', 'SIGNED_ARCHIVED'].includes(dossier.status);
   const unitAbbr = getAbbrFromDepartment(d.department || dossier.createdBy?.department);
@@ -376,13 +430,15 @@ const Mau2aKHCGCN: React.FC<{ dossier: Dossier }> = ({ dossier: rawDossier }) =>
     '2. Nhóm tác giả và chuyên viên kỹ thuật - Thực hiện chuyển giao',
   ]);
 
-  // Kiểm tra có tổ chức hội thảo chuyển giao (Mục IX) không
+  // Kiểm tra có tổ chức hội thảo chuyển giao (Mục IX & Quản lý rủi ro Mục X) không
   const hasWorkshop =
     d.co_hoi_thao !== undefined
-      ? Boolean(d.co_hoi_thao && d.co_hoi_thao !== 'Không tổ chức hội thảo (ẩn Mục IX)')
-      : d.has_workshop !== undefined
-        ? Boolean(d.has_workshop)
-        : Boolean(d.workshop_chair || d.workshop_speaker || d.workshop_program || d.workshop_budget);
+      ? Boolean(d.co_hoi_thao && d.co_hoi_thao !== 'Không tổ chức hội thảo (ẩn Mục IX)' && d.co_hoi_thao !== 'false')
+      : d.has_hoi_thao !== undefined
+        ? Boolean(d.has_hoi_thao && d.has_hoi_thao !== 'false')
+        : d.has_workshop !== undefined
+          ? Boolean(d.has_workshop && d.has_workshop !== 'false')
+          : Boolean(d.workshop_chair || d.workshop_speaker || d.workshop_program || d.workshop_budget || d.chu_toa || d.bao_cao_vien);
 
   const chairList = parseLines(d.workshop_chair || d.chu_toa, [
     '1. Đại diện Ban Giám Hiệu - Chủ tọa',
@@ -474,9 +530,6 @@ const Mau2aKHCGCN: React.FC<{ dossier: Dossier }> = ({ dossier: rawDossier }) =>
     ]);
     return lines.map((line, idx) => parseOneTaskRow(line, idx));
   })();
-
-  const riskRoman = hasWorkshop ? 'X' : 'IX';
-  const riskSubPrefix = hasWorkshop ? '10' : '9';
 
   return (
     <div className="font-document leading-relaxed text-black text-[13.5px]">
@@ -670,133 +723,99 @@ const Mau2aKHCGCN: React.FC<{ dossier: Dossier }> = ({ dossier: rawDossier }) =>
         </>
       )}
 
-      <SH>{riskRoman}. Quản lý rủi ro trong chuyển giao</SH>
+      {hasWorkshop && (
+        <>
+          <SH>X. Quản lý rủi ro trong chuyển giao</SH>
 
-      <div className="font-bold text-[13.5px] mt-2 mb-1 text-black">
-        {riskSubPrefix}.1. Xác định và đánh giá rủi ro
-      </div>
-      <div className="text-[12.5px] italic text-gray-800 mb-1.5">
-        Thang đánh giá: P (khả năng xảy ra) và S (mức độ ảnh hưởng) chấm từ 1 đến 5; R = P × S; R ≤ 4: Thấp; 5 ≤ R ≤ 9: Trung bình; R ≥ 10: Cao.
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse border border-black text-center text-[12.5px] my-1.5">
-          <thead>
-            <tr className="bg-slate-50 font-bold">
-              <th className="border border-black p-1.5 w-10 text-center">Stt</th>
-              <th className="border border-black p-1.5 text-left">Công việc /Yếu tố rủi ro</th>
-              <th className="border border-black p-1.5 w-24 text-center">Khả năng xảy ra (P)</th>
-              <th className="border border-black p-1.5 w-24 text-center">Mức độ ảnh hưởng (S)</th>
-              <th className="border border-black p-1.5 w-24 text-center">Giá trị rủi ro<br />R=PxS</th>
-              <th className="border border-black p-1.5 w-28 text-center">Phân loại rủi ro</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(Array.isArray(d.ds_danh_gia_rui_ro) && d.ds_danh_gia_rui_ro.length > 0
-              ? d.ds_danh_gia_rui_ro
-              : [
-                  { stt: 1, yeu_to_rui_ro: 'Chậm tiến độ chuyển giao do lịch giảng dạy, khám chữa bệnh dày đặc', p: 2, s: 2, r: 4, phan_loai: 'Thấp' },
-                  { stt: 2, yeu_to_rui_ro: 'Hạ tầng thiết bị, phần mềm tại đơn vị tiếp nhận chưa đồng bộ', p: 2, s: 3, r: 6, phan_loai: 'Trung bình' },
-                  { stt: 3, yeu_to_rui_ro: 'Nhân sự tiếp nhận chuyển giao luân chuyển hoặc chưa thành thạo kỹ thuật', p: 2, s: 2, r: 4, phan_loai: 'Thấp' },
-                ]
-            ).map((item: any, idx: number) => {
-              const pVal = item.p ?? '';
-              const sVal = item.s ?? '';
-              const rVal = item.r !== undefined && item.r !== '' ? item.r : (pVal && sVal ? Number(pVal) * Number(sVal) : '');
-              const level = item.phan_loai || (rVal ? (Number(rVal) <= 4 ? 'Thấp' : Number(rVal) <= 9 ? 'Trung bình' : 'Cao') : '');
-              return (
-                <tr key={idx}>
-                  <td className="border border-black p-1.5 text-center">{item.stt || idx + 1}</td>
-                  <td className="border border-black p-1.5 text-left">{item.yeu_to_rui_ro}</td>
-                  <td className="border border-black p-1.5 text-center">{pVal}</td>
-                  <td className="border border-black p-1.5 text-center">{sVal}</td>
-                  <td className="border border-black p-1.5 text-center font-bold">{rVal}</td>
-                  <td className="border border-black p-1.5 text-center">{level || 'Thấp'}</td>
+          <div className="font-bold text-[13.5px] mt-2 mb-1 text-black">
+            10.1. Xác định và đánh giá rủi ro
+          </div>
+          <div className="text-[12.5px] italic text-gray-800 mb-1.5">
+            Thang đánh giá: P (khả năng xảy ra) và S (mức độ ảnh hưởng) chấm từ 1 đến 5; R = P × S; R ≤ 4: Thấp; 5 ≤ R ≤ 9: Trung bình; R ≥ 10: Cao.
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse border border-black text-center text-[12.5px] my-1.5">
+              <thead>
+                <tr className="bg-slate-50 font-bold">
+                  <th className="border border-black p-1.5 w-10 text-center">Stt</th>
+                  <th className="border border-black p-1.5 text-left">Công việc /Yếu tố rủi ro</th>
+                  <th className="border border-black p-1.5 w-24 text-center">Khả năng xảy ra (P)</th>
+                  <th className="border border-black p-1.5 w-24 text-center">Mức độ ảnh hưởng (S)</th>
+                  <th className="border border-black p-1.5 w-24 text-center">Giá trị rủi ro<br />R=PxS</th>
+                  <th className="border border-black p-1.5 w-28 text-center">Phân loại rủi ro</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="font-bold text-[13.5px] mt-3.5 mb-1.5 text-black">
-        {riskSubPrefix}.2. Biện pháp kiểm soát rủi ro
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse border border-black text-center text-[12px] my-1.5">
-          <thead>
-            <tr className="bg-slate-50 font-bold">
-              <th className="border border-black p-1.5 w-9 text-center">Stt</th>
-              <th className="border border-black p-1.5 text-left">Yếu tố rủi ro</th>
-              <th className="border border-black p-1.5 text-left">Biện pháp kiểm soát</th>
-              <th className="border border-black p-1.5 text-center">Đơn vị<br />phụ trách</th>
-              <th className="border border-black p-1.5 text-center">Đơn vị<br />phối hợp</th>
-              <th className="border border-black p-1.5 text-center">Thời gian</th>
-              <th className="border border-black p-1.5 text-center">Sản phẩm</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(Array.isArray(d.ds_kiem_soat_rui_ro) && d.ds_kiem_soat_rui_ro.length > 0
-              ? d.ds_kiem_soat_rui_ro
-              : [
-                  { stt: 1, yeu_to_rui_ro: 'Chậm tiến độ chuyển giao', bien_phap: 'Lập tiến độ chi tiết theo tuần, phân công nhân sự dự phòng', don_vi_phu_trach: 'Chủ nhiệm đề tài', don_vi_phoi_hop: 'Đơn vị tiếp nhận', thoi_gian: 'Trước và trong đợt chuyển giao', san_pham: 'Biên bản nghiệm thu đúng hạn' },
-                  { stt: 2, yeu_to_rui_ro: 'Hạ tầng chưa đồng bộ', bien_phap: 'Khảo sát tiền trạm, cấu hình thử nghiệm và nâng cấp thiết bị', don_vi_phu_trach: 'Bộ phận kỹ thuật', don_vi_phoi_hop: 'Phòng KH&CN', thoi_gian: 'Trước khi bàn giao 01 tuần', san_pham: 'Hệ thống vận hành ổn định' },
-                  { stt: 3, yeu_to_rui_ro: 'Nhân sự chưa thành thạo', bien_phap: 'Tổ chức tập huấn thực hành cầm tay chỉ việc, bàn giao tài liệu chi tiết', don_vi_phu_trach: 'Nhóm nghiên cứu', don_vi_phoi_hop: 'Đơn vị tiếp nhận', thoi_gian: 'Trong suốt kỳ chuyển giao', san_pham: '100% nhân sự đạt yêu cầu' },
-                ]
-            ).map((item: any, idx: number) => (
-              <tr key={idx}>
-                <td className="border border-black p-1.5 text-center">{item.stt || idx + 1}</td>
-                <td className="border border-black p-1.5 text-left">{item.yeu_to_rui_ro}</td>
-                <td className="border border-black p-1.5 text-left">{item.bien_phap}</td>
-                <td className="border border-black p-1.5 text-center">{item.don_vi_phu_trach}</td>
-                <td className="border border-black p-1.5 text-center">{item.don_vi_phoi_hop}</td>
-                <td className="border border-black p-1.5 text-center">{item.thoi_gian || 'Trong đợt chuyển giao'}</td>
-                <td className="border border-black p-1.5 text-center">{item.san_pham}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Signature section theo đúng biểu mẫu Mẫu 2a & Nghị định 30/2020/NĐ-CP */}
-      <div className="mt-8 pt-4">
-        <div className="grid grid-cols-2 gap-6 text-center">
-          <SigBlock
-            title="Trưởng đơn vị nhận"
-            hint="(Ký và ghi rõ họ tên)"
-            name={d.receiver_manager || d.truong_don_vi_nhan}
-          />
-          <SigBlock
-            title="Trưởng đơn vị giao/Chủ nhiệm đề tài"
-            hint="(Ký và ghi rõ họ tên)"
-            name={d.full_name || dossier.createdBy?.name}
-            isApproved={approved}
-            approverName={dossier.assignedManager?.name}
-            approvedAt={dossier.approvedAt}
-            isForSig={forSig}
-          />
-        </div>
-
-        <div className="grid grid-cols-3 gap-4 text-center mt-8">
-          <SigBlock title="Phòng KH&CN" hint="(Ký duyệt)" />
-          <SigBlock title="Phòng TCKT" hint="(Ký duyệt)" />
-          <SigBlock title="Văn Phòng" hint="(Ký duyệt)" />
-        </div>
-
-        <div className="flex justify-between items-start mt-8 pt-4">
-          <div className="text-black leading-snug">
-            <div className="font-bold italic text-[12px]">Nơi nhận:</div>
-            <div className="text-[11px]">- {d.receiving_party || 'Đơn vị nhận chuyển giao'}, {unitAbbr};</div>
-            <div className="text-[11px]">- VP, TCKT;</div>
-            <div className="text-[11px]">- TTDV&amp;ĐTTNCXH;</div>
-            <div className="text-[11px]">- Lưu: VT, KHCN.</div>
+              </thead>
+              <tbody>
+                {(Array.isArray(d.ds_danh_gia_rui_ro) && d.ds_danh_gia_rui_ro.length > 0
+                  ? d.ds_danh_gia_rui_ro
+                  : [
+                      { stt: 1, yeu_to_rui_ro: 'Chậm tiến độ chuyển giao do lịch giảng dạy, khám chữa bệnh dày đặc', p: 2, s: 2, r: 4, phan_loai: 'Thấp' },
+                      { stt: 2, yeu_to_rui_ro: 'Hạ tầng thiết bị, phần mềm tại đơn vị tiếp nhận chưa đồng bộ', p: 2, s: 3, r: 6, phan_loai: 'Trung bình' },
+                      { stt: 3, yeu_to_rui_ro: 'Nhân sự tiếp nhận chuyển giao luân chuyển hoặc chưa thành thạo kỹ thuật', p: 2, s: 2, r: 4, phan_loai: 'Thấp' },
+                    ]
+                ).map((item: any, idx: number) => {
+                  const pVal = item.p ?? '';
+                  const sVal = item.s ?? '';
+                  const rVal = item.r !== undefined && item.r !== '' ? item.r : (pVal && sVal ? Number(pVal) * Number(sVal) : '');
+                  const level = item.phan_loai || (rVal ? (Number(rVal) <= 4 ? 'Thấp' : Number(rVal) <= 9 ? 'Trung bình' : 'Cao') : '');
+                  return (
+                    <tr key={idx}>
+                      <td className="border border-black p-1.5 text-center">{item.stt || idx + 1}</td>
+                      <td className="border border-black p-1.5 text-left">{item.yeu_to_rui_ro}</td>
+                      <td className="border border-black p-1.5 text-center">{pVal}</td>
+                      <td className="border border-black p-1.5 text-center">{sVal}</td>
+                      <td className="border border-black p-1.5 text-center font-bold">{rVal}</td>
+                      <td className="border border-black p-1.5 text-center">{level || 'Thấp'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-          <div className="text-center pr-12">
-            <div className="font-bold uppercase text-[13px]">HIỆU TRƯỞNG</div>
-            <div className="h-16" />
-            <div className="font-bold text-[13.5px]">...................................................</div>
+
+          <div className="font-bold text-[13.5px] mt-3.5 mb-1.5 text-black">
+            10.2. Biện pháp kiểm soát rủi ro
           </div>
-        </div>
-      </div>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse border border-black text-center text-[12px] my-1.5">
+              <thead>
+                <tr className="bg-slate-50 font-bold">
+                  <th className="border border-black p-1.5 w-9 text-center">Stt</th>
+                  <th className="border border-black p-1.5 text-left">Yếu tố rủi ro</th>
+                  <th className="border border-black p-1.5 text-left">Biện pháp kiểm soát</th>
+                  <th className="border border-black p-1.5 text-center">Đơn vị<br />phụ trách</th>
+                  <th className="border border-black p-1.5 text-center">Đơn vị<br />phối hợp</th>
+                  <th className="border border-black p-1.5 text-center">Thời gian</th>
+                  <th className="border border-black p-1.5 text-center">Sản phẩm</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(Array.isArray(d.ds_kiem_soat_rui_ro) && d.ds_kiem_soat_rui_ro.length > 0
+                  ? d.ds_kiem_soat_rui_ro
+                  : [
+                      { stt: 1, yeu_to_rui_ro: 'Chậm tiến độ chuyển giao', bien_phap: 'Lập tiến độ chi tiết theo tuần, phân công nhân sự dự phòng', don_vi_phu_trach: 'Chủ nhiệm đề tài', don_vi_phoi_hop: 'Đơn vị tiếp nhận', thoi_gian: 'Trước và trong đợt chuyển giao', san_pham: 'Biên bản nghiệm thu đúng hạn' },
+                      { stt: 2, yeu_to_rui_ro: 'Hạ tầng chưa đồng bộ', bien_phap: 'Khảo sát tiền trạm, cấu hình thử nghiệm và nâng cấp thiết bị', don_vi_phu_trach: 'Bộ phận kỹ thuật', don_vi_phoi_hop: 'Phòng KH&CN', thoi_gian: 'Trước khi bàn giao 01 tuần', san_pham: 'Hệ thống vận hành ổn định' },
+                      { stt: 3, yeu_to_rui_ro: 'Nhân sự chưa thành thạo', bien_phap: 'Tổ chức tập huấn thực hành cầm tay chỉ việc, bàn giao tài liệu chi tiết', don_vi_phu_trach: 'Nhóm nghiên cứu', don_vi_phoi_hop: 'Đơn vị tiếp nhận', thoi_gian: 'Trong suốt kỳ chuyển giao', san_pham: '100% nhân sự đạt yêu cầu' },
+                    ]
+                ).map((item: any, idx: number) => (
+                  <tr key={idx}>
+                    <td className="border border-black p-1.5 text-center">{item.stt || idx + 1}</td>
+                    <td className="border border-black p-1.5 text-left">{item.yeu_to_rui_ro}</td>
+                    <td className="border border-black p-1.5 text-left">{item.bien_phap}</td>
+                    <td className="border border-black p-1.5 text-center">{item.don_vi_phu_trach}</td>
+                    <td className="border border-black p-1.5 text-center">{item.don_vi_phoi_hop}</td>
+                    <td className="border border-black p-1.5 text-center">{item.thoi_gian || 'Trong đợt chuyển giao'}</td>
+                    <td className="border border-black p-1.5 text-center">{item.san_pham}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* Khối chữ ký động (Dynamic Signature Block) */}
+      <DynamicSignatureBlock dossier={dossier} is2a={true} />
     </div>
   );
 };
@@ -919,6 +938,22 @@ export const WordDocumentPreview: React.FC<WordDocumentPreviewProps> = ({
         : activeTemplate.title)
     : (activeTemplate.title || 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu');
 
+  const overallApproved = [
+    'VALIDATED',
+    'APPROVED',
+    'PENDING_SIGNED_REVIEW',
+    'USER_SIGNED',
+    'WAITING_RECTOR_SIGNATURE',
+    'SECRETARY_RECEIVED',
+    'SIGNED_ARCHIVED',
+    'SIGNED',
+    'COMPLETED',
+  ].includes(String(dossier.status || '').toUpperCase());
+
+  const isCurrentFormApproved = isMau2a
+    ? (dossier as any).status_2a === 'APPROVED' || overallApproved
+    : (dossier as any).status_1a === 'APPROVED' || overallApproved;
+
   return (
     <div className={`flex flex-col h-full bg-slate-100 rounded-lg overflow-hidden border border-slate-200 ${className}`}>
       {showToolbar && (
@@ -973,12 +1008,28 @@ export const WordDocumentPreview: React.FC<WordDocumentPreviewProps> = ({
 
             <button
               type="button"
+              onClick={handleDownloadPdf}
+              disabled={isExportingPdf}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-md transition-colors disabled:opacity-50 shadow-sm cursor-pointer whitespace-nowrap shrink-0 ${
+                isCurrentFormApproved
+                  ? 'text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-600'
+                  : 'text-slate-700 bg-white border border-slate-300 hover:bg-slate-50'
+              }`}
+              title={`Tải bản PDF ${isMau2a ? 'Mẫu 2a (Kế hoạch)' : 'Mẫu 1a (Tờ trình)'}`}
+            >
+              <Download className="w-3.5 h-3.5 shrink-0" />
+              <span>{isExportingPdf ? 'Đang xuất...' : 'Tải PDF'}</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleDownload}
               disabled={isExporting}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-md transition-colors disabled:opacity-50 shadow-sm"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-md transition-colors disabled:opacity-50 shadow-sm cursor-pointer whitespace-nowrap shrink-0"
+              title={`Tải bản DOCX ${isMau2a ? 'Mẫu 2a (Kế hoạch)' : 'Mẫu 1a (Tờ trình)'}`}
             >
-              <Download className="w-3.5 h-3.5" />
-              {isExporting ? 'Đang xuất DOCX...' : 'Tải file DOCX'}
+              <Download className="w-3.5 h-3.5 shrink-0" />
+              <span>{isExporting ? 'Đang xuất...' : 'Tải DOCX'}</span>
             </button>
           </div>
         </div>

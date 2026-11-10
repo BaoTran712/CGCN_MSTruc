@@ -28,7 +28,16 @@ export const dossierRepository = {
       if (!rows || rows.length === 0) {
         return mockStore.dossiers.map((d) => ({ ...d }));
       }
-      return rows.map(formatDossierRow);
+      const formatted = rows.map(formatDossierRow);
+      const uniqueMap = new Map();
+      for (const item of formatted) {
+        if (!item || !item.id) continue;
+        const key = item.code || item.id;
+        if (!uniqueMap.has(key)) {
+          uniqueMap.set(key, item);
+        }
+      }
+      return Array.from(uniqueMap.values());
     } catch {
       return mockStore.dossiers.map((d) => ({ ...d }));
     }
@@ -80,10 +89,10 @@ export const dossierRepository = {
 
     try {
       const rows = await query(
-        `SELECT COUNT(*) as total FROM dossiers WHERE code LIKE ?`,
+        `SELECT MAX(CAST(SUBSTRING_INDEX(code, '-', -1) AS UNSIGNED)) as max_num FROM dossiers WHERE code LIKE ?`,
         [`CGCN-${year}-%`]
       );
-      const count = (rows[0]?.total || 0) + 1;
+      const count = (Number(rows[0]?.max_num) || 0) + 1;
       const numStr = String(count).padStart(4, '0');
       return `CGCN-${year}-${numStr}`;
     } catch {
@@ -192,10 +201,75 @@ export const dossierRepository = {
     const timelineJson = JSON.stringify(initialTimeline);
 
     try {
+      // 1. Đảm bảo user_id tồn tại trong bảng users để thỏa mãn ràng buộc khóa ngoại fk_dossier_user
+      let finalUserId = dossier.user_id || 'usr-canbo';
+      try {
+        const userCheck = await query('SELECT id FROM users WHERE id = ? LIMIT 1', [finalUserId]);
+        if (!userCheck || userCheck.length === 0) {
+          const emailToCheck = applicantEmail || dossier.createdBy?.email;
+          const emailMatch = emailToCheck
+            ? await query('SELECT id FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1', [emailToCheck])
+            : [];
+
+          if (emailMatch && emailMatch.length > 0) {
+            finalUserId = emailMatch[0].id;
+          } else {
+            const userName = dossier.createdBy?.name || sanitizedFormData.full_name || 'Cán bộ';
+            const userDept = dossier.department_name || dossier.createdBy?.department || 'Khoa Y';
+            const userTitle = dossier.createdBy?.title || 'Giảng viên';
+            const userRole = (dossier.createdBy?.role || 'USER').toUpperCase();
+            await execute(
+              `INSERT INTO users (id, email, name, role, title, department)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON DUPLICATE KEY UPDATE name = VALUES(name), department = VALUES(department)`,
+              [
+                finalUserId,
+                emailToCheck || `${finalUserId}@ctump.edu.vn`,
+                userName,
+                userRole,
+                userTitle,
+                userDept,
+              ]
+            );
+          }
+        }
+      } catch (uErr) {
+        console.warn(
+          '[dossierRepository] Tự động tạo user thất bại, chuyển sang usr-canbo dự phòng:',
+          uErr.message
+        );
+        finalUserId = 'usr-canbo';
+      }
+      dossier.user_id = finalUserId;
+
+      // 2. Đảm bảo template_id hợp lệ với ràng buộc khóa ngoại fk_dossier_tmpl
+      let finalTemplateId = dossier.template_id || 'tmpl-cgcn-1a';
+      try {
+        const tmplCheck = await query(
+          'SELECT id FROM document_templates WHERE id = ? LIMIT 1',
+          [finalTemplateId]
+        );
+        if (!tmplCheck || tmplCheck.length === 0) {
+          finalTemplateId = String(finalTemplateId).includes('2a')
+            ? 'tmpl-cgcn-2a'
+            : 'tmpl-cgcn-1a';
+        }
+      } catch {
+        finalTemplateId = 'tmpl-cgcn-1a';
+      }
+      dossier.template_id = finalTemplateId;
+
+      const formData1aObj = dossier.form_data_1a || dossier.formData1a || null;
+      const formData2aObj = dossier.form_data_2a || dossier.formData2a || null;
+      const sigConfigObj = dossier.signature_config || dossier.signatureConfig || null;
+
       await execute(`
         INSERT INTO dossiers (
           id, code, title, user_id, template_id, department_name, status,
           current_version, applicant_email, form_data,
+          ten_de_tai, truong_don_vi, status_1a, status_2a,
+          rejected_target, rejection_reason_1a, rejection_reason_2a,
+          form_data_1a, form_data_2a, signature_config,
           generated_docx_path, generated_pdf_path, docx_file_url,
           approved_pdf_path, precheck_pdf_url,
           department_signed_files, resubmitted_signed_files, faculty_signed_pdf_url, evidence_files,
@@ -204,7 +278,7 @@ export const dossierRepository = {
           decision_number, decision_date,
           has_financial_implication, khcn_signed, khtc_signed, bgh_signed,
           drive_folder_url, submitted_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         dossier.id,
         dossier.code,
@@ -216,6 +290,16 @@ export const dossierRepository = {
         currentVersion,
         applicantEmail,
         formDataJson,
+        dossier.ten_de_tai || sanitizedFormData.ten_de_tai || null,
+        dossier.truong_don_vi || sanitizedFormData.truong_don_vi || null,
+        dossier.status_1a || 'PENDING',
+        dossier.status_2a || 'PENDING',
+        dossier.rejected_target || dossier.rejectedTarget || null,
+        dossier.rejection_reason_1a || dossier.rejectionReason1a || null,
+        dossier.rejection_reason_2a || dossier.rejectionReason2a || null,
+        formData1aObj ? (typeof formData1aObj === 'string' ? formData1aObj : JSON.stringify(formData1aObj)) : null,
+        formData2aObj ? (typeof formData2aObj === 'string' ? formData2aObj : JSON.stringify(formData2aObj)) : null,
+        sigConfigObj ? (typeof sigConfigObj === 'string' ? sigConfigObj : JSON.stringify(sigConfigObj)) : null,
         generatedDocxPath,
         generatedPdfPath,
         generatedDocxPath,
@@ -342,15 +426,100 @@ export const dossierRepository = {
       return null;
     }
 
+    const ALLOWED_DB_COLUMNS = new Set([
+      'code',
+      'title',
+      'user_id',
+      'template_id',
+      'department_id',
+      'department_name',
+      'status',
+      'current_version',
+      'applicant_email',
+      'form_data',
+      'has_workshop',
+      'has_financial_implication',
+      'ten_de_tai',
+      'truong_don_vi',
+      'status_1a',
+      'status_2a',
+      'rejected_target',
+      'rejection_reason_1a',
+      'rejection_reason_2a',
+      'form_data_1a',
+      'form_data_2a',
+      'signature_config',
+      'generated_docx_path',
+      'generated_pdf_path',
+      'docx_file_url',
+      'to_trinh_docx_url',
+      'ke_hoach_docx_url',
+      'approved_pdf_path',
+      'precheck_pdf_url',
+      'department_signed_files',
+      'resubmitted_signed_files',
+      'faculty_signed_pdf_url',
+      'evidence_files',
+      'final_signed_pdf_path',
+      'final_pdf_url',
+      'revision_note',
+      'review_notes',
+      'timeline_logs',
+      'decision_number',
+      'decision_date',
+      'khcn_signed',
+      'khcn_signed_at',
+      'khtc_signed',
+      'khtc_signed_at',
+      'bgh_signed',
+      'bgh_signed_at',
+      'drive_folder_url',
+      'submitted_at',
+      'reviewed_at',
+      'faculty_signed_at',
+      'completed_at',
+    ]);
+
+    if (cleanFields.formData1a && !cleanFields.form_data_1a) {
+      cleanFields.form_data_1a = cleanFields.formData1a;
+    }
+    if (cleanFields.formData2a && !cleanFields.form_data_2a) {
+      cleanFields.form_data_2a = cleanFields.formData2a;
+    }
+    if (cleanFields.signatureConfig && !cleanFields.signature_config) {
+      cleanFields.signature_config = cleanFields.signatureConfig;
+    }
+    if (cleanFields.revisionNote && !cleanFields.revision_note) {
+      cleanFields.revision_note = cleanFields.revisionNote;
+    }
+    if (cleanFields.reviewNotes && !cleanFields.review_notes) {
+      cleanFields.review_notes = cleanFields.reviewNotes;
+    }
+    if (cleanFields.rejectedTarget !== undefined && cleanFields.rejected_target === undefined) {
+      cleanFields.rejected_target = cleanFields.rejectedTarget;
+    }
+    if (cleanFields.target_form !== undefined && cleanFields.rejected_target === undefined) {
+      cleanFields.rejected_target = cleanFields.target_form;
+    }
+    if (cleanFields.rejectionReason1a !== undefined && cleanFields.rejection_reason_1a === undefined) {
+      cleanFields.rejection_reason_1a = cleanFields.rejectionReason1a;
+    }
+    if (cleanFields.rejectionReason2a !== undefined && cleanFields.rejection_reason_2a === undefined) {
+      cleanFields.rejection_reason_2a = cleanFields.rejectionReason2a;
+    }
+
     const updates = [];
     const values = [];
 
     for (const [key, val] of Object.entries(cleanFields)) {
-      if (key === 'id') continue;
+      if (key === 'id' || !ALLOWED_DB_COLUMNS.has(key)) continue;
       updates.push(`\`${key}\` = ?`);
       if (
         [
           'form_data',
+          'form_data_1a',
+          'form_data_2a',
+          'signature_config',
           'evidence_files',
           'department_signed_files',
           'resubmitted_signed_files',
@@ -396,6 +565,34 @@ export const dossierRepository = {
       return Number(rows[0]?.total || 0);
     } catch {
       return mockStore.versions.filter((v) => v.dossier_id === dossierId || v.dossierId === dossierId).length;
+    }
+  },
+
+  // Lấy danh sách phiên bản lịch sử của một hồ sơ
+  async findVersionsByDossierId(dossierId) {
+    if (!isDbConnected()) {
+      return mockStore.versions.filter((v) => v.dossier_id === dossierId || v.dossierId === dossierId);
+    }
+
+    try {
+      const rows = await query(
+        `SELECT * FROM dossier_versions WHERE dossier_id = ? ORDER BY version_number ASC`,
+        [dossierId]
+      );
+      return rows.map((r) => ({
+        id: r.id,
+        dossierId: r.dossier_id,
+        versionNumber: Number(r.version_number),
+        formData: typeof r.form_data === 'string' ? JSON.parse(r.form_data) : (r.form_data || {}),
+        generatedDocxPath: r.generated_docx_path,
+        generatedPdfPath: r.generated_pdf_path,
+        editedById: r.edited_by_id,
+        editedByName: r.edited_by_name,
+        changeSummary: r.change_summary,
+        createdAt: r.created_at,
+      }));
+    } catch {
+      return mockStore.versions.filter((v) => v.dossier_id === dossierId || v.dossierId === dossierId);
     }
   },
 
@@ -446,6 +643,21 @@ function formatDossierRow(row) {
     formData = typeof row.form_data === 'string' ? JSON.parse(row.form_data) : row.form_data;
   }
 
+  let formData1a = null;
+  if (row.form_data_1a) {
+    formData1a = typeof row.form_data_1a === 'string' ? JSON.parse(row.form_data_1a) : row.form_data_1a;
+  }
+
+  let formData2a = null;
+  if (row.form_data_2a) {
+    formData2a = typeof row.form_data_2a === 'string' ? JSON.parse(row.form_data_2a) : row.form_data_2a;
+  }
+
+  let signatureConfig = null;
+  if (row.signature_config) {
+    signatureConfig = typeof row.signature_config === 'string' ? JSON.parse(row.signature_config) : row.signature_config;
+  }
+
   let evidenceFiles = [];
   if (row.evidence_files) {
     evidenceFiles = typeof row.evidence_files === 'string' ? JSON.parse(row.evidence_files) : row.evidence_files;
@@ -494,6 +706,23 @@ function formatDossierRow(row) {
     applicantEmail,
     form_data: formData,
     formData: formData,
+    form_data_1a: formData1a,
+    formData1a: formData1a,
+    form_data_2a: formData2a,
+    formData2a: formData2a,
+    signature_config: signatureConfig,
+    signatureConfig: signatureConfig,
+    status_1a: row.status_1a || 'PENDING',
+    status_2a: row.status_2a || 'PENDING',
+    rejected_target: row.rejected_target || null,
+    rejectedTarget: row.rejected_target || null,
+    target_form: row.rejected_target || null,
+    rejection_reason_1a: row.rejection_reason_1a || (row.status_1a === 'RETURNED' ? revisionNote : null),
+    rejectionReason1a: row.rejection_reason_1a || (row.status_1a === 'RETURNED' ? revisionNote : null),
+    rejection_reason_2a: row.rejection_reason_2a || (row.status_2a === 'RETURNED' ? revisionNote : null),
+    rejectionReason2a: row.rejection_reason_2a || (row.status_2a === 'RETURNED' ? revisionNote : null),
+    ten_de_tai: row.ten_de_tai || formData.ten_de_tai || null,
+    truong_don_vi: row.truong_don_vi || formData.truong_don_vi || null,
     generated_docx_path: generatedDocxPath,
     generatedDocxPath,
     docx_file_url: generatedDocxPath,
@@ -525,12 +754,24 @@ function formatDossierRow(row) {
     khtc_signed: Boolean(row.khtc_signed),
     bgh_signed: Boolean(row.bgh_signed),
     drive_folder_url: row.drive_folder_url,
-    submitted_at: row.submitted_at,
+    submitted_at: row.submitted_at
+      ? new Date(row.submitted_at).toISOString()
+      : row.created_at
+      ? new Date(row.created_at).toISOString()
+      : new Date().toISOString(),
     reviewed_at: row.reviewed_at,
     completed_at: row.completed_at,
-    created_at: row.created_at,
-    createdAt: row.created_at,
-    submittedAt: row.submitted_at,
+    created_at: row.created_at
+      ? new Date(row.created_at).toISOString()
+      : new Date().toISOString(),
+    createdAt: row.created_at
+      ? new Date(row.created_at).toISOString()
+      : new Date().toISOString(),
+    submittedAt: row.submitted_at
+      ? new Date(row.submitted_at).toISOString()
+      : row.created_at
+      ? new Date(row.created_at).toISOString()
+      : new Date().toISOString(),
     createdBy: {
       id: row.user_id,
       name: row.creator_name || formData.full_name || 'Cán bộ',
@@ -540,8 +781,8 @@ function formatDossierRow(row) {
       title: row.creator_title || 'Giảng viên',
     },
     assignedManager: {
-      name: 'Cô Trúc (Phòng KH&CN)',
-      email: 'admin@ctump.edu.vn',
+      name: 'Bảo Trân (Phòng KH&CN)',
+      email: 'tranthibaotran.2k@gmail.com',
       department: 'Phòng Khoa học Công nghệ & HTQT',
     },
   };

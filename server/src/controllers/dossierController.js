@@ -1,6 +1,7 @@
 import { dossierService } from '../services/dossierService.js';
 import { ApiResponse } from '../dtos/apiResponse.js';
 import { cleanupGarbageData } from '../utils/cleanupGarbageData.js';
+import { requireAdmin } from '../middlewares/authMiddleware.js';
 
 export const dossierController = {
   // GET /api/dossiers & GET /api/applications
@@ -30,14 +31,45 @@ export const dossierController = {
   // BƯỚC 1: POST /api/applications (Thầy/Cô điền Form & Khởi tạo file v1 - SUBMITTED)
   async create(req, res) {
     try {
-      const { templateId, templateTitle, templateCode, formData, form_data, user, status } = req.body;
+      const {
+        templateId,
+        templateTitle,
+        templateCode,
+        formData,
+        form_data,
+        formData1a,
+        form_data_1a,
+        formData2a,
+        form_data_2a,
+        status_1a,
+        status_2a,
+        ten_de_tai,
+        truong_don_vi,
+        signature_config,
+        signatureConfig,
+        user,
+        status,
+      } = req.body;
       const payloadForm = formData || form_data;
       if (!templateId || !payloadForm) {
         return ApiResponse.error('Dữ liệu không hợp lệ: thiếu templateId hoặc formData', 400).send(res);
       }
 
       const created = await dossierService.createDossier(
-        { templateId, templateTitle, templateCode, formData: payloadForm, status },
+        {
+          templateId,
+          templateTitle,
+          templateCode,
+          formData: payloadForm,
+          formData1a: formData1a || form_data_1a,
+          formData2a: formData2a || form_data_2a,
+          status_1a,
+          status_2a,
+          ten_de_tai,
+          truong_don_vi,
+          signature_config: signature_config || signatureConfig,
+          status,
+        },
         user || req.user
       );
 
@@ -55,13 +87,28 @@ export const dossierController = {
   async returnForRevision(req, res) {
     try {
       const { id } = req.params;
-      const { revisionNote, revision_note, reviewNotes, comment, adminUser } = req.body || {};
-      const note = revisionNote || revision_note || reviewNotes || comment || '';
+      const {
+        revisionNote,
+        revision_note,
+        reviewNotes,
+        rejection_reason,
+        comment,
+        adminUser,
+        status_1a,
+        status_2a,
+        target_form,
+        rejected_target,
+        rejectedTarget,
+      } = req.body || {};
+      const note =
+        rejection_reason || revisionNote || revision_note || reviewNotes || comment || '';
+      const targetForm = target_form || rejected_target || rejectedTarget || null;
 
       const updated = await dossierService.returnForRevision(
         id,
         note,
-        adminUser || req.user
+        adminUser || req.user,
+        { status_1a, status_2a, target_form: targetForm, rejected_target: targetForm }
       );
 
       return ApiResponse.success(
@@ -73,12 +120,99 @@ export const dossierController = {
     }
   },
 
+  // BƯỚC 2B [LUỒNG FALSE - RIÊNG BIỂU MẪU 1A]: PATCH /api/applications/:id/resubmit-1a
+  async resubmit1a(req, res) {
+    try {
+      const { id } = req.params;
+      const {
+        formData1a,
+        form_data_1a,
+        formData,
+        form_data,
+        ten_de_tai,
+        truong_don_vi,
+        user,
+      } = req.body || {};
+      const payload1a = formData1a || form_data_1a || formData || form_data;
+
+      if (!payload1a) {
+        return ApiResponse.error('Thiếu dữ liệu biểu mẫu 1a cần nộp lại (formData1a)', 400).send(res);
+      }
+
+      const updated = await dossierService.resubmit1a(
+        id,
+        payload1a,
+        user || req.user,
+        { ten_de_tai, truong_don_vi }
+      );
+
+      return ApiResponse.success(
+        updated,
+        `Nộp lại Biểu mẫu 1a thành công (Phiên bản v${updated.current_version}). Biểu mẫu 2a giữ nguyên phiên bản đã nộp.`
+      ).send(res);
+    } catch (err) {
+      return ApiResponse.error(err.message, 500).send(res);
+    }
+  },
+
+  // BƯỚC 2B [LUỒNG FALSE - RIÊNG BIỂU MẪU 2A]: PATCH /api/applications/:id/resubmit-2a
+  async resubmit2a(req, res) {
+    try {
+      const { id } = req.params;
+      const {
+        formData2a,
+        form_data_2a,
+        formData,
+        form_data,
+        user,
+      } = req.body || {};
+      const payload2a = formData2a || form_data_2a || formData || form_data;
+
+      if (!payload2a) {
+        return ApiResponse.error('Thiếu dữ liệu biểu mẫu 2a cần nộp lại (formData2a)', 400).send(res);
+      }
+
+      const updated = await dossierService.resubmit2a(
+        id,
+        payload2a,
+        user || req.user
+      );
+
+      return ApiResponse.success(
+        updated,
+        `Nộp lại Biểu mẫu 2a thành công (Phiên bản v${updated.current_version}). Biểu mẫu 1a giữ nguyên phiên bản đã nộp.`
+      ).send(res);
+    } catch (err) {
+      return ApiResponse.error(err.message, 500).send(res);
+    }
+  },
+
   // BƯỚC 2B [LUỒNG FALSE]: PUT /api/applications/:id/resubmit (Thầy/Cô sửa lại form & Nộp lại v2, v3...)
   async resubmit(req, res) {
     try {
       const { id } = req.params;
-      const { formData, form_data, user } = req.body || {};
-      const payloadForm = formData || form_data;
+      const {
+        formData,
+        form_data,
+        formData1a,
+        form_data_1a,
+        formData2a,
+        form_data_2a,
+        target_form,
+        rejected_target,
+        ten_de_tai,
+        truong_don_vi,
+        user,
+      } = req.body || {};
+
+      if (target_form === '1a' || rejected_target === '1a') {
+        return dossierController.resubmit1a(req, res);
+      }
+      if (target_form === '2a' || rejected_target === '2a') {
+        return dossierController.resubmit2a(req, res);
+      }
+
+      const payloadForm = formData || form_data || formData1a || form_data_1a;
 
       if (!payloadForm) {
         return ApiResponse.error('Thiếu dữ liệu biểu mẫu chỉnh sửa (formData)', 400).send(res);
@@ -87,7 +221,14 @@ export const dossierController = {
       const updated = await dossierService.resubmitDossier(
         id,
         payloadForm,
-        user || req.user
+        user || req.user,
+        {
+          formData1a: formData1a || form_data_1a,
+          formData2a: formData2a || form_data_2a,
+          target_form: target_form || rejected_target,
+          ten_de_tai,
+          truong_don_vi,
+        }
       );
 
       return ApiResponse.success(
@@ -99,23 +240,69 @@ export const dossierController = {
     }
   },
 
-  // PUT /api/applications/:id (Alias cập nhật formData & nộp lại)
+  // PUT /api/applications/:id (Cập nhật các trường dữ liệu như status_1a, status_2a, signature_config hoặc nộp lại form)
   async updateFormData(req, res) {
-    return dossierController.resubmit(req, res);
+    try {
+      const { id } = req.params;
+      const body = req.body || {};
+      const { formData, form_data } = body;
+      if (formData || form_data) {
+        return dossierController.resubmit(req, res);
+      }
+
+      const adminProtectedFields = [
+        'status',
+        'status_1a',
+        'status_2a',
+        'signature_config',
+        'signatureConfig',
+        'decision_number',
+        'decisionNumber',
+        'bgh_signed',
+        'khcn_signed',
+        'khtc_signed',
+      ];
+      const touchesAdminField = adminProtectedFields.some((k) => body[k] !== undefined);
+      if (touchesAdminField) {
+        let allowed = false;
+        requireAdmin(req, res, () => {
+          allowed = true;
+        });
+        if (!allowed) return;
+      }
+
+      const updated = await dossierService.updateFields(id, body);
+      return ApiResponse.success(updated, 'Cập nhật thông tin hồ sơ thành công').send(res);
+    } catch (err) {
+      return ApiResponse.error(err.message, 500).send(res);
+    }
   },
 
   // POST /api/dossiers/:id/precheck (Hỗ trợ cả Duyệt hợp lệ và Trả về sửa lỗi)
   async adminPrecheck(req, res) {
     try {
       const { id } = req.params;
-      const { isValid, reviewNotes, revisionNote, adminUser } = req.body || {};
-      const note = revisionNote || reviewNotes || '';
+      const {
+        isValid,
+        reviewNotes,
+        revisionNote,
+        rejection_reason,
+        adminUser,
+        status_1a,
+        status_2a,
+        target_form,
+        rejected_target,
+        rejectedTarget,
+      } = req.body || {};
+      const note = rejection_reason || revisionNote || reviewNotes || '';
+      const targetForm = target_form || rejected_target || rejectedTarget || null;
 
       const updated = await dossierService.adminPrecheck(
         id,
         Boolean(isValid),
         note,
-        adminUser || req.user
+        adminUser || req.user,
+        { status_1a, status_2a, target_form: targetForm, rejected_target: targetForm }
       );
 
       const message = isValid

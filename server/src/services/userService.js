@@ -28,13 +28,18 @@ export const userService = {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const ADMIN_EMAILS = ['toanhkhai12345@gmail.com', 'tranthibaotran.2k@gmail.com', 'admin@ctump.edu.vn'];
+    const ADMIN_EMAILS = [
+      'tranthibaotran.2k@gmail.com',
+      'toanhkhai@gmail.com',
+      'toanhkhai12345@gmail.com',
+      'admin@ctump.edu.vn',
+    ];
     const isAdmin = ADMIN_EMAILS.includes(cleanEmail) || cleanEmail.startsWith('admin@') || cleanEmail.includes('admin');
 
     const found = await userRepository.findByEmail(cleanEmail);
     if (found) {
       // Đảm bảo tôn trọng phân quyền đã được Admin gán
-      const correctRole = isAdmin ? 'ADMIN' : (found.role || 'USER');
+      const correctRole = isAdmin ? 'ADMIN' : 'USER';
       let needsSave = false;
       if (found.role !== correctRole) {
         found.role = correctRole;

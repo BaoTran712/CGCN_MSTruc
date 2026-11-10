@@ -35,7 +35,7 @@ export const config = {
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
     from: process.env.SMTP_FROM || process.env.EMAIL_FROM || '"Hệ thống Hỗ trợ Quy trình" <email_he_thong@gmail.com>',
-    adminNotificationEmail: process.env.ADMIN_NOTIFICATION_EMAIL || 'admin@ctump.edu.vn',
+    adminNotificationEmail: process.env.ADMIN_NOTIFICATION_EMAIL || 'tranthibaotran.2k@gmail.com',
   },
   driveFolderUrl:
     process.env.GOOGLE_DRIVE_FOLDER_URL ||
