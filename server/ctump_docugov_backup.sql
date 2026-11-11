@@ -406,7 +406,7 @@ LOCK TABLES `users` WRITE;
 /*!40000 ALTER TABLE `users` DISABLE KEYS */;
 INSERT INTO `users` VALUES
 ('usr-admin-dev','toanhkhai12345@gmail.com','Quản trị viên (Toàn Khải)','ADMIN','Quản trị viên Hệ thống','dept-khcn','Phòng Khoa học Công nghệ & HTQT','0912.345.678',NULL,1,'2026-11-06 07:57:09','2026-11-06 07:57:09'),
-('usr-admin-truc','admin@ctump.edu.vn','Cô Trúc (Phòng KH&CN)','ADMIN','Chuyên viên Quản lý CGCN','dept-khcn','Phòng Khoa học Công nghệ & HTQT','0292.3831.531',NULL,1,'2026-11-06 07:57:09','2026-11-06 07:57:09'),
+('usr-admin-truc','admin@ctump.edu.vn','Cô Trúc (Phòng KH&CN)','ADMIN','Chuyên viên Quản lý CGCN','dept-khcn','Phòng Khoa học Công nghệ & HTQT','0292.3831.531','https://api.dicebear.com/7.x/initials/svg?seed=Qu%E1%BA%A3n%20tr%E1%BB%8B%20vi%C3%AAn%20KH%26CN',1,'2026-11-06 07:57:09','2026-11-10 04:22:10'),
 ('usr-canbo','canbo@ctump.edu.vn','TS. Nguyễn Văn Nam','USER','Giảng viên chính','dept-y','Khoa Y','0912.345.678',NULL,1,'2026-11-06 07:57:09','2026-11-06 07:57:09'),
 ('usr-giangvien','giangvien@ctump.edu.vn','ThS.BS. Lê Thị Thu Hà','USER','Giảng viên Bộ môn Nội','dept-y','Khoa Y','0988.765.432',NULL,1,'2026-11-06 07:57:09','2026-11-06 07:57:09'),
 ('usr-giangvien-demo','thayco.giangvien@ctump.edu.vn','Trần Thị Bảo Trân','USER','Cán bộ / Giảng viên','dept-y','Khoa Y','0909.888.999',NULL,1,'2026-11-06 07:57:09','2026-11-06 07:57:09'),
@@ -424,4 +424,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-11-10 11:17:17
+-- Dump completed on 2026-11-11  9:39:02
