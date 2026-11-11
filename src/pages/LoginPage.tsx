@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import * as api from '../services/api';
+<<<<<<< HEAD
 import {
   AlertCircle,
   Loader2,
@@ -15,6 +16,11 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER, ADMIN_EMAIL, isAdminEmail } from '../constants';
+=======
+import { isAdminEmail } from '../constants';
+import { AlertCircle, Loader2 } from 'lucide-react';
+import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER } from '../constants';
+>>>>>>> origin/main
 import logoUrl from '../assets/logo.png';
 
 declare global {
@@ -43,6 +49,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [infoMsg, setInfoMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGisReady, setIsGisReady] = useState(false);
+<<<<<<< HEAD
   const [showForgotModal, setShowForgotModal] = useState(false);
 
   const googleBtnRef = useRef<HTMLDivElement>(null);
@@ -76,10 +83,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
     if (!cleanPassword) {
       setErrorMsg('Vui lòng nhập Mật khẩu.');
+=======
+  const [showManual, setShowManual] = useState(false);
+  const [manualEmail, setManualEmail] = useState('');
+  const [manualName, setManualName] = useState('');
+  const googleBtnRef = useRef<HTMLDivElement>(null);
+
+  const handleManualEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanEmail = manualEmail.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setErrorMsg('Vui lòng nhập địa chỉ email hợp lệ.');
+>>>>>>> origin/main
       return;
     }
 
     setIsLoading(true);
+<<<<<<< HEAD
 
     try {
       if (rememberMe) {
@@ -130,11 +150,35 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     } catch (err: any) {
       console.error('Lỗi đăng nhập:', err);
       setErrorMsg(err.message || 'Đăng nhập không thành công. Vui lòng kiểm tra lại thông tin.');
+=======
+    setErrorMsg('');
+
+    try {
+      const name = manualName.trim() || cleanEmail.split('@')[0];
+      const isAdmin = isAdminEmail(cleanEmail);
+      let user: User;
+      try {
+        user = await api.login(cleanEmail, { name });
+      } catch (err) {
+        user = {
+          id: `usr-${Date.now()}`,
+          name: name,
+          email: cleanEmail,
+          role: isAdmin ? 'ADMIN' : 'USER',
+          title: isAdmin ? 'Quản trị viên Hệ thống' : 'Cán bộ / Giảng viên',
+          department: isAdmin ? 'Phòng Khoa học Công nghệ' : 'Trường Đại học Y Dược Cần Thơ',
+        };
+      }
+      onLoginSuccess(user);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Đăng nhập thất bại');
+>>>>>>> origin/main
     } finally {
       setIsLoading(false);
     }
   };
 
+<<<<<<< HEAD
   // Nạp nhanh tài khoản mẫu vào form
   const handleQuickFill = (fillEmail: string, fillPass: string) => {
     setEmail(fillEmail);
@@ -144,6 +188,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   };
 
   // Xử lý phản hồi từ Google Identity Services (GIS)
+=======
+  // Xử lý phản hồi xác thực từ Google Identity Services
+>>>>>>> origin/main
   const handleGoogleCredentialResponse = async (response: any) => {
     if (!response?.credential) {
       setErrorMsg('Không nhận được mã xác thực từ Google. Vui lòng thử lại.');
@@ -172,7 +219,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
         throw new Error('Google không cung cấp địa chỉ email.');
       }
 
+<<<<<<< HEAD
       const isAdmin = isAdminEmail(gEmail);
+=======
+      const isAdmin = isAdminEmail(email);
+>>>>>>> origin/main
 
       let user: User;
       try {
@@ -304,6 +355,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             </div>
           )}
 
+<<<<<<< HEAD
           {infoMsg && !errorMsg && (
             <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-xs flex items-start gap-2 animate-in fade-in">
               <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
@@ -335,6 +387,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                   autoComplete="username"
                   required
                 />
+=======
+          {/* Google Sign-In Action Area */}
+          <div className="py-2 flex flex-col items-center justify-center min-h-[56px]">
+            {isLoading ? (
+              <div className="flex items-center justify-center gap-2.5 py-3 text-xs text-blue-700 font-medium">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Đang xác thực thông tin tài khoản...</span>
+>>>>>>> origin/main
               </div>
             </div>
 
@@ -468,7 +528,90 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 <span>Đang kết nối dịch vụ Google...</span>
               </div>
+<<<<<<< HEAD
             )}
+=======
+              <span className="text-[11px] font-bold text-blue-700 group-hover:translate-x-0.5 transition-transform shrink-0">
+                Vào ngay →
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onLoginSuccess(DEFAULT_DEV_USER);
+              }}
+              className="w-full py-2.5 px-4 rounded-xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 text-xs font-semibold flex items-center justify-between transition-colors shadow-2xs cursor-pointer group"
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
+                  🛡️
+                </span>
+                <div className="text-left">
+                  <div className="font-bold text-slate-900">Quản trị viên (Admin - Phòng KH&CN)</div>
+                  <div className="text-[11px] text-emerald-700/90 font-normal">Quyền: Tiền kiểm hồ sơ, duyệt thể thức, điều phối ký số cấp Trường</div>
+                </div>
+              </div>
+              <span className="text-[11px] font-bold text-emerald-700 group-hover:translate-x-0.5 transition-transform shrink-0">
+                Vào ngay →
+              </span>
+            </button>
+          </div>
+
+          {/* Đăng nhập nhanh cho mạng Wi-Fi / Cùng phòng */}
+          <div className="pt-1">
+            {!showManual ? (
+              <button
+                type="button"
+                onClick={() => setShowManual(true)}
+                className="w-full text-xs text-slate-600 hover:text-blue-600 font-medium py-1.5 text-center transition-colors cursor-pointer"
+              >
+                ✉️ Nhập Email bất kỳ để thử nghiệm nhận mail thật
+              </button>
+            ) : (
+              <form onSubmit={handleManualEmailLogin} className="space-y-2.5 w-full pt-2 border-t border-slate-100">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Địa chỉ Email nhận thông báo
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="vd: canbo.khoay@gmail.com"
+                    value={manualEmail}
+                    onChange={(e) => setManualEmail(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Họ và Tên (tùy chọn)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="vd: TS. Nguyễn Văn Nam"
+                    value={manualName}
+                    onChange={(e) => setManualName(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-1.5 rounded-lg text-xs transition-colors shadow-xs cursor-pointer"
+                >
+                  {isLoading ? 'Đang vào...' : 'Vào hệ thống bằng Email này'}
+                </button>
+              </form>
+            )}
+          </div>
+
+          {/* Security Note */}
+          <div className="pt-2 border-t border-slate-100 text-center">
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Hệ thống phân quyền độc lập theo 2 vai trò: Quản trị viên (Admin - Phòng KH&CN) & Cán bộ / Giảng viên (Thầy / Cô).
+            </p>
+>>>>>>> origin/main
           </div>
         </div>
       </main>

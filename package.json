@@ -9,8 +9,12 @@
     "start": "node scripts/dev.js",
     "server": "node server/src/server.js",
     "server:dev": "node --watch server/src/server.js",
+<<<<<<< HEAD
     "db:import": "node server/scripts/importDb.js",
     "db:backup": "node server/scripts/backupDb.js",
+=======
+    "check:db": "node server/scripts/check_db.js",
+>>>>>>> origin/main
     "build": "vite build",
     "preview": "vite preview",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",

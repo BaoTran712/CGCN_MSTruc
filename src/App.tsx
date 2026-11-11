@@ -4,9 +4,12 @@ import {
   Application,
   DocumentTemplate,
 } from './types';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { isAdminUser } from './constants';
+<<<<<<< HEAD
 import { getEffectiveTemplate } from './utils/templateUtils';
+=======
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+>>>>>>> origin/main
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { DossierProvider, useDossiers } from './contexts/DossierContext';
 import { MainLayout } from './components/layout/MainLayout';

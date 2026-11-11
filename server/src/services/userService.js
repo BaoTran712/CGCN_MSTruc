@@ -1,4 +1,5 @@
 import { userRepository } from '../repositories/userRepository.js';
+import { config } from '../utils/config.js';
 
 export const userService = {
   // Lấy tất cả người dùng
@@ -21,13 +22,14 @@ export const userService = {
     return userRepository.save(user);
   },
 
-  // Xử lý đăng nhập phân quyền (Admin: toanhkhai12345@gmail.com, các Gmail khác: User)
+  // Xử lý đăng nhập phân quyền (Admin: heykagvip@gmail.com, toanhkhai12345@gmail.com, các Gmail khác: User)
   async login(email, extraData = {}) {
     if (!email) {
       throw new Error('Vui lòng nhập địa chỉ email');
     }
 
     const cleanEmail = email.trim().toLowerCase();
+<<<<<<< HEAD
     const ADMIN_EMAILS = [
       'tranthibaotran.2k@gmail.com',
       'toanhkhai@gmail.com',
@@ -35,6 +37,9 @@ export const userService = {
       'admin@ctump.edu.vn',
     ];
     const isAdmin = ADMIN_EMAILS.includes(cleanEmail) || cleanEmail.startsWith('admin@') || cleanEmail.includes('admin');
+=======
+    const isAdmin = config.adminEmails.includes(cleanEmail);
+>>>>>>> origin/main
 
     const found = await userRepository.findByEmail(cleanEmail);
     if (found) {

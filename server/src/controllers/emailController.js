@@ -24,4 +24,39 @@ export const emailController = {
       return ApiResponse.error(err.message, 500).send(res);
     }
   },
+
+  // GET /api/email-logs/verify-smtp
+  async verifySmtp(req, res) {
+    try {
+      const result = await emailService.verifyConnection();
+      return ApiResponse.success(result, result.message).send(res);
+    } catch (err) {
+      console.error('[emailController.verifySmtp]', err);
+      return ApiResponse.error(err.message, 500).send(res);
+    }
+  },
+
+  // POST /api/email-logs/test
+  async testSend(req, res) {
+    try {
+      const { email } = req.body;
+      const targetEmail = email || req.query.email;
+      if (!targetEmail) {
+        return ApiResponse.error('Vui lòng cung cấp địa chỉ email nhận test (ví dụ: { "email": "ten@gmail.com" })', 400).send(res);
+      }
+
+      const result = await emailService.sendEmail({
+        recipientEmail: targetEmail,
+        recipientName: 'Quý Thầy/Cô (Kiểm thử hệ thống)',
+        subject: '[CTUMP DocuGov] Thử nghiệm gửi email tự động qua SMTP thành công',
+        content: `Chúc mừng! Hệ thống CTUMP DocuGov đã kết nối thành công đến máy chủ SMTP và gửi email tự động tới hộp thư của Thầy/Cô.\n\nMọi thông báo duyệt hồ sơ, yêu cầu chỉnh sửa và ban hành quyết định sẽ được tự động gửi đến địa chỉ này.`,
+        stepName: 'Kiểm thử kết nối SMTP',
+      });
+
+      return ApiResponse.success(result, `Đã gửi email thử nghiệm tới ${targetEmail}`).send(res);
+    } catch (err) {
+      console.error('[emailController.testSend]', err);
+      return ApiResponse.error(err.message, 500).send(res);
+    }
+  },
 };

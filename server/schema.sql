@@ -260,5 +260,13 @@ INSERT INTO `users` (`id`, `email`, `name`, `role`, `title`, `department_id`, `d
 ('usr-giangvien-demo', 'thayco.giangvien@ctump.edu.vn', 'Trần Thị Bảo Trân', 'USER', 'Cán bộ / Giảng viên', 'dept-y', 'Khoa Y', '0909.888.999');
 
 INSERT INTO `document_templates` (`id`, `code`, `title`, `category`, `description`, `version`, `file_name`, `is_active`) VALUES
+<<<<<<< HEAD
 ('tmpl-cgcn-1a', 'Mẫu 1a-TT.CGCN', 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu', 'Đào tạo & Tri thức', 'Tờ trình trình Ban Giám hiệu Trường Đại học Y Dược Cần Thơ xin phê duyệt chuyển giao tri thức vào giảng dạy, tập huấn.', '2026.1', 'mau_1a_chuan.docx', 1),
 ('tmpl-cgcn-2a', 'Mẫu 2a-KH.CGCN', 'Kế hoạch tổ chức chuyển giao công nghệ trong trường', 'Khoa học Công nghệ', 'Kế hoạch chi tiết về nhân sự, hội thảo, kinh phí và rủi ro chuyển giao công nghệ ứng dụng.', '2026.1', 'mau_2a_chuan.docx', 1);
+=======
+('tmpl-cgcn-1a', 'Mẫu 1a-TT.CGCN', 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu', 'Đào tạo & Tri thức', 'Tờ trình trình Ban Giám hiệu Trường Đại học Y Dược Cần Thơ xin phê duyệt chuyển giao tri thức vào bài giảng, giáo trình, tài liệu tập huấn.', '1.0', 'Mẫu 1a-TT.CGCN- Tờ trình CG Tri thức.doc', 1),
+('tmpl-cgcn-2a', 'Mẫu 2a-KH.CGCN', 'Kế hoạch tổ chức chuyển giao công nghệ trong trường', 'Khoa học Công nghệ', 'Kế hoạch chi tiết về việc tổ chức chuyển giao công nghệ sản phẩm nghiên cứu ứng dụng trong trường Đại học Y Dược Cần Thơ (kèm đánh giá rủi ro).', '1.0', 'Mẫu 2a-KH.CGCN -Ke hoach CGCN - Trong trường.docx', 1);
+
+-- 3.4. Hồ sơ mẫu: Đã xóa để hệ thống bắt đầu với CSDL sạch
+
+>>>>>>> origin/main

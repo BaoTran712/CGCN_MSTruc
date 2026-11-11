@@ -4,6 +4,12 @@ import { requireAuth, requireAdmin } from '../middlewares/authMiddleware.js';
 
 const router = Router();
 
+// GET /api/email-logs/verify-smtp
+router.get('/verify-smtp', emailController.verifySmtp);
+
+// POST /api/email-logs/test
+router.post('/test', emailController.testSend);
+
 // GET /api/email-logs — Yêu cầu quyền ADMIN
 router.get('/', requireAuth, requireAdmin, emailController.getAll);
 

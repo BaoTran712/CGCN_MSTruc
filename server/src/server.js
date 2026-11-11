@@ -42,15 +42,35 @@ app.use((err, _req, res, _next) => {
   });
 });
 
+import os from 'os';
+
+function getLocalIp() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
+
 // Start Server
 async function start() {
   await initDb();
+<<<<<<< HEAD
   await cleanupGarbageData();
   app.listen(config.port, () => {
+=======
+  const localIp = getLocalIp();
+  app.listen(config.port, '0.0.0.0', () => {
+>>>>>>> origin/main
     console.log(`=======================================================`);
     console.log(`  CTUMP DocuGov Backend NodeJS Server`);
-    console.log(`  Địa chỉ: http://localhost:${config.port}`);
-    console.log(`  Tài liệu API: http://localhost:${config.port}/api/status`);
+    console.log(`  - Local:   http://localhost:${config.port}`);
+    console.log(`  - Network: http://${localIp}:${config.port}`);
+    console.log(`  - Status:  http://${localIp}:${config.port}/api/status`);
     console.log(`=======================================================`);
   });
 }

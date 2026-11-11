@@ -3,8 +3,17 @@
  * Hỗ trợ đầy đủ True Flow + False Flow (6 trạng thái)
  */
 
-export const API_BASE_URL: string =
-  (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:5000/api';
+function getApiBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const envUrl = (import.meta as any).env?.VITE_API_BASE_URL;
+    if (envUrl) return envUrl;
+    const hostname = window.location.hostname || 'localhost';
+    return `http://${hostname}:5001/api`;
+  }
+  return 'http://localhost:5001/api';
+}
+
+export const API_BASE_URL: string = getApiBaseUrl();
 
 export const API_ENDPOINTS = {
   // System status

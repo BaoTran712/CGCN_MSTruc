@@ -11,7 +11,7 @@ import {
   Notification as NotificationItem,
 } from '../types';
 import { API_BASE_URL, API_ENDPOINTS } from '../config/api.config';
-import { OFFICIAL_TEMPLATES, AUTH_TOKEN_KEY } from '../constants';
+import { OFFICIAL_TEMPLATES, AUTH_TOKEN_KEY, isAdminEmail } from '../constants';
 
 export { API_BASE_URL };
 
@@ -962,11 +962,15 @@ export async function login(
   extraData?: { name?: string; avatar?: string; googleId?: string }
 ): Promise<User> {
   const cleanEmail = (email || '').trim().toLowerCase();
+<<<<<<< HEAD
   const isAdmin =
     cleanEmail === 'tranthibaotran.2k@gmail.com' ||
     cleanEmail === 'toanhkhai@gmail.com' ||
     cleanEmail === 'toanhkhai12345@gmail.com' ||
     cleanEmail === 'admin@ctump.edu.vn';
+=======
+  const isAdmin = isAdminEmail(cleanEmail);
+>>>>>>> origin/main
 
   try {
     const res = await fetch(`${API_BASE_URL}/users/login`, {

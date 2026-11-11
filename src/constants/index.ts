@@ -1,6 +1,7 @@
 import { User } from '../types';
 
 export const ADMIN_EMAILS = [
+<<<<<<< HEAD
   'tranthibaotran.2k@gmail.com',
   'toanhkhai@gmail.com',
   'toanhkhai12345@gmail.com',
@@ -8,15 +9,26 @@ export const ADMIN_EMAILS = [
 ];
 
 export const ADMIN_EMAIL = 'tranthibaotran.2k@gmail.com';
+=======
+  'toanhkhai12345@gmail.com',
+  'heykagvip@gmail.com',
+];
+
+export const ADMIN_EMAIL = 'heykagvip@gmail.com';
+>>>>>>> origin/main
 
 export const isAdminEmail = (email?: string | null): boolean => {
   if (!email) return false;
   const clean = email.trim().toLowerCase();
+<<<<<<< HEAD
   return (
     ADMIN_EMAILS.some((adm) => adm.toLowerCase() === clean) ||
     clean.startsWith('admin@') ||
     clean.includes('admin')
   );
+=======
+  return ADMIN_EMAILS.some((adm) => adm.toLowerCase() === clean);
+>>>>>>> origin/main
 };
 
 /**
