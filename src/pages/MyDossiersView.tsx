@@ -37,11 +37,13 @@ export const MyDossiersView: React.FC<MyDossiersViewProps> = ({
   const allDossiers = Array.isArray(dossiers) ? dossiers : [];
   const userDossiers = isAdmin
     ? allDossiers
-    : allDossiers.filter(
-        (d) =>
-          d.createdBy?.id === currentUser?.id ||
-          d.createdBy?.email === currentUser?.email
-      );
+    : allDossiers.filter((d) => {
+        const userEmail = (currentUser?.email || '').trim().toLowerCase();
+        const creatorEmail = (d.createdBy?.email || (d as any).applicant_email || (d as any).applicantEmail || '').trim().toLowerCase();
+        const userId = currentUser?.id;
+        const creatorId = d.createdBy?.id || (d as any).user_id;
+        return (userEmail && creatorEmail && userEmail === creatorEmail) || (userId && creatorId && userId === creatorId);
+      });
 
   const filtered = userDossiers.filter((d) => {
     const matchSearch =

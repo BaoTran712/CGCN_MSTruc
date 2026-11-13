@@ -1,18 +1,13 @@
 import nodemailer from 'nodemailer';
 import { emailRepository } from '../repositories/emailRepository.js';
 import { isDbConnected } from '../utils/db.js';
-<<<<<<< HEAD
 import { sendWorkflowEmail } from '../utils/mailer.js';
-=======
 import { config } from '../utils/config.js';
 
 let transporter = null;
 let lastUser = null;
 let lastPass = null;
 
-/**
- * Lấy đối tượng Transporter của Nodemailer (singleton có cơ chế cache và tự tạo lại khi config đổi)
- */
 function getTransporter() {
   const currentHost = config.smtp.host;
   const currentPort = config.smtp.port;
@@ -24,7 +19,6 @@ function getTransporter() {
     return null;
   }
 
-  // Tái sử dụng hoặc tạo mới nếu thông tin đăng nhập thay đổi
   if (!transporter || lastUser !== currentUser || lastPass !== currentPass) {
     transporter = nodemailer.createTransport({
       host: currentHost,
@@ -198,7 +192,6 @@ function buildHtmlEmail({
 </body>
 </html>`;
 }
->>>>>>> origin/main
 
 export const emailService = {
   // Lấy danh sách email đã gửi (toàn bộ hoặc theo dossierId)
@@ -210,9 +203,6 @@ export const emailService = {
   },
 
   /**
-<<<<<<< HEAD
-   * Gửi thông báo Gmail qua SMTP thật có hỗ trợ attachments và lưu nhật ký vào database
-=======
    * Kiểm tra kết nối SMTP Transporter
    */
   async verifyConnection() {
@@ -239,17 +229,17 @@ export const emailService = {
   },
 
   /**
-   * Gửi thông báo Email qua SMTP và lưu nhật ký vào database
+   * Gửi thông báo Email qua SMTP có hỗ trợ attachments và lưu nhật ký vào database
    * @param {Object} options
    * @param {string} options.dossierId - ID hồ sơ
-   * @param {string} options.recipientEmail - Email người nhận (lấy từ Google Login)
+   * @param {string} options.recipientEmail - Email người nhận
    * @param {string} options.recipientName - Tên người nhận
    * @param {string} options.subject - Tiêu đề email
    * @param {string} options.content - Nội dung thông báo
    * @param {string} options.stepName - Tên bước quy trình
-   * @param {string} [options.actionUrl] - Đường dẫn xem hồ sơ (tùy chọn)
-   * @param {string} [options.dossierCode] - Mã hồ sơ CGCN (tùy chọn)
->>>>>>> origin/main
+   * @param {Array} [options.attachments] - Danh sách tệp đính kèm
+   * @param {string} [options.actionUrl] - Đường dẫn xem hồ sơ
+   * @param {string} [options.dossierCode] - Mã hồ sơ CGCN
    */
   async sendEmail({
     dossierId,
@@ -258,29 +248,43 @@ export const emailService = {
     subject,
     content,
     stepName,
-<<<<<<< HEAD
     attachments = [],
-=======
     actionUrl,
     dossierCode,
->>>>>>> origin/main
   }) {
+    const targetEmail = (recipientEmail || '').trim();
+    if (!targetEmail) {
+      console.warn('[emailService] Không thể gửi email: recipientEmail bị trống.');
+      return null;
+    }
+
+    const emailContent =
+      typeof content === 'string' && (content.includes('<div') || content.includes('<html'))
+        ? content
+        : buildHtmlEmail({
+            recipientName,
+            stepName,
+            subject,
+            content,
+            actionUrl,
+            dossierCode,
+          });
+
     // 1. Thực hiện gửi mail qua SMTP thật (hoặc simulated an toàn nếu chưa có credentials)
     const mailResult = await sendWorkflowEmail({
-      to: recipientEmail,
+      to: targetEmail,
       subject,
-      html: content,
+      html: emailContent,
       attachments,
     });
 
     // 2. Lưu nhật ký email
     const emailId = `em-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-<<<<<<< HEAD
     const emailRecord = {
       id: emailId,
       dossierId,
-      recipientEmail,
-      recipientName: recipientName || recipientEmail,
+      recipientEmail: targetEmail,
+      recipientName: recipientName || targetEmail,
       subject,
       content,
       stepName: stepName || 'Thông báo hệ thống',
@@ -290,90 +294,23 @@ export const emailService = {
       simulated: mailResult.simulated || false,
     };
 
-    try {
-      await emailRepository.create({
-        id: emailId,
-        dossierId,
-        recipientEmail,
-        recipientName: recipientName || recipientEmail,
-        subject,
-        content,
-        stepName: stepName || 'Thông báo hệ thống',
-        status: mailResult.success ? 'SENT' : 'FAILED',
-      });
-    } catch (err) {
-      console.error('[emailService] Lỗi khi lưu nhật ký email:', err.message);
-    }
-
-    return emailRecord;
-=======
-    const targetEmail = (recipientEmail || '').trim();
-    let status = 'SENT';
-
-    if (!targetEmail) {
-      console.warn('[emailService] Không thể gửi email: recipientEmail bị trống.');
-      return null;
-    }
-
-    const client = getTransporter();
-
-    if (client) {
-      try {
-        const html = buildHtmlEmail({
-          recipientName,
-          stepName,
-          subject,
-          content,
-          actionUrl: actionUrl || `${config.appUrl}`,
-          dossierCode,
-        });
-
-        await client.sendMail({
-          from: config.smtp.from,
-          to: targetEmail,
-          subject: subject,
-          text: content,
-          html: html,
-        });
-
-        console.log(`[SMTP Success] Đã gửi email thực tế tới: ${targetEmail} [${stepName}]: "${subject}"`);
-      } catch (err) {
-        console.error(`[SMTP Error] Gửi mail tới ${targetEmail} thất bại:`, err.message);
-        status = 'FAILED';
-      }
-    } else {
-      console.log(`[SMTP Mock Mode] Đã mô phỏng gửi email tới ${targetEmail} [${stepName}]: "${subject}" (Cấu hình SMTP_PASS trong .env để gửi thật).`);
-    }
-
-    // Luôn lưu nhật ký vào cơ sở dữ liệu để tra cứu trên trang Lịch sử & Google Sheets
     if (isDbConnected()) {
       try {
         await emailRepository.create({
           id: emailId,
           dossierId,
           recipientEmail: targetEmail,
-          recipientName: recipientName || 'Thầy/Cô',
+          recipientName: recipientName || targetEmail,
           subject,
           content,
           stepName: stepName || 'Thông báo hệ thống',
-          status,
+          status: mailResult.success ? 'SENT' : 'FAILED',
         });
       } catch (err) {
-        console.error('[emailService] Lỗi khi lưu nhật ký email vào DB:', err.message);
+        console.error('[emailService] Lỗi khi lưu nhật ký email:', err.message);
       }
     }
 
-    return {
-      id: emailId,
-      dossierId,
-      recipientEmail: targetEmail,
-      recipientName,
-      subject,
-      content,
-      stepName,
-      status,
-      sentAt: new Date().toISOString(),
-    };
->>>>>>> origin/main
+    return emailRecord;
   },
 };

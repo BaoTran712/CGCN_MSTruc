@@ -962,15 +962,7 @@ export async function login(
   extraData?: { name?: string; avatar?: string; googleId?: string }
 ): Promise<User> {
   const cleanEmail = (email || '').trim().toLowerCase();
-<<<<<<< HEAD
-  const isAdmin =
-    cleanEmail === 'tranthibaotran.2k@gmail.com' ||
-    cleanEmail === 'toanhkhai@gmail.com' ||
-    cleanEmail === 'toanhkhai12345@gmail.com' ||
-    cleanEmail === 'admin@ctump.edu.vn';
-=======
   const isAdmin = isAdminEmail(cleanEmail);
->>>>>>> origin/main
 
   try {
     const res = await fetch(`${API_BASE_URL}/users/login`, {

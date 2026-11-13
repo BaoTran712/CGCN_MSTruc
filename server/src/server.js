@@ -59,13 +59,10 @@ function getLocalIp() {
 // Start Server
 async function start() {
   await initDb();
-<<<<<<< HEAD
   await cleanupGarbageData();
-  app.listen(config.port, () => {
-=======
+
   const localIp = getLocalIp();
   app.listen(config.port, '0.0.0.0', () => {
->>>>>>> origin/main
     console.log(`=======================================================`);
     console.log(`  CTUMP DocuGov Backend NodeJS Server`);
     console.log(`  - Local:   http://localhost:${config.port}`);

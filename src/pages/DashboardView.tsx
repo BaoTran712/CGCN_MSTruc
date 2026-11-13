@@ -36,11 +36,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const userDossiers = isManager
     ? safeDossiers
-    : safeDossiers.filter(
-        (d) =>
-          d.createdBy?.id === currentUser?.id ||
-          d.createdBy?.email === currentUser?.email
-      );
+    : safeDossiers.filter((d) => {
+        const userEmail = (currentUser?.email || '').trim().toLowerCase();
+        const creatorEmail = (d.createdBy?.email || (d as any).applicant_email || (d as any).applicantEmail || '').trim().toLowerCase();
+        const userId = currentUser?.id;
+        const creatorId = d.createdBy?.id || (d as any).user_id;
+        return (userEmail && creatorEmail && userEmail === creatorEmail) || (userId && creatorId && userId === creatorId);
+      });
 
   const totalCount = userDossiers.length;
 

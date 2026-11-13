@@ -22,13 +22,8 @@ console.log(`  - Cùng Wi-Fi (LAN):  http://${localIp}:3000`);
 console.log(`  - Backend API:       http://${localIp}:5001/api/status`);
 console.log('=======================================================\n');
 
-<<<<<<< HEAD
-// 1. Chạy Backend NodeJS Server (Port 5000) với chế độ tự động tải lại khi sửa code
-const server = spawn('node', ['--watch', 'server/src/server.js'], {
-=======
-// 1. Chạy Backend NodeJS Server (Port 5001)
-const server = spawn('node', ['server/src/server.js'], {
->>>>>>> origin/main
+// 1. Chạy Backend NodeJS Server với chế độ tự động tải lại khi sửa code (chỉ theo dõi thư mục server/src)
+const server = spawn('node', ['--watch', '--watch-path=server/src', 'server/src/server.js'], {
   stdio: 'inherit',
   shell: true,
 });

@@ -29,17 +29,7 @@ export const userService = {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-<<<<<<< HEAD
-    const ADMIN_EMAILS = [
-      'tranthibaotran.2k@gmail.com',
-      'toanhkhai@gmail.com',
-      'toanhkhai12345@gmail.com',
-      'admin@ctump.edu.vn',
-    ];
-    const isAdmin = ADMIN_EMAILS.includes(cleanEmail) || cleanEmail.startsWith('admin@') || cleanEmail.includes('admin');
-=======
-    const isAdmin = config.adminEmails.includes(cleanEmail);
->>>>>>> origin/main
+    const isAdmin = config.adminEmails.includes(cleanEmail) || cleanEmail.startsWith('admin@') || cleanEmail.includes('admin');
 
     const found = await userRepository.findByEmail(cleanEmail);
     if (found) {

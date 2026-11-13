@@ -795,26 +795,26 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <span
                       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-medium ${
-                        status1a === 'RETURNED' || (status1a !== 'RETURNED' && status2a !== 'RETURNED')
+                        (status1a as string) === 'RETURNED' || ((status1a as string) !== 'RETURNED' && (status2a as string) !== 'RETURNED')
                           ? 'bg-red-50/80 text-red-700 border-red-200/80'
                           : 'bg-slate-100 text-slate-600 border-slate-200'
                       }`}
                     >
                       <strong>Mẫu 1a:</strong>{' '}
-                      {status1a === 'RETURNED' || (status1a !== 'RETURNED' && status2a !== 'RETURNED')
+                      {(status1a as string) === 'RETURNED' || ((status1a as string) !== 'RETURNED' && (status2a as string) !== 'RETURNED')
                         ? 'Mở khóa sửa'
                         : 'Chỉ xem'}
                     </span>
 
                     <span
                       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-medium ${
-                        status2a === 'RETURNED' || (status1a !== 'RETURNED' && status2a !== 'RETURNED')
+                        (status2a as string) === 'RETURNED' || ((status1a as string) !== 'RETURNED' && (status2a as string) !== 'RETURNED')
                           ? 'bg-red-50/80 text-red-700 border-red-200/80'
                           : 'bg-emerald-50/80 text-emerald-700 border-emerald-200/80'
                       }`}
                     >
                       <strong>Mẫu 2a:</strong>{' '}
-                      {status2a === 'RETURNED' || (status1a !== 'RETURNED' && status2a !== 'RETURNED')
+                      {(status2a as string) === 'RETURNED' || ((status1a as string) !== 'RETURNED' && (status2a as string) !== 'RETURNED')
                         ? 'Mở khóa sửa'
                         : 'Hợp lệ (Chỉ xem)'}
                     </span>
@@ -1267,25 +1267,25 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
               <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-medium ${
-                    status1a === 'RETURNED' || (status1a !== 'RETURNED' && status2a !== 'RETURNED')
+                    (status1a as string) === 'RETURNED' || ((status1a as string) !== 'RETURNED' && (status2a as string) !== 'RETURNED')
                       ? 'bg-amber-50 text-amber-800 border-amber-200'
                       : 'bg-white text-slate-600 border-slate-200'
                   }`}
                 >
                   <strong>Mẫu 1a:</strong>{' '}
-                  {status1a === 'RETURNED' || (status1a !== 'RETURNED' && status2a !== 'RETURNED')
+                  {(status1a as string) === 'RETURNED' || ((status1a as string) !== 'RETURNED' && (status2a as string) !== 'RETURNED')
                     ? 'Đã trả về yêu cầu sửa'
                     : `Khóa chỉ xem (${status1a === 'APPROVED' ? 'Đã duyệt' : 'Chưa duyệt'})`}
                 </span>
                 <span
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-medium ${
-                    status2a === 'RETURNED' || (status1a !== 'RETURNED' && status2a !== 'RETURNED')
+                    (status2a as string) === 'RETURNED' || ((status1a as string) !== 'RETURNED' && (status2a as string) !== 'RETURNED')
                       ? 'bg-amber-50 text-amber-800 border-amber-200'
                       : 'bg-white text-slate-600 border-slate-200'
                   }`}
                 >
                   <strong>Mẫu 2a:</strong>{' '}
-                  {status2a === 'RETURNED' || (status1a !== 'RETURNED' && status2a !== 'RETURNED')
+                  {(status2a as string) === 'RETURNED' || ((status1a as string) !== 'RETURNED' && (status2a as string) !== 'RETURNED')
                     ? 'Đã trả về yêu cầu sửa'
                     : `Khóa chỉ xem (${status2a === 'APPROVED' ? 'Đã duyệt' : 'Chưa duyệt'})`}
                 </span>
