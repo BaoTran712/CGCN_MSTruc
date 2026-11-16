@@ -294,21 +294,19 @@ export const emailService = {
       simulated: mailResult.simulated || false,
     };
 
-    if (isDbConnected()) {
-      try {
-        await emailRepository.create({
-          id: emailId,
-          dossierId,
-          recipientEmail: targetEmail,
-          recipientName: recipientName || targetEmail,
-          subject,
-          content,
-          stepName: stepName || 'Thông báo hệ thống',
-          status: mailResult.success ? 'SENT' : 'FAILED',
-        });
-      } catch (err) {
-        console.error('[emailService] Lỗi khi lưu nhật ký email:', err.message);
-      }
+    try {
+      await emailRepository.create({
+        id: emailId,
+        dossierId,
+        recipientEmail: targetEmail,
+        recipientName: recipientName || targetEmail,
+        subject,
+        content,
+        stepName: stepName || 'Thông báo hệ thống',
+        status: mailResult.success ? 'SENT' : 'FAILED',
+      });
+    } catch (err) {
+      console.error('[emailService] Lỗi khi lưu nhật ký email:', err.message);
     }
 
     return emailRecord;

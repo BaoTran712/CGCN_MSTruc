@@ -9,12 +9,9 @@ import {
   Eye,
   EyeOff,
   LogIn,
-  CheckCircle2,
   HelpCircle,
-  Shield,
-  UserCheck,
 } from 'lucide-react';
-import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER, ADMIN_EMAIL, isAdminEmail } from '../constants';
+import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER, isAdminEmail } from '../constants';
 import logoUrl from '../assets/logo.png';
 
 declare global {
@@ -40,7 +37,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
   // Status
   const [errorMsg, setErrorMsg] = useState('');
-  const [infoMsg, setInfoMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGisReady, setIsGisReady] = useState(false);
   const [showForgotModal, setShowForgotModal] = useState(false);
@@ -64,7 +60,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const handleStandardLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
-    setInfoMsg('');
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanPassword = password.trim();
@@ -133,14 +128,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Nạp nhanh tài khoản mẫu vào form
-  const handleQuickFill = (fillEmail: string, fillPass: string) => {
-    setEmail(fillEmail);
-    setPassword(fillPass);
-    setErrorMsg('');
-    setInfoMsg(`Đã điền tài khoản: ${fillEmail}. Bấm "Đăng nhập" để tiếp tục.`);
   };
 
   // Xử lý phản hồi từ Google Identity Services (GIS)
@@ -296,18 +283,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             </p>
           </div>
 
-          {/* Error & Info Notices */}
+          {/* Error Notice */}
           {errorMsg && (
             <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2 animate-in fade-in">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <div className="leading-relaxed">{errorMsg}</div>
-            </div>
-          )}
-
-          {infoMsg && !errorMsg && (
-            <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-xs flex items-start gap-2 animate-in fade-in">
-              <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-              <div className="leading-relaxed">{infoMsg}</div>
             </div>
           )}
 
@@ -412,43 +392,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               )}
             </button>
           </form>
-
-          {/* Quick autofill helper box for testing */}
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
-              <span>Tài khoản mẫu (Nhấp để tự điền form):</span>
-              <HelpCircle className="w-3.5 h-3.5 text-slate-400" />
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <button
-                type="button"
-                onClick={() => handleQuickFill('canbo@ctump.edu.vn', '123456')}
-                className="p-2 text-left bg-white border border-slate-200 rounded-lg hover:border-blue-400 hover:bg-blue-50/50 transition-colors cursor-pointer group"
-              >
-                <div className="flex items-center gap-1.5 font-bold text-slate-800 group-hover:text-blue-800">
-                  <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  <span>Thầy / Cô</span>
-                </div>
-                <div className="text-[10px] text-slate-500 font-mono truncate mt-0.5">
-                  canbo@ctump.edu.vn
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickFill('admin@ctump.edu.vn', 'admin123')}
-                className="p-2 text-left bg-white border border-slate-200 rounded-lg hover:border-emerald-400 hover:bg-emerald-50/50 transition-colors cursor-pointer group"
-              >
-                <div className="flex items-center gap-1.5 font-bold text-slate-800 group-hover:text-emerald-800">
-                  <Shield className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  <span>Quản trị viên</span>
-                </div>
-                <div className="text-[10px] text-slate-500 font-mono truncate mt-0.5">
-                  admin@ctump.edu.vn
-                </div>
-              </button>
-            </div>
-          </div>
 
           {/* Divider */}
           <div className="relative my-2">

@@ -19,8 +19,11 @@ export const config = {
   port: parseInt(process.env.PORT || '5000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   appUrl: process.env.APP_URL || 'http://localhost:3000',
-  adminEmail: process.env.ADMIN_EMAIL || 'heykagvip@gmail.com',
-  adminEmails: (process.env.ADMIN_EMAILS || 'heykagvip@gmail.com,toanhkhai12345@gmail.com')
+  adminEmail: process.env.ADMIN_EMAIL || 'tranthibaotran.2k@gmail.com',
+  adminEmails: (
+    process.env.ADMIN_EMAILS ||
+    'tranthibaotran.2k@gmail.com,toanhkhai@gmail.com,toanhkhai12345@gmail.com,admin@ctump.edu.vn,heykagvip@gmail.com'
+  )
     .split(',')
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean),
