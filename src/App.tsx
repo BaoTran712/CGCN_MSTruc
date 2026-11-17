@@ -6,6 +6,7 @@ import {
 } from './types';
 import { isAdminUser } from './constants';
 import { getEffectiveTemplate } from './utils/templateUtils';
+import { getApplicationById } from './services/api';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { DossierProvider, useDossiers } from './contexts/DossierContext';
@@ -23,12 +24,14 @@ import {
 } from './pages';
 
 function AppContent() {
-  const { currentUser, login, logout } = useAuth();
+  const { currentUser, isCheckingSession, login, logout } = useAuth();
   const { showToast } = useToast();
   const {
     templates,
     dossiers,
     isLoading,
+    loadError,
+    reloadAll,
     pendingCount,
     myDossierCount,
     saveDraft,
@@ -59,15 +62,13 @@ function AppContent() {
   }, [currentUser, isAdmin, activeTab]);
 
   useEffect(() => {
-    if (!selectedDossier) return;
-    const latest = dossiers.find(
-      (d) => d.id === selectedDossier.id || d.code === selectedDossier.code
-    );
-    if (latest && latest !== selectedDossier) {
-      setSelectedDossier(latest);
-    }
-  }, [dossiers, selectedDossier]);
+    if(!selectedDossier?.id)return;
+    let active=true;
+    getApplicationById(selectedDossier.id).then(detail=>{if(active&&detail)setSelectedDossier(detail);}).catch(error=>showToast(error.message,'error'));
+    return ()=>{active=false;};
+  },[dossiers,selectedDossier?.id]);
 
+  if (isCheckingSession) return <LoadingSpinner />;
   if (!currentUser) {
     return (
       <LoginPage
@@ -97,13 +98,17 @@ function AppContent() {
   };
 
   const handleSaveDraft = async (draftDossier: Application) => {
+    try {
     const saved = await saveDraft(draftDossier, currentUser);
     showToast(`Đã lưu hồ sơ ${saved.code}!`);
     return saved;
+
+    } catch(error:any) { showToast(error.message || 'Không thể hoàn tất thao tác.','error'); throw error; }
   };
 
   // BƯỚC 1 & BƯỚC 2B: Nộp đơn & Chuyển hướng ngay sang màn hình "Chi tiết đơn đã gửi"
   const handleSubmitDossier = async (submittedDossier: Application) => {
+    try {
     const submitted = await submitDossier(submittedDossier, currentUser);
     setEditingDossier(null);
     setTemplateForCreation(null);
@@ -113,10 +118,13 @@ function AppContent() {
     showToast(
       `Đã nộp hồ sơ ${submitted.code} (Phiên bản v${ver}) thành công! Đang chờ Admin xét duyệt.`
     );
+
+    } catch(error:any) { showToast(error.message || 'Không thể hoàn tất thao tác.','error'); throw error; }
   };
 
   // BƯỚC 2B [LUỒNG FALSE]: Chỉnh sửa trực tiếp trên trang Chi tiết đơn & Nộp lại
   const handleResubmitDossier = async (dossierId: string, updatedFormData: Record<string, any>, fullPayload?: Partial<Application>) => {
+    try {
     const updated = await resubmitDossier(dossierId, updatedFormData, currentUser, fullPayload);
     setSelectedDossier(updated);
     const ver = updated.current_version || updated.currentVersion || 2;
@@ -124,22 +132,30 @@ function AppContent() {
       `Đã nộp lại hồ sơ ${updated.code} (Phiên bản v${ver})! Đang chờ Admin kiểm tra và duyệt.`
     );
     return updated;
+
+    } catch(error:any) { showToast(error.message || 'Không thể hoàn tất thao tác.','error'); throw error; }
   };
 
   const handleApproveDossier = async (dossierId: string, comment?: string) => {
+    try {
     const approved = await approveDossier(dossierId, comment, currentUser);
     if (selectedDossier?.id === approved.id) {
       setSelectedDossier(approved);
     }
-    showToast(`Đã duyệt hợp lệ hồ sơ ${approved.code} và gửi Email kèm file PDF chuẩn!`);
+    showToast(`Đã duyệt hợp lệ hồ sơ ${approved.code} và ghi nhận thông báo email kèm PDF.`);
+
+    } catch(error:any) { showToast(error.message || 'Không thể hoàn tất thao tác.','error'); throw error; }
   };
 
   const handleReturnDossier = async (dossierId: string, reason: string) => {
+    try {
     const returned = await returnDossier(dossierId, reason, currentUser);
     if (selectedDossier?.id === returned.id) {
       setSelectedDossier(returned);
     }
     showToast(`Đã trả về sửa lỗi hồ sơ ${returned.code} kèm gợi ý chỗ sai cần sửa chữa.`);
+
+    } catch(error:any) { showToast(error.message || 'Không thể hoàn tất thao tác.','error'); throw error; }
   };
 
   const handleSignOut = () => {
@@ -165,7 +181,7 @@ function AppContent() {
       }
       if (isValid) {
         const ver = updated.current_version || updated.currentVersion || 1;
-        showToast(`Đã duyệt hợp lệ hồ sơ ${updated.code} (v${ver}) và gửi Gmail SMTP kèm file PDF chuẩn.`);
+        showToast(`Đã duyệt hợp lệ hồ sơ ${updated.code} (v${ver}) và ghi nhận thông báo email kèm PDF.`);
       } else {
         showToast(`Đã trả về sửa lỗi hồ sơ ${updated.code} kèm gợi ý sửa chữa.`);
       }
@@ -180,35 +196,44 @@ function AppContent() {
     pdfUrl: string,
     evidenceFiles: Array<{ name: string; url: string; size?: string }>
   ) => {
+    try {
     const updated = await uploadFacultySignature(dossierId, pdfUrl, evidenceFiles, currentUser);
     if (selectedDossier?.id === updated.id) {
       setSelectedDossier(updated);
     }
     showToast(`Đã tải lên bản ký phòng ban cho hồ sơ ${updated.code} (Trạng thái: Chờ duyệt)!`);
+
+    } catch(error:any) { showToast(error.message || 'Không thể hoàn tất thao tác.','error'); throw error; }
   };
 
   const handleUpdateSchoolSigning = async (
     dossierId: string,
     flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean; note?: string }
   ) => {
+    try {
     const updated = await updateSchoolSigning(dossierId, flags, currentUser);
     if (selectedDossier?.id === updated.id) {
       setSelectedDossier(updated);
     }
     showToast(`Đã chuyển hồ sơ ${updated.code} sang trạng thái "Chờ ký Hiệu trưởng"!`);
+
+    } catch(error:any) { showToast(error.message || 'Không thể hoàn tất thao tác.','error'); throw error; }
   };
 
   const handleCompleteDossier = async (
     dossierId: string,
     decisionNumber: string,
     decisionDate: string,
-    finalPdfUrl: string
+    finalPdfUrl: string | File | undefined
   ) => {
+    try {
     const updated = await completeDossier(dossierId, decisionNumber, decisionDate, finalPdfUrl, currentUser);
     if (selectedDossier?.id === updated.id) {
       setSelectedDossier(updated);
     }
-    showToast(`Đã xác nhận "Đã ký và lưu trữ" cho hồ sơ ${updated.code} và gửi Gmail kèm PDF đã ký!`);
+    showToast(`Đã xác nhận "Đã ký và lưu trữ" cho hồ sơ ${updated.code} và ghi nhận thông báo email kèm PDF đã ký.`);
+
+    } catch(error:any) { showToast(error.message || 'Không thể hoàn tất thao tác.','error'); throw error; }
   };
 
   return (
@@ -229,6 +254,7 @@ function AppContent() {
       }}
       onSignOut={handleSignOut}
     >
+      {loadError && <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{loadError} <button className="underline font-semibold" onClick={() => reloadAll()}>Tải lại</button></div>}
       {isLoading ? (
         <LoadingSpinner />
       ) : selectedDossier ? (

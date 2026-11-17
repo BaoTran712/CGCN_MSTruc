@@ -1,11 +1,11 @@
-import { query, execute, isDbConnected } from '../utils/db.js';
+import { randomUUID } from 'node:crypto';
+import { query, execute } from '../utils/db.js';
 import { AuditModel } from '../models/auditModel.js';
-import { mockStore } from '../utils/mockStore.js';
 
 export const auditRepository = {
   // Ghi nhật ký xử lý mới
   async create(log) {
-    const id = log.id || `aud-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const id = log.id || 'aud-'+randomUUID();
     const newLog = {
       id,
       dossierId: log.dossierId || log.dossier_id,
@@ -18,11 +18,6 @@ export const auditRepository = {
       notes: log.notes || '',
       createdAt: new Date().toISOString(),
     };
-
-    if (!isDbConnected()) {
-      mockStore.auditLogs.unshift(newLog);
-      return newLog;
-    }
 
     try {
       await execute(`
@@ -41,19 +36,11 @@ export const auditRepository = {
         new Date(),
       ]);
       return newLog;
-    } catch {
-      mockStore.auditLogs.unshift(newLog);
-      return newLog;
-    }
+    } catch (error) { throw error; }
   },
 
   // Lấy danh sách lịch sử theo ID hồ sơ
   async findByDossierId(dossierId) {
-    if (!isDbConnected()) {
-      return mockStore.auditLogs.filter(
-        (a) => a.dossierId === dossierId || a.dossier_id === dossierId
-      );
-    }
 
     try {
       const rows = await query(`
@@ -62,24 +49,13 @@ export const auditRepository = {
         ORDER BY created_at ASC
       `, [dossierId]);
 
-      if (!rows || rows.length === 0) {
-        return mockStore.auditLogs.filter(
-          (a) => a.dossierId === dossierId || a.dossier_id === dossierId
-        );
-      }
+      if (!rows || rows.length === 0) return [];
       return rows.map((r) => AuditModel.fromRow(r).toObject());
-    } catch {
-      return mockStore.auditLogs.filter(
-        (a) => a.dossierId === dossierId || a.dossier_id === dossierId
-      );
-    }
+    } catch (error) { throw error; }
   },
 
   // Lấy tất cả lịch sử
   async findAll() {
-    if (!isDbConnected()) {
-      return mockStore.auditLogs.map((a) => ({ ...a }));
-    }
 
     try {
       const rows = await query(`
@@ -90,12 +66,8 @@ export const auditRepository = {
         LIMIT 100
       `);
 
-      if (!rows || rows.length === 0) {
-        return mockStore.auditLogs.map((a) => ({ ...a }));
-      }
+      if (!rows || rows.length === 0) return [];
       return rows.map((r) => AuditModel.fromRow(r).toObject());
-    } catch {
-      return mockStore.auditLogs.map((a) => ({ ...a }));
-    }
+    } catch (error) { throw error; }
   },
 };

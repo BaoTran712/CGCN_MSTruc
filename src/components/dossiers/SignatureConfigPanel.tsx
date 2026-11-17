@@ -16,7 +16,7 @@ import { Dossier, SignatureConfig } from '../../types';
 
 interface SignatureConfigPanelProps {
   dossier: Dossier;
-  onSaveConfig: (config: SignatureConfig) => void;
+  onSaveConfig: (config: SignatureConfig) => void | Promise<void>;
   readOnly?: boolean;
 }
 
@@ -203,7 +203,7 @@ export const SignatureConfigPanel: React.FC<SignatureConfigPanelProps> = ({
     setIsSaved(false);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const config: SignatureConfig = {
       departments,
       rectorRole,
@@ -211,8 +211,8 @@ export const SignatureConfigPanel: React.FC<SignatureConfigPanelProps> = ({
       recipients: recipients.filter((r) => r.trim() !== ''),
       unitRecipient: dossier.department_name || dossier.createdBy?.department || 'Khoa Y',
     };
-    onSaveConfig(config);
-    setIsSaved(true);
+    try { await onSaveConfig(config); setIsSaved(true); }
+    catch(error:any){setIsSaved(false);window.alert(error.message || 'Không lưu được cấu hình.');}
     setTimeout(() => setIsSaved(false), 3000);
   };
 

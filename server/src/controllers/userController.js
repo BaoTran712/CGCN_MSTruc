@@ -6,7 +6,7 @@ export const userController = {
   // GET /api/users
   async getAll(req, res) {
     try {
-      const users = await userService.getAll();
+      const users = req.user.role === 'ADMIN' ? await userService.getAll() : [req.user];
       return ApiResponse.success(users, 'Lấy danh sách người dùng thành công').send(res);
     } catch (err) {
       console.error('[userController.getAll]', err);
@@ -18,6 +18,7 @@ export const userController = {
   async getById(req, res) {
     try {
       const { id } = req.params;
+      if(req.user.role !== 'ADMIN' && id !== req.user.id)return ApiResponse.error('Bạn không có quyền truy cập tài khoản này.',403).send(res);
       const user = await userService.getById(id);
       if (!user) {
         return ApiResponse.error('Không tìm thấy người dùng', 404).send(res);
@@ -43,13 +44,14 @@ export const userController = {
   // POST /api/users/login (hoặc /api/auth/login)
   async login(req, res) {
     try {
-      const { email, name, avatar, googleId } = req.body;
-      const user = await userService.login(email, { name, avatar, googleId });
-      const token = generateToken(user);
+      const { email, password, credential } = req.body;
+      const user = await userService.login(email, { password, credential });
+      const token = await generateToken(user);
       return ApiResponse.success({ ...user, token }, 'Đăng nhập thành công').send(res);
     } catch (err) {
       console.error('[userController.login]', err);
-      return ApiResponse.error(err.message, 400).send(res);
+      const unavailable=['ECONNREFUSED','ETIMEDOUT','ECONNRESET','PROTOCOL_CONNECTION_LOST'].includes(err.code);
+      return ApiResponse.error(err.message, unavailable?503:err.code?.startsWith('ER_')?500:401).send(res);
     }
   },
 };

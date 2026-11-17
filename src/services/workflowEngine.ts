@@ -22,7 +22,7 @@ export function normalizeStatus(status: string): DossierStatus {
   if (!status) return 'SUBMITTED';
   const upper = status.toUpperCase();
 
-  if (upper === 'SUBMITTED' || upper === 'NEW' || upper === 'UNDER_REVIEW' || upper === 'RESUBMITTED') {
+  if (upper === 'SUBMITTED' || upper === 'NEW' || upper === 'UNDER_REVIEW' || upper === 'RESUBMITTED' || upper === 'PENDING_PRECHECK') {
     return 'SUBMITTED';
   }
   if (
@@ -38,6 +38,7 @@ export function normalizeStatus(status: string): DossierStatus {
   }
   if (
     upper === 'PENDING_SIGNED_REVIEW' ||
+    upper === 'EVIDENCE_UPLOADED' ||
     upper === 'WAITING_FOR_SUBMISSION' ||
     upper === 'FACULTY_SIGNED' ||
     upper === 'USER_SIGNED' ||
@@ -47,6 +48,7 @@ export function normalizeStatus(status: string): DossierStatus {
   }
   if (
     upper === 'WAITING_RECTOR_SIGNATURE' ||
+    upper === 'SCHOOL_PROCESSING' ||
     upper === 'SCHOOL_SIGNING' ||
     upper === 'SECRETARY_RECEIVED'
   ) {

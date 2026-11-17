@@ -1,137 +1,38 @@
 import jwt from 'jsonwebtoken';
 import { ApiResponse } from '../dtos/apiResponse.js';
 import { config } from '../utils/config.js';
+import { query } from '../utils/db.js';
+import { UserModel } from '../models/userModel.js';
 
-const JWT_SECRET = config.jwtSecret;
-const JWT_EXPIRES_IN = '7d';
-
-/**
- * Tạo JWT token cho user đã đăng nhập
- */
-export function generateToken(user) {
-  return jwt.sign(
-    {
-      id: user.id,
-      email: user.email,
-      role: user.role || 'USER',
-      name: user.name,
-    },
-    JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN }
-  );
+export async function generateToken(user) {
+  const [credential] = await query('SELECT token_version FROM auth_credentials WHERE user_id=?', [user.id]);
+  return jwt.sign({ email: user.email, version: credential?.token_version || 0 }, config.jwtSecret, {
+    subject: String(user.id), expiresIn: '7d', issuer: 'ctump-docugov', audience: 'ctump-docugov-client', algorithm: 'HS256',
+  });
 }
-
-/**
- * Middleware xác thực JWT — Bắt buộc đăng nhập
- * Gắn `req.user` nếu token hợp lệ
- */
-export function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return ApiResponse.error('Vui lòng đăng nhập để tiếp tục.', 401).send(res);
-  }
-
-  const token = authHeader.split(' ')[1];
-
-  // Hỗ trợ dev token khi đang ở môi trường development
-  if (config.nodeEnv === 'development' && token && token.startsWith('dev-token-')) {
-    const role = token.includes('admin') ? 'ADMIN' : 'USER';
-    const email = role === 'ADMIN' ? 'tranthibaotran.2k@gmail.com' : 'user.test@gmail.com';
-    req.user = {
-      id: token,
-      email,
-      role,
-      name: role === 'ADMIN' ? 'Quản trị viên (Bảo Trân)' : 'Cán bộ / Giảng viên (User)',
-    };
-    return next();
-  }
-
+export async function requireAuth(req, res, next) {
+  res.setHeader('Cache-Control','no-store');
+  const value = req.headers.authorization || '';
+  if (!value.startsWith('Bearer ')) return ApiResponse.error('Vui lòng đăng nhập để tiếp tục.', 401).send(res);
+  let payload;
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return ApiResponse.error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 401).send(res);
-    }
-    return ApiResponse.error('Token không hợp lệ.', 401).send(res);
-  }
-}
-
-/**
- * Middleware phân quyền Admin — Chỉ role ADMIN mới được truy cập
- * Phải gắn SAU requireAuth
- */
-export function requireAdmin(req, res, next) {
-  const candidateUser =
-    req.user ||
-    req.body?.adminUser ||
-    req.body?.user ||
-    req.body?.reviewer ||
-    null;
-
-  if (!candidateUser) {
-    return ApiResponse.error('Chưa xác thực thông tin Quản trị viên.', 401).send(res);
-  }
-
-  const email = (candidateUser.email || '').trim().toLowerCase();
-  const role = String(candidateUser.role || '').trim().toUpperCase();
-  const ADMIN_EMAILS = [
-    'tranthibaotran.2k@gmail.com',
-    'toanhkhai@gmail.com',
-    'toanhkhai12345@gmail.com',
-    'admin@ctump.edu.vn',
-  ];
-  let isAdmin = false;
-  if (role === 'ADMIN') {
-    isAdmin = true;
-  } else if (role === 'USER' || role === 'LECTURER' || role === 'APPLICANT') {
-    isAdmin = false;
-  } else {
-    isAdmin = ADMIN_EMAILS.includes(email) || email.startsWith('admin@');
-  }
-
-  if (!isAdmin) {
-    return ApiResponse.error('Bạn không có quyền truy cập chức năng này. Chỉ Admin mới được phép.', 403).send(res);
-  }
-
-  req.user = candidateUser;
-  next();
-}
-
-/**
- * Middleware tùy chọn xác thực — Không bắt buộc token
- * Nếu có token hợp lệ thì gắn req.user, nếu không thì bỏ qua
- */
-export function optionalAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    req.user = null;
-    return next();
-  }
-
-  const token = authHeader.split(' ')[1];
-
-  if (config.nodeEnv === 'development' && token && token.startsWith('dev-token-')) {
-    const role = token.includes('admin') ? 'ADMIN' : 'USER';
-    const email = role === 'ADMIN' ? 'tranthibaotran.2k@gmail.com' : 'user.test@gmail.com';
-    req.user = {
-      id: token,
-      email,
-      role,
-      name: role === 'ADMIN' ? 'Quản trị viên (Bảo Trân)' : 'Cán bộ / Giảng viên (User)',
-    };
-    return next();
-  }
-
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+    payload = jwt.verify(value.slice(7), config.jwtSecret, { algorithms: ['HS256'], issuer: 'ctump-docugov', audience: 'ctump-docugov-client' });
+    if (!payload.sub) throw new Error('Missing subject');
   } catch {
-    req.user = null;
+    return ApiResponse.error('Phiên đăng nhập không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại.', 401).send(res);
   }
-
+  try {
+    const [row] = await query('SELECT u.*,COALESCE(c.token_version,0) AS token_version FROM users u LEFT JOIN auth_credentials c ON c.user_id=u.id WHERE u.id=?', [payload.sub]);
+    if (!row || !row.is_active || row.token_version !== payload.version) return ApiResponse.error('Phiên đăng nhập đã bị thu hồi.', 401).send(res);
+    req.user = UserModel.fromRow(row).toObject();
+    next();
+  } catch (error) { next(error); }
+}
+export function requireAdmin(req, res, next) {
+  if (!req.user) return ApiResponse.error('Vui lòng đăng nhập để tiếp tục.', 401).send(res);
+  if (String(req.user.role).toUpperCase() !== 'ADMIN') return ApiResponse.error('Chỉ quản trị viên được phép thực hiện thao tác này.', 403).send(res);
   next();
 }
+export const optionalAuth = (req, res, next) => req.headers.authorization ? requireAuth(req, res, next) : next();
+
+export { limitLogin } from './loginLimiter.js';

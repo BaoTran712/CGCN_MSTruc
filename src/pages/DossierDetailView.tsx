@@ -24,7 +24,7 @@ import {
   X,
 } from 'lucide-react';
 import { Application, DocumentTemplate, User, ActiveNavTab, SignatureConfig, DossierVersion } from '../types';
-import { rollbackDossierVersion, API_BASE_URL } from '../services/api';
+import { rollbackDossierVersion, API_BASE_URL, authorizedFetch } from '../services/api';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { WordDocumentPreview } from '../components/document/WordDocumentPreview';
 import { SignatureConfigPanel } from '../components/dossiers';
@@ -65,7 +65,7 @@ interface DossierDetailViewProps {
     dossierId: string,
     decisionNumber: string,
     decisionDate: string,
-    finalPdfUrl: string
+    finalPdfUrl: string | File | undefined
   ) => Promise<void>;
   onApproveDossier?: (dossierId: string, comment?: string) => Promise<void>;
   onReturnDossier?: (dossierId: string, reason: string) => Promise<void>;
@@ -97,6 +97,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
     dossier.decisionNumber || dossier.decision_number || `${dossier.code}/QĐ-ĐHYDCT`
   );
   const [finalSignedFileName, setFinalSignedFileName] = useState<string>('');
+  const [finalSignedFile,setFinalSignedFile] = useState<File | undefined>();
   const [isCompletingSign, setIsCompletingSign] = useState<boolean>(false);
 
   // State cho luồng hồ sơ kép (1a & 2a) và cấu hình chữ ký động
@@ -172,9 +173,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
       const updated = await rollbackDossierVersion(currentDossier.id, targetVer, currentUser);
       if (updated) {
         setCurrentDossier(updated);
-        if (onUpdateDossier) {
-          await onUpdateDossier(currentDossier.id, updated);
-        }
+
       }
       setShowVersionHistoryModal(false);
       alert(`Đã khôi phục thành công dữ liệu từ Bản cứng v${targetVer}!`);
@@ -194,18 +193,15 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
       is_official_locked: false,
       updatedAt: new Date().toISOString(),
     };
-    setCurrentDossier((prev) => ({
-      ...prev,
-      ...updatedFields,
-    }));
+
     if (onUpdateDossier) {
       await onUpdateDossier(currentDossier.id, updatedFields);
     }
   };
 
   const handleApprove1a = async () => {
-    setStatus1a('APPROVED');
-    setCurrentDossier((prev) => ({ ...prev, status_1a: 'APPROVED' }));
+
+
     if (status2a === 'APPROVED') {
       await handleAdminAction(true);
     } else if (onUpdateDossier) {
@@ -215,8 +211,8 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
   };
 
   const handleApprove2a = async () => {
-    setStatus2a('APPROVED');
-    setCurrentDossier((prev) => ({ ...prev, status_2a: 'APPROVED' }));
+
+
     if (status1a === 'APPROVED') {
       await handleAdminAction(true);
     } else if (onUpdateDossier) {
@@ -226,9 +222,9 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
   };
 
   const handleApproveBoth = async () => {
-    setStatus1a('APPROVED');
-    setStatus2a('APPROVED');
-    setCurrentDossier((prev) => ({ ...prev, status_1a: 'APPROVED', status_2a: 'APPROVED' }));
+
+
+
     await handleAdminAction(true);
   };
   const revisionMessage =
@@ -371,19 +367,9 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
 
         const cleanReason = revisionNoteInput.trim();
 
-        setStatus1a(next1a);
-        setStatus2a(next2a);
-        setCurrentDossier((prev) => ({
-          ...prev,
-          status: 'RETURNED_FOR_REVISION',
-          status_1a: next1a,
-          status_2a: next2a,
-          rejected_target: returnTarget,
-          rejectedTarget: returnTarget,
-          target_form: returnTarget,
-          rejection_reason_1a: returnTarget === '1a' || returnTarget === 'both' ? cleanReason : null,
-          rejection_reason_2a: returnTarget === '2a' || returnTarget === 'both' ? cleanReason : null,
-        }));
+
+
+
 
         await onAdminPrecheck(
           currentDossier.id,
@@ -392,15 +378,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
           returnTarget
         );
       } else {
-        setCurrentDossier((prev) => ({
-          ...prev,
-          status: 'VALIDATED',
-          status_1a: 'APPROVED',
-          status_2a: 'APPROVED',
-          rejected_target: null,
-          rejectedTarget: null,
-          target_form: null,
-        }));
+
         await onAdminPrecheck(
           currentDossier.id,
           true,
@@ -476,7 +454,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
         ? fileItem.url
         : `${serverBase}${fileItem.url.startsWith('/') ? '' : '/'}${fileItem.url}`;
       try {
-        const res = await fetch(fullUrl);
+        const res = await authorizedFetch(fullUrl);
         const contentType = res.headers.get('content-type') || '';
         if (res.ok && !contentType.includes('text/html')) {
           const blob = await res.blob();
@@ -492,6 +470,8 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
       }
     }
 
+    if(fileItem.url && (/\/uploads\/(signed|evidence)\//.test(fileItem.url) || fileItem.url===currentDossier.faculty_signed_pdf_url || fileItem.url===currentDossier.final_signed_pdf_path || fileItem.url===currentDossier.final_pdf_url)) throw new Error('Tệp đã tải lên không còn trên máy chủ. Vui lòng kiểm tra bản sao lưu; không thể tạo lại chữ ký từ biểu mẫu.');
+
     // 3. Fallback thông minh cho các bản ghi đã nộp trước đó: kết xuất trực tiếp PDF 1a hoặc 2a của hồ sơ
     const isFile2a =
       lowerName.includes('2a') ||
@@ -501,7 +481,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
       ? { ...(currentDossier.formData || {}), ...((currentDossier as any).formData2a || {}) }
       : { ...(currentDossier.formData || {}), ...((currentDossier as any).formData1a || {}) };
 
-    const exportRes = await fetch(
+    const exportRes = await authorizedFetch(
       `${API_BASE_URL}/applications/${encodeURIComponent(currentDossier.id)}/export-pdf`,
       {
         method: 'POST',
@@ -585,13 +565,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
       const pdfUrl = `/uploads/signed/${currentDossier.code}-${encodeURIComponent(
         signedPdfName || 'department-signed.pdf'
       )}`;
-      setCurrentDossier((prev) => ({
-        ...prev,
-        status: 'PENDING_SIGNED_REVIEW',
-        faculty_signed_pdf_url: pdfUrl,
-        evidenceFiles: evidenceList,
-        department_signed_files: evidenceList,
-      }));
+
       await onUploadFacultySignature(currentDossier.id, pdfUrl, evidenceList);
     } finally {
       setIsUploadingSign(false);
@@ -602,12 +576,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
     if (!onUpdateSchoolSigning) return;
     try {
       setIsMovingToRector(true);
-      setCurrentDossier((prev) => ({
-        ...prev,
-        status: 'WAITING_RECTOR_SIGNATURE',
-        khcnSigned: true,
-        khcn_signed: true,
-      }));
+
       await onUpdateSchoolSigning(currentDossier.id, {
         khcnSigned: true,
         note: 'Chuyển trình Hiệu trưởng ký duyệt.',
@@ -621,21 +590,10 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
     if (!onCompleteDossier) return;
     try {
       setIsCompletingSign(true);
-      const finalUrl = finalSignedFileName
-        ? `/uploads/pdf/${currentDossier.code}-${encodeURIComponent(finalSignedFileName)}`
-        : `/uploads/pdf/${currentDossier.code}-signed-v${currentVersion}.pdf`;
+      const finalUrl = finalSignedFile;
       const resolvedDecisionNum = decisionNumberInput.trim() || `${currentDossier.code}/QĐ-ĐHYDCT`;
       const resolvedDate = new Date().toISOString().slice(0, 10);
-      setCurrentDossier((prev) => ({
-        ...prev,
-        status: 'SIGNED_ARCHIVED',
-        decisionNumber: resolvedDecisionNum,
-        decision_number: resolvedDecisionNum,
-        decisionDate: resolvedDate,
-        decision_date: resolvedDate,
-        final_signed_pdf_path: finalUrl,
-        final_pdf_url: finalUrl,
-      }));
+
       await onCompleteDossier(
         currentDossier.id,
         resolvedDecisionNum,
@@ -1619,7 +1577,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
                       accept=".pdf"
                       onChange={(e) => {
                         const f = e.target.files?.[0];
-                        if (f) setFinalSignedFileName(f.name);
+                        if (f) {setFinalSignedFileName(f.name);setFinalSignedFile(f);}
                       }}
                       className="hidden"
                     />

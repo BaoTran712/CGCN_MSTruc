@@ -22,29 +22,6 @@ export const ReviewQueueView: React.FC<ReviewQueueViewProps> = ({
   onInspectDossier,
 }) => {
 
-  // State for signature configuration modal
-  const [showSignatureModal, setShowSignatureModal] = useState(false);
-  const [selectedDossier, setSelectedDossier] = useState<Dossier | null>(null);
-  // Placeholder departments (could be fetched from API)
-  const departments = ['Phòng KH&CN', 'Phòng TCKT', 'Phòng Đào tạo'];
-
-  const openSignatureModal = (dossier: Dossier) => {
-    setSelectedDossier(dossier);
-    setShowSignatureModal(true);
-  };
-
-  const closeSignatureModal = () => {
-    setShowSignatureModal(false);
-    setSelectedDossier(null);
-  };
-
-  const handleSignatureSave = (config: any) => {
-    // TODO: send config to backend (e.g., POST /api/signature-config)
-    console.log('Signature config saved for', selectedDossier?.id, config);
-    closeSignatureModal();
-  };
-
-
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTabFilter, setActiveTabFilter] = useState<string>('all');
   const safeDossiers = Array.isArray(dossiers) ? dossiers : [];

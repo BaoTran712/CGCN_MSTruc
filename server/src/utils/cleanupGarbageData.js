@@ -1,203 +1,49 @@
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { isDbConnected, query } from './db.js';
-import { mockStore } from './mockStore.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { query } from './db.js';
+import { config } from './config.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const UPLOADS_ROOT = path.resolve(__dirname, '../../uploads');
-
-const UPLOAD_SUBDIRS = ['docx', 'pdf', 'signed', 'evidence'];
-
-/**
- * Chuyển đường dẫn URL tĩnh (vd: /uploads/pdf/CGCN-2026-0001-v1.pdf) sang đường dẫn tuyệt đối trên ổ đĩa
- */
-export function resolveUploadAbsolutePath(urlOrPath) {
-  if (!urlOrPath || typeof urlOrPath !== 'string') return null;
-  const trimmed = urlOrPath.trim();
-  if (!trimmed) return null;
-
-  if (path.isAbsolute(trimmed) && fs.existsSync(trimmed)) {
-    return trimmed;
-  }
-
-  if (trimmed.startsWith('/uploads/')) {
-    const rel = trimmed.replace(/^\/uploads\//, '');
-    return path.join(UPLOADS_ROOT, rel);
-  }
-
-  if (trimmed.startsWith('server/uploads/')) {
-    const rel = trimmed.replace(/^server\/uploads\//, '');
-    return path.join(UPLOADS_ROOT, rel);
-  }
-
-  return path.resolve(UPLOADS_ROOT, trimmed);
+export function resolveUploadAbsolutePath(value) {
+  if (!value || typeof value !== 'string') return null;
+  const normalized=value.replaceAll('\\','/');
+  const relative=normalized.startsWith('/uploads/')?normalized.slice(9):normalized.startsWith('server/uploads/')?normalized.slice(15):normalized;
+  const candidate=path.resolve(config.uploadDir,relative);
+  const within=path.relative(config.uploadDir,candidate);
+  if (within.startsWith('..') || path.isAbsolute(within)) return null;
+  return candidate;
 }
-
-/**
- * Xóa file vật lý cũ khi sinh phiên bản mới (v1 -> v2) hoặc khi xóa đơn
- */
-export function deletePhysicalFile(urlOrPath) {
-  try {
-    const absPath = resolveUploadAbsolutePath(urlOrPath);
-    if (absPath && fs.existsSync(absPath) && absPath.startsWith(UPLOADS_ROOT)) {
-      fs.unlinkSync(absPath);
-      return true;
-    }
-  } catch (err) {
-    console.warn(`[GarbageCleanup] Không thể xóa file cũ (${urlOrPath}): ${err.message}`);
-  }
+export function deletePhysicalFile(value) {
+  const file=resolveUploadAbsolutePath(value);
+  if(file && fs.existsSync(file)){fs.unlinkSync(file);return true;}
   return false;
 }
-
-/**
- * Trích xuất toàn bộ tập hợp file tuyệt đối đang gắn với một danh sách hồ sơ hợp lệ
- */
-function collectReferencedFiles(dossiers = []) {
-  const referenced = new Set();
-
-  const addRef = (urlOrPath) => {
-    const abs = resolveUploadAbsolutePath(urlOrPath);
-    if (abs) {
-      referenced.add(path.normalize(abs).toLowerCase());
-    }
+export async function cleanupGarbageData({apply=false,minAgeMs=24*60*60*1000}={}) {
+  const dossiers=await query('SELECT * FROM dossiers');
+  const versions=await query('SELECT generated_docx_path,generated_pdf_path FROM dossier_versions');
+  const attachments=await query('SELECT file_path,file_url FROM attachments');
+  const referenced=new Set();
+  const add=value=>{
+    if(typeof value==='string'){
+      if(value.startsWith('/uploads/')||value.startsWith(config.uploadDir)){const file=resolveUploadAbsolutePath(value);if(file)referenced.add(path.normalize(file));}
+      else if(value.startsWith('[')||value.startsWith('{')){try{add(JSON.parse(value));}catch{}}
+    }else if(Array.isArray(value))value.forEach(add);
+    else if(value && typeof value==='object')Object.values(value).forEach(add);
   };
-
-  for (const d of dossiers) {
-    if (!d) continue;
-    addRef(d.generated_docx_path);
-    addRef(d.docx_file_url);
-    addRef(d.generated_pdf_path);
-    addRef(d.approved_pdf_path);
-    addRef(d.precheck_pdf_url);
-    addRef(d.faculty_signed_pdf_url);
-    addRef(d.final_signed_pdf_path);
-    addRef(d.final_pdf_url);
-
-    const fileLists = [
-      d.department_signed_files,
-      d.resubmitted_signed_files,
-      d.evidence_files,
-      d.evidenceFiles,
-    ];
-
-    for (const list of fileLists) {
-      let arr = list;
-      if (typeof arr === 'string') {
-        try {
-          arr = JSON.parse(arr);
-        } catch {
-          arr = [];
-        }
-      }
-      if (Array.isArray(arr)) {
-        for (const item of arr) {
-          if (typeof item === 'string') {
-            addRef(item);
-          } else if (item && typeof item === 'object') {
-            addRef(item.url || item.path || item.fileUrl);
-          }
-        }
-      }
+  [...dossiers,...versions,...attachments].forEach(add);
+  const orphanFiles=[];
+  let removedOrphanFiles=0;
+  for(const directory of ['docx','pdf','signed','evidence']){
+    const root=path.join(config.uploadDir,directory);
+    if(!fs.existsSync(root))continue;
+    for(const entry of fs.readdirSync(root,{withFileTypes:true})){
+      if(!entry.isFile()||entry.name.startsWith('.'))continue;
+      const file=path.join(root,entry.name);
+      if(referenced.has(path.normalize(file))||dossiers.some(d=>entry.name.startsWith(d.code+'-')))continue;
+      if(Date.now()-fs.statSync(file).mtimeMs<minAgeMs)continue;
+      orphanFiles.push('/uploads/'+directory+'/'+entry.name);
+      if(apply){fs.unlinkSync(file);removedOrphanFiles++;}
     }
   }
-
-  return referenced;
+  return {dryRun:!apply,removedDbRecords:0,removedOrphanFiles,removedFilesList:apply?orphanFiles:[],orphanFiles,activeDossierCount:dossiers.length};
 }
-
-/**
- * Kiểm tra xem một bản ghi hồ sơ có hợp lệ hay là bản nháp lỗi / dữ liệu test rác
- */
-function isValidDossierRecord(d) {
-  if (!d || typeof d !== 'object') return false;
-  if (!d.id || !d.code) return false;
-  if (!String(d.code).startsWith('CGCN-')) return false;
-
-  // Loại bỏ bản ghi seed test cũ có review_notes = 'sai tên' hoặc id = 'dos-2026-0001'
-  if (d.id === 'dos-2026-0001' || d.review_notes === 'sai tên') {
-    return false;
-  }
-
-  const formData = d.form_data || d.formData;
-  if (!formData || (typeof formData === 'object' && Object.keys(formData).length === 0)) {
-    return false;
-  }
-
-  return true;
-}
-
-/**
- * Dọn dẹp toàn diện Database Rác & File Rác Lưu Trữ (Database & Storage Garbage Collection)
- */
-export async function cleanupGarbageData() {
-  let removedDbRecords = 0;
-  let removedOrphanFiles = 0;
-  const removedFilesList = [];
-
-  // 1. Dọn dẹp trên MySQL (nếu đang kết nối)
-  let activeDossiers = [];
-  if (isDbConnected()) {
-    try {
-      const delRes = await query(`
-        DELETE FROM dossiers
-        WHERE code IS NULL
-           OR code NOT LIKE 'CGCN-%'
-           OR id = 'dos-2026-0001'
-           OR review_notes = 'sai tên'
-           OR status = 'DRAFT'
-      `);
-      removedDbRecords += delRes?.affectedRows || 0;
-      activeDossiers = await query(`SELECT * FROM dossiers`);
-    } catch (err) {
-      console.warn(`[GarbageCleanup] Cảnh báo khi dọn MySQL: ${err.message}`);
-    }
-  }
-
-  // 2. Dọn dẹp trên In-Memory Store
-  const beforeCount = mockStore.dossiers.length;
-  mockStore.dossiers = mockStore.dossiers.filter((d) => isValidDossierRecord(d));
-  removedDbRecords += beforeCount - mockStore.dossiers.length;
-
-  const allValidDossiers = [...activeDossiers, ...mockStore.dossiers];
-  const referencedSet = collectReferencedFiles(allValidDossiers);
-
-  // 3. Quét thư mục uploads và xóa mọi file mồ côi (orphaned files)
-  for (const sub of UPLOAD_SUBDIRS) {
-    const dirPath = path.join(UPLOADS_ROOT, sub);
-    if (!fs.existsSync(dirPath)) continue;
-
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isFile()) continue;
-      if (entry.name === '.gitkeep') continue;
-
-      const fullPath = path.join(dirPath, entry.name);
-      const normalized = path.normalize(fullPath).toLowerCase();
-
-      if (!referencedSet.has(normalized)) {
-        try {
-          fs.unlinkSync(fullPath);
-          removedOrphanFiles++;
-          removedFilesList.push(`/uploads/${sub}/${entry.name}`);
-        } catch (err) {
-          console.warn(`[GarbageCleanup] Không thể xóa file mồ côi ${fullPath}: ${err.message}`);
-        }
-      }
-    }
-  }
-
-  return {
-    removedDbRecords,
-    removedOrphanFiles,
-    removedFilesList,
-    activeDossierCount: allValidDossiers.length,
-  };
-}
-
-export default {
-  resolveUploadAbsolutePath,
-  deletePhysicalFile,
-  cleanupGarbageData,
-};
-
+export default {resolveUploadAbsolutePath,deletePhysicalFile,cleanupGarbageData};

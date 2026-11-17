@@ -1,83 +1,49 @@
+import { randomUUID } from 'node:crypto';
+import { OAuth2Client } from 'google-auth-library';
 import { userRepository } from '../repositories/userRepository.js';
+import { query } from '../utils/db.js';
+import { verifyPassword } from '../utils/passwords.js';
 import { config } from '../utils/config.js';
 
+const google = new OAuth2Client(config.googleClientId);
 export const userService = {
-  // Lấy tất cả người dùng
-  async getAll() {
-    return userRepository.findAll();
-  },
-
-  // Lấy người dùng theo ID
-  async getById(id) {
-    return userRepository.findById(id);
-  },
-
-  // Tìm người dùng theo Email
-  async getByEmail(email) {
-    return userRepository.findByEmail(email);
-  },
-
-  // Lưu hoặc cập nhật thông tin người dùng
-  async save(user) {
-    return userRepository.save(user);
-  },
-
-  // Xử lý đăng nhập phân quyền (Admin: heykagvip@gmail.com, toanhkhai12345@gmail.com, các Gmail khác: User)
-  async login(email, extraData = {}) {
-    if (!email) {
-      throw new Error('Vui lòng nhập địa chỉ email');
+  getAll: () => userRepository.findAll(),
+  getById: id => userRepository.findById(id),
+  getByEmail: email => userRepository.findByEmail(email),
+  save: user => userRepository.save(user),
+  async login(email, credentials = {}) {
+    let cleanEmail = String(email || '').trim().toLowerCase();
+    let profile;
+    if (credentials.credential) {
+      if (!config.googleClientId) throw new Error('Chưa cấu hình Google Client ID trên máy chủ.');
+      const ticket = await google.verifyIdToken({ idToken: credentials.credential, audience: config.googleClientId });
+      const payload = ticket.getPayload();
+      if (!payload?.email || payload.email_verified !== true) throw new Error('Tài khoản Google chưa xác minh email.');
+      cleanEmail = payload.email.toLowerCase();
+      profile = { name: payload.name, avatar: payload.picture };
     }
-
-    const cleanEmail = email.trim().toLowerCase();
-    const isAdmin = config.adminEmails.includes(cleanEmail) || cleanEmail.startsWith('admin@') || cleanEmail.includes('admin');
-
-    const found = await userRepository.findByEmail(cleanEmail);
-    if (found) {
-      // Đảm bảo tôn trọng phân quyền đã được Admin gán
-      const correctRole = isAdmin ? 'ADMIN' : 'USER';
-      let needsSave = false;
-      if (found.role !== correctRole) {
-        found.role = correctRole;
-        needsSave = true;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) throw new Error('Địa chỉ email không hợp lệ.');
+    let user = await userRepository.findByEmail(cleanEmail);
+    if (!profile) {
+      const [record] = await query('SELECT c.password_hash,u.is_active FROM users u LEFT JOIN auth_credentials c ON c.user_id=u.id WHERE LOWER(u.email)=?', [cleanEmail]);
+      if (!record || !record.is_active || !(await verifyPassword(credentials.password, record.password_hash))) throw new Error('Email hoặc mật khẩu không đúng. Tài khoản chưa có mật khẩu có thể đăng nhập Google hoặc liên hệ quản trị viên.');
+    } else if (!user) {
+      const isAdmin = config.adminEmails.includes(cleanEmail);
+      try {
+        user = await userRepository.create({
+          id: 'usr-' + randomUUID(), email: cleanEmail, name: profile.name || cleanEmail.split('@')[0],
+          avatar: profile.avatar || '', role: isAdmin ? 'ADMIN' : 'USER',
+          title: isAdmin ? 'Quản trị viên Hệ thống' : 'Cán bộ / Giảng viên',
+          department: isAdmin ? 'Phòng Khoa học Công nghệ' : 'Trường Đại học Y Dược Cần Thơ',
+        });
+      } catch (error) {
+        if (error.code !== 'ER_DUP_ENTRY') throw error;
+        user = await userRepository.findByEmail(cleanEmail);
       }
-      if (extraData.name && (!found.name || found.name === 'Người dùng Thử nghiệm')) {
-        found.name = extraData.name;
-        needsSave = true;
-      }
-      if (extraData.avatar && !found.avatar) {
-        found.avatar = extraData.avatar;
-        needsSave = true;
-      }
-      if (isAdmin && !found.department) {
-        found.title = 'Quản trị viên Hệ thống';
-        found.department = 'Phòng Khoa học Công nghệ';
-        needsSave = true;
-      }
-      if (needsSave) {
-        await userRepository.save(found);
-      }
-      return found;
     }
-
-    // Tự động tạo tài khoản khi đăng nhập lần đầu
-    const username = cleanEmail.split('@')[0];
-    const newUser = {
-      id: `usr-${username}-${Date.now().toString().slice(-4)}`,
-      name:
-        extraData.name ||
-        (isAdmin
-          ? 'Quản trị viên Hệ thống'
-          : username
-              .split(/[._-]/)
-              .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-              .join(' ') || 'Người dùng Google'),
-      email: cleanEmail,
-      role: isAdmin ? 'ADMIN' : 'USER',
-      title: isAdmin ? 'Quản trị viên Hệ thống' : 'Cán bộ / Giảng viên',
-      department: isAdmin ? 'Phòng Khoa học Công nghệ' : 'Trường Đại học Y Dược Cần Thơ',
-      avatar: extraData.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${username}`,
-    };
-
-    return userRepository.create(newUser);
+    const [state] = await query('SELECT is_active FROM users WHERE id=?', [user.id]);
+    if (!state?.is_active) throw new Error('Tài khoản đã bị vô hiệu hóa.');
+    // Existing database roles are authoritative, including roles assigned by an administrator.
+    return user;
   },
 };

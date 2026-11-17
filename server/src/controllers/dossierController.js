@@ -1,16 +1,20 @@
+import fs from 'node:fs';
 import { dossierService } from '../services/dossierService.js';
 import { ApiResponse } from '../dtos/apiResponse.js';
 import { cleanupGarbageData } from '../utils/cleanupGarbageData.js';
 import { requireAdmin } from '../middlewares/authMiddleware.js';
+import { ownsDossier } from '../middlewares/dossierAccess.js';
+import { canAccessUpload } from '../middlewares/fileAccess.js';
 
 export const dossierController = {
   // GET /api/dossiers & GET /api/applications
-  async getAll(_req, res) {
+  async getAll(req, res) {
     try {
-      const dossiers = await dossierService.getAll();
+      const all = await dossierService.getAll();
+      const dossiers = req.user.role === 'ADMIN' ? all : all.filter(dossier => ownsDossier(req.user,dossier));
       return ApiResponse.success(dossiers, 'Lấy danh sách hồ sơ thành công').send(res);
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 
@@ -24,7 +28,7 @@ export const dossierController = {
       }
       return ApiResponse.success(dossier, 'Lấy chi tiết hồ sơ thành công').send(res);
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 
@@ -63,14 +67,14 @@ export const dossierController = {
           formData: payloadForm,
           formData1a: formData1a || form_data_1a,
           formData2a: formData2a || form_data_2a,
-          status_1a,
-          status_2a,
+          status_1a: req.user.role === 'ADMIN' ? status_1a : 'PENDING',
+          status_2a: req.user.role === 'ADMIN' ? status_2a : 'PENDING',
           ten_de_tai,
           truong_don_vi,
           signature_config: signature_config || signatureConfig,
           status,
         },
-        user || req.user
+        req.user
       );
 
       return ApiResponse.success(
@@ -79,7 +83,7 @@ export const dossierController = {
         201
       ).send(res);
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 
@@ -107,16 +111,16 @@ export const dossierController = {
       const updated = await dossierService.returnForRevision(
         id,
         note,
-        adminUser || req.user,
+        req.user,
         { status_1a, status_2a, target_form: targetForm, rejected_target: targetForm }
       );
 
       return ApiResponse.success(
         updated,
-        'Đã chuyển trạng thái đơn sang "Trả về sửa lỗi" (RETURNED_FOR_REVISION) và gửi email kèm gợi ý sửa chữa cho Thầy/Cô.'
+        'Đã chuyển trạng thái đơn sang "Trả về sửa lỗi" (RETURNED_FOR_REVISION) và ghi nhận thông báo email kèm gợi ý sửa chữa cho Thầy/Cô.'
       ).send(res);
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 
@@ -142,7 +146,7 @@ export const dossierController = {
       const updated = await dossierService.resubmit1a(
         id,
         payload1a,
-        user || req.user,
+        req.user,
         { ten_de_tai, truong_don_vi }
       );
 
@@ -151,7 +155,7 @@ export const dossierController = {
         `Nộp lại Biểu mẫu 1a thành công (Phiên bản v${updated.current_version}). Biểu mẫu 2a giữ nguyên phiên bản đã nộp.`
       ).send(res);
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 
@@ -175,7 +179,7 @@ export const dossierController = {
       const updated = await dossierService.resubmit2a(
         id,
         payload2a,
-        user || req.user
+        req.user
       );
 
       return ApiResponse.success(
@@ -183,7 +187,7 @@ export const dossierController = {
         `Nộp lại Biểu mẫu 2a thành công (Phiên bản v${updated.current_version}). Biểu mẫu 1a giữ nguyên phiên bản đã nộp.`
       ).send(res);
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 
@@ -221,7 +225,7 @@ export const dossierController = {
       const updated = await dossierService.resubmitDossier(
         id,
         payloadForm,
-        user || req.user,
+        req.user,
         {
           formData1a: formData1a || form_data_1a,
           formData2a: formData2a || form_data_2a,
@@ -236,7 +240,7 @@ export const dossierController = {
         `Nộp lại hồ sơ thành công (Phiên bản v${updated.current_version}). Đã dọn file nháp cũ và kết xuất lại bộ file Word + PDF mới nhất.`
       ).send(res);
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 
@@ -245,6 +249,8 @@ export const dossierController = {
     try {
       const { id } = req.params;
       const body = req.body || {};
+      const userFields = ['formData','form_data','formData1a','form_data_1a','formData2a','form_data_2a','target_form','rejected_target','ten_de_tai','truong_don_vi','user'];
+      if (req.user.role !== 'ADMIN' && Object.keys(body).some(key => !userFields.includes(key))) return ApiResponse.error('Bạn không có quyền thay đổi các trường này.',403).send(res);
       const { formData, form_data } = body;
       if (formData || form_data) {
         return dossierController.resubmit(req, res);
@@ -271,10 +277,10 @@ export const dossierController = {
         if (!allowed) return;
       }
 
-      const updated = await dossierService.updateFields(id, body);
+      const updated = await dossierService.updateFields(id, body, req.user);
       return ApiResponse.success(updated, 'Cập nhật thông tin hồ sơ thành công').send(res);
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 
@@ -301,17 +307,17 @@ export const dossierController = {
         id,
         Boolean(isValid),
         note,
-        adminUser || req.user,
+        req.user,
         { status_1a, status_2a, target_form: targetForm, rejected_target: targetForm }
       );
 
       const message = isValid
-        ? 'Đã duyệt hồ sơ hợp lệ (VALIDATED) và gửi email kèm file PDF chuẩn.'
+        ? 'Đã duyệt hồ sơ hợp lệ (VALIDATED) và ghi nhận thông báo email kèm file PDF chuẩn.'
         : 'Đã trả về sửa lỗi (RETURNED_FOR_REVISION) kèm gợi ý chỗ sai cho Thầy/Cô.';
 
       return ApiResponse.success(updated, message).send(res);
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 
@@ -324,15 +330,15 @@ export const dossierController = {
       const updated = await dossierService.approveApplication(
         id,
         reviewNotes || 'Hồ sơ đã được duyệt hợp lệ.',
-        adminUser || req.user
+        req.user
       );
 
       return ApiResponse.success(
         updated,
-        `Hồ sơ đã hợp lệ (VALIDATED - Phiên bản v${updated.current_version}). Hệ thống đã gửi email SMTP đính kèm trực tiếp file PDF chuẩn mới nhất đến Thầy/Cô.`
+        `Hồ sơ đã hợp lệ (VALIDATED - Phiên bản v${updated.current_version}). Hệ thống đã ghi nhận thông báo email đính kèm trực tiếp file PDF chuẩn mới nhất đến Thầy/Cô.`
       ).send(res);
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 
@@ -341,6 +347,7 @@ export const dossierController = {
     try {
       const { id } = req.params;
       let facultySignedPdfUrl = req.body.facultySignedPdfUrl;
+      if (facultySignedPdfUrl && !(await canAccessUpload(req.user,facultySignedPdfUrl))) return ApiResponse.error('Tệp chưa được tải lên hoặc không thuộc quyền truy cập.',400).send(res);
       let evidenceFiles = [];
 
       if (req.body.evidenceFiles) {
@@ -354,6 +361,7 @@ export const dossierController = {
         }
       }
 
+      for (const item of evidenceFiles) { if (!item.url || !(await canAccessUpload(req.user,item.url))) return ApiResponse.error('Tệp minh chứng không hợp lệ.',400).send(res); }
       if (req.files && Array.isArray(req.files) && req.files.length > 0) {
         for (const file of req.files) {
           const isPdf = file.mimetype === 'application/pdf';
@@ -363,22 +371,17 @@ export const dossierController = {
 
           if (isPdf && !facultySignedPdfUrl) {
             facultySignedPdfUrl = fileUrl;
-          } else {
-            evidenceFiles.push({
+          }
+          evidenceFiles.push({
               name: file.originalname,
               url: fileUrl,
               size: `${(file.size / 1024).toFixed(1)} KB`,
               path: file.path,
             });
-          }
         }
       }
 
-      const user = req.body.user
-        ? typeof req.body.user === 'string'
-          ? JSON.parse(req.body.user)
-          : req.body.user
-        : req.user;
+      const user = req.user;
 
       const updated = await dossierService.uploadFacultySignature(
         id,
@@ -389,10 +392,10 @@ export const dossierController = {
 
       return ApiResponse.success(
         updated,
-        'Đã tải lên bản ký phòng ban và minh chứng. Trạng thái đơn chuyển sang "Chờ duyệt" (PENDING_SIGNED_REVIEW) và đã gửi thông báo cho Cô Admin.'
+        'Đã tải lên bản ký phòng ban và minh chứng. Trạng thái đơn chuyển sang "Chờ duyệt" (PENDING_SIGNED_REVIEW) và đã ghi nhận thông báo gửi cho Cô Admin.'
       ).send(res);
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 
@@ -409,7 +412,7 @@ export const dossierController = {
       const updated = await dossierService.submitToRector(
         id,
         note,
-        adminUser || req.user
+        req.user
       );
 
       return ApiResponse.success(
@@ -417,7 +420,7 @@ export const dossierController = {
         'Đã chuyển trạng thái đơn sang "Chờ ký Hiệu trưởng" (WAITING_RECTOR_SIGNATURE).'
       ).send(res);
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 
@@ -430,7 +433,8 @@ export const dossierController = {
     try {
       const { id } = req.params;
       let finalPdfUrl = req.body?.finalPdfUrl;
-      let finalPdfPath = req.body?.finalPdfPath;
+      let finalPdfPath;
+      if (finalPdfUrl && !(await canAccessUpload(req.user,finalPdfUrl))) return ApiResponse.error('Tệp không hợp lệ.',400).send(res);
       const decisionNumber = req.body?.decisionNumber;
       const decisionDate = req.body?.decisionDate;
 
@@ -442,11 +446,7 @@ export const dossierController = {
         finalPdfPath = req.files[0].path;
       }
 
-      const adminUser = req.body?.adminUser
-        ? typeof req.body.adminUser === 'string'
-          ? JSON.parse(req.body.adminUser)
-          : req.body.adminUser
-        : req.user;
+      const adminUser = req.user;
 
       const updated = await dossierService.completeDossier(
         id,
@@ -456,10 +456,10 @@ export const dossierController = {
 
       return ApiResponse.success(
         updated,
-        'Xác nhận "Đã ký và lưu trữ" (SIGNED_ARCHIVED) thành công. Hệ thống đã khóa hồ sơ lưu trữ và gửi email kèm file PDF đã ký cuối cùng cho Thầy/Cô.'
+        'Xác nhận "Đã ký và lưu trữ" (SIGNED_ARCHIVED) thành công. Hệ thống đã khóa hồ sơ lưu trữ và ghi nhận thông báo email kèm file PDF đã ký cuối cùng cho Thầy/Cô.'
       ).send(res);
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 
@@ -472,22 +472,27 @@ export const dossierController = {
     try {
       const { id } = req.params;
       const pdfRes = await dossierService.exportPdf(id, req.body || {});
-      return res.download(pdfRes.filePath, pdfRes.fileName);
+      return res.download(pdfRes.filePath,pdfRes.fileName,error=>{if(pdfRes.temporary)fs.rmSync(pdfRes.filePath,{force:true});if(error&&!res.headersSent)res.status(500).end();});
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 
+  async rollback(req,res) {
+    try { return ApiResponse.success(await dossierService.rollbackVersion(req.params.id,Number(req.body.targetVersionNumber),req.user),'Đã phục hồi dữ liệu từ phiên bản đã chọn.').send(res); }
+    catch(error){return ApiResponse.error(error.message,400).send(res);}
+  },
+
   // POST /api/applications/cleanup-garbage
-  async cleanupGarbage(_req, res) {
+  async cleanupGarbage(req, res) {
     try {
-      const report = await cleanupGarbageData();
+      const report = await cleanupGarbageData({apply:req.body?.apply === true});
       return ApiResponse.success(
         report,
         `Dọn dẹp hoàn tất: Đã xóa ${report.removedDbRecords} bản ghi rác và ${report.removedOrphanFiles} file mồ côi.`
       ).send(res);
     } catch (err) {
-      return ApiResponse.error(err.message, 500).send(res);
+      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },
 };

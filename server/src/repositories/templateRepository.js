@@ -1,13 +1,9 @@
-import { query, isDbConnected } from '../utils/db.js';
+import { query } from '../utils/db.js';
 import { TemplateModel } from '../models/templateModel.js';
-import { mockStore } from '../utils/mockStore.js';
 
 export const templateRepository = {
   // Lấy tất cả biểu mẫu đang hoạt động
   async findAll() {
-    if (!isDbConnected()) {
-      return mockStore.templates.map((t) => TemplateModel.fromRow(t).toObject());
-    }
 
     try {
       const rows = await query(`
@@ -16,21 +12,13 @@ export const templateRepository = {
         ORDER BY code ASC
       `);
 
-      if (!rows || rows.length === 0) {
-        return mockStore.templates.map((t) => TemplateModel.fromRow(t).toObject());
-      }
+      if (!rows || rows.length === 0) return [];
       return rows.map((r) => TemplateModel.fromRow(r).toObject());
-    } catch {
-      return mockStore.templates.map((t) => TemplateModel.fromRow(t).toObject());
-    }
+    } catch (error) { throw error; }
   },
 
   // Lấy biểu mẫu theo ID hoặc Mã
   async findById(id) {
-    if (!isDbConnected()) {
-      const match = mockStore.templates.find((t) => t.id === id || t.code === id);
-      return match ? TemplateModel.fromRow(match).toObject() : null;
-    }
 
     try {
       const rows = await query(`
@@ -39,29 +27,14 @@ export const templateRepository = {
         LIMIT 1
       `, [id, id]);
 
-      if (!rows || rows.length === 0) {
-        const match = mockStore.templates.find((t) => t.id === id || t.code === id);
-        return match ? TemplateModel.fromRow(match).toObject() : null;
-      }
+      if (!rows || rows.length === 0) return null;
       return TemplateModel.fromRow(rows[0]).toObject();
-    } catch {
-      const match = mockStore.templates.find((t) => t.id === id || t.code === id);
-      return match ? TemplateModel.fromRow(match).toObject() : null;
-    }
+    } catch (error) { throw error; }
   },
 
   // Lưu hoặc cập nhật biểu mẫu
   async save(tmpl) {
     const id = tmpl.id || `tmpl_${Date.now()}`;
-    if (!isDbConnected()) {
-      const idx = mockStore.templates.findIndex((t) => t.id === id || t.code === tmpl.code);
-      if (idx !== -1) {
-        mockStore.templates[idx] = { ...mockStore.templates[idx], ...tmpl };
-        return TemplateModel.fromRow(mockStore.templates[idx]).toObject();
-      }
-      mockStore.templates.push({ ...tmpl, id });
-      return TemplateModel.fromRow({ ...tmpl, id }).toObject();
-    }
 
     const fieldsConfig = typeof tmpl.fields === 'object' ? JSON.stringify(tmpl.fields) : (tmpl.fields_config || null);
     try {
@@ -88,14 +61,6 @@ export const templateRepository = {
         tmpl.active !== undefined ? (tmpl.active ? 1 : 0) : 1,
       ]);
       return this.findById(id);
-    } catch {
-      const idx = mockStore.templates.findIndex((t) => t.id === id || t.code === tmpl.code);
-      if (idx !== -1) {
-        mockStore.templates[idx] = { ...mockStore.templates[idx], ...tmpl };
-        return TemplateModel.fromRow(mockStore.templates[idx]).toObject();
-      }
-      mockStore.templates.push({ ...tmpl, id });
-      return TemplateModel.fromRow({ ...tmpl, id }).toObject();
-    }
+    } catch (error) { throw error; }
   },
 };

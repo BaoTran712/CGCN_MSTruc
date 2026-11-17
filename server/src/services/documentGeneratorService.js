@@ -4,11 +4,11 @@ import { fileURLToPath } from 'url';
 import { documentService } from './documentService.js';
 import { generateLockedPdf } from '../utils/pdfService.js';
 import { sanitizeFormPayload } from '../utils/sanitizer.js';
-import { deletePhysicalFile } from '../utils/cleanupGarbageData.js';
+import { config } from '../utils/config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const UPLOADS_DOCX_DIR = path.resolve(__dirname, '../../uploads/docx');
+const UPLOADS_DOCX_DIR = path.join(config.uploadDir, 'docx');
 
 function ensureDocxDir() {
   if (!fs.existsSync(UPLOADS_DOCX_DIR)) {
@@ -37,19 +37,13 @@ export const documentGeneratorService = {
     ensureDocxDir();
 
     const safeCode = String(code || 'CGCN-2026-0001').trim();
+    if (!/^[A-Za-z0-9_-]+$/.test(safeCode)) throw new Error('Mã hồ sơ không hợp lệ.');
     const ver = Number(version) > 0 ? Number(version) : 1;
 
     // 1. Làm sạch toàn bộ dữ liệu đầu vào (loại bỏ null/undefined, thẻ HTML, biến mẫu rác)
     const sanitizedFormData = sanitizeFormPayload(formData);
 
-    // 2. Xóa các file nháp cũ bị thay thế để chống rác lưu trữ
-    if (Array.isArray(previousFiles) && previousFiles.length > 0) {
-      for (const oldFile of previousFiles) {
-        if (oldFile) {
-          deletePhysicalFile(oldFile);
-        }
-      }
-    }
+    // Keep previous versions until an explicit retention cleanup succeeds.
 
     // 3. Sinh file Word (.docx) phiên bản v{ver} bằng cách bơm trực tiếp vào file Template gốc
     const docxFileName = `${safeCode}-v${ver}.docx`;

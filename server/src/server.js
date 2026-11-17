@@ -1,77 +1,22 @@
-import express from 'express';
-import cors from 'cors';
-import { config } from './utils/config.js';
-import { initDb } from './utils/db.js';
-import { cleanupGarbageData } from './utils/cleanupGarbageData.js';
-import apiRoutes from './routes/api.js';
+import { config, validateConfig } from './utils/config.js';
+import { initDb, pool } from './utils/db.js';
+import { createApp } from './app.js';
+import { startMailWorker } from './services/mailQueue.js';
 
-const app = express();
-
-// Middlewares
-app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// Static file uploads (PDF, DOCX, Evidence)
-app.use('/uploads', express.static(config.uploadDir));
-
-// API Routes
-app.use('/api', apiRoutes);
-
-// Root route
-app.get('/', (_req, res) => {
-  res.json({
-    name: 'CTUMP DocuGov Backend Service',
-    description: 'Hệ thống Quản lý Hồ sơ Chuyển giao Công nghệ CTUMP',
-    status: 'Running',
-    endpoints: {
-      applications: '/api/applications',
-      dossiers: '/api/dossiers',
-      templates: '/api/templates',
-      users: '/api/users',
-      status: '/api/status',
-    },
-  });
-});
-
-// Global Error Handler
-app.use((err, _req, res, _next) => {
-  res.status(500).json({
-    success: false,
-    message: err.message || 'Lỗi máy chủ nội bộ',
-  });
-});
-
-import os from 'os';
-
-function getLocalIp() {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-  return 'localhost';
+let server;
+let stopWorker;
+async function shutdown() {
+  await stopWorker?.();
+  if(server)await new Promise(resolve=>server.close(resolve));
+  await pool.end();
 }
-
-// Start Server
-async function start() {
+try {
+  validateConfig();
   await initDb();
-  await cleanupGarbageData();
-
-  const localIp = getLocalIp();
-  app.listen(config.port, '0.0.0.0', () => {
-    console.log(`=======================================================`);
-    console.log(`  CTUMP DocuGov Backend NodeJS Server`);
-    console.log(`  - Local:   http://localhost:${config.port}`);
-    console.log(`  - Network: http://${localIp}:${config.port}`);
-    console.log(`  - Status:  http://${localIp}:${config.port}/api/status`);
-    console.log(`=======================================================`);
-  });
-}
-
-start();
-
-export default app;
+  const app=createApp();
+  server=app.listen(config.port,'0.0.0.0',()=>console.log('CTUMP DocuGov: http://localhost:'+config.port));
+  stopWorker=startMailWorker();
+  server.on('error',async error=>{console.error(error.message);await shutdown();process.exitCode=1;});
+  process.once('SIGINT',()=>shutdown().then(()=>process.exit(0)));
+  process.once('SIGTERM',()=>shutdown().then(()=>process.exit(0)));
+}catch(error){console.error('[Startup]',error.message);await pool.end();process.exitCode=1;}

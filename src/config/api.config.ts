@@ -7,10 +7,9 @@ function getApiBaseUrl(): string {
   if (typeof window !== 'undefined') {
     const envUrl = (import.meta as any).env?.VITE_API_BASE_URL;
     if (envUrl) return envUrl;
-    const hostname = window.location.hostname || 'localhost';
-    return `http://${hostname}:5001/api`;
+    return '/api';
   }
-  return 'http://localhost:5001/api';
+  return '/api';
 }
 
 export const API_BASE_URL: string = getApiBaseUrl();

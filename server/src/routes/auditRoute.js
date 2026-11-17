@@ -8,6 +8,6 @@ const router = Router();
 router.get('/', requireAuth, requireAdmin, auditController.getAll);
 
 // POST /api/audit-logs — Yêu cầu đăng nhập
-router.post('/', requireAuth, auditController.create);
+router.post('/', requireAuth, requireAdmin, auditController.create);
 
 export default router;

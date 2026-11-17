@@ -35,6 +35,10 @@ export class ApiResponse {
    * Tạo phản hồi thất bại (HTTP 400, 404, 500)
    */
   static error(message = 'Đã xảy ra lỗi xử lý', statusCode = 500, errors = null) {
+    if (statusCode >= 500 && process.env.NODE_ENV === 'production') {
+      console.error('[API]',message);
+      message = statusCode === 503 ? 'Cơ sở dữ liệu chưa sẵn sàng. Thao tác chưa được lưu.' : 'Không thể hoàn tất thao tác. Vui lòng thử lại hoặc liên hệ quản trị viên.';
+    }
     return new ApiResponse({
       success: false,
       message,

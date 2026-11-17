@@ -8,7 +8,9 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "db:import": "node scripts/importDb.js",
-    "db:backup": "node scripts/backupDb.js"
+    "db:backup": "node scripts/backupDb.js",
+    "db:migrate": "node scripts/migrateDb.js",
+    "user:password": "node scripts/setPassword.js"
   },
   "dependencies": {
     "@pdf-lib/fontkit": "^1.1.1",

@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { isDbConnected } from '../utils/db.js';
+import { checkDb } from '../utils/db.js';
+import { limitLogin } from '../middlewares/authMiddleware.js';
 import userRoute from './userRoute.js';
 import templateRoute from './templateRoute.js';
 import dossierRoute from './dossierRoute.js';
@@ -8,15 +9,18 @@ import emailRoute from './emailRoute.js';
 import { userController } from '../controllers/userController.js';
 
 const router = Router();
+router.use((_req,res,next) => { res.setHeader('Cache-Control','no-store'); next(); });
 
 // =========================================================================
 // 1. Hệ thống & Giám sát kết nối (Health Check)
 // =========================================================================
-router.get('/status', (req, res) => {
+router.get('/live', (_req,res) => res.json({success:true}));
+router.get('/status', async (req, res) => {
+  try { await checkDb(); } catch { return res.status(503).json({success:false,databaseConnected:false,message:'Cơ sở dữ liệu hoặc schema chưa sẵn sàng.'}); }
   res.json({
     success: true,
     message: 'CTUMP CGCN Backend API đang hoạt động',
-    databaseConnected: isDbConnected(),
+    databaseConnected: true,
     timestamp: new Date().toISOString(),
   });
 });
@@ -33,6 +37,6 @@ router.use('/audit-logs', auditRoute);
 router.use('/email-logs', emailRoute);
 
 // Alias đăng nhập
-router.post('/auth/login', userController.login);
+router.post('/auth/login', limitLogin, userController.login);
 
 export default router;

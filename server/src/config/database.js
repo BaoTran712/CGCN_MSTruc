@@ -1,201 +1,100 @@
+import './env.js';
 import mysql from 'mysql2/promise';
-import dotenv from 'dotenv';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Tải biến môi trường từ server/.env hoặc fallback
-const serverEnvPath = path.resolve(__dirname, '../../.env');
-const fallbackEnvPath = path.resolve(__dirname, '../../../.env');
-if (fs.existsSync(serverEnvPath)) {
-  dotenv.config({ path: serverEnvPath });
-} else if (fs.existsSync(fallbackEnvPath)) {
-  dotenv.config({ path: fallbackEnvPath });
-} else {
-  dotenv.config();
-}
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { createHash } from 'node:crypto';
+import { assertSchema } from './schema.js';
 
 export const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '3306', 10),
+  port: Number(process.env.DB_PORT || 3306),
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'ctump_docugov',
   waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
+  connectionLimit: Number(process.env.DB_CONNECTION_LIMIT || 10),
+  queueLimit: 100,
+  connectTimeout: 5000,
+  timezone: 'Z',
+  charset: 'utf8mb4',
   enableKeepAlive: true,
-  keepAliveInitialDelay: 0,
 };
-
-// Khởi tạo MySQL Connection Pool bằng mysql2/promise
 export const pool = mysql.createPool(dbConfig);
+pool.on('connection', connection => connection.query("SET time_zone = '+00:00'"));
+const transactions = new AsyncLocalStorage();
+let connected = false;
 
-let isConnected = false;
-
-export async function initDb() {
+export async function checkDb() {
+  const connection = await pool.getConnection();
   try {
-    let conn;
-    try {
-      conn = await pool.getConnection();
-      await conn.ping();
-      conn.release();
-    } catch (dbErr) {
-      // Nếu lỗi do database chưa tồn tại -> tự động tạo database & nạp schema
-      if (
-        dbErr.code === 'ER_BAD_DB_ERROR' ||
-        (dbErr.message && dbErr.message.includes('Unknown database'))
-      ) {
-        console.log(
-          `[Database] Database '${dbConfig.database}' chưa tồn tại. Đang tự động khởi tạo...`
-        );
-        const rootConn = await mysql.createConnection({
-          host: dbConfig.host,
-          port: dbConfig.port,
-          user: dbConfig.user,
-          password: dbConfig.password,
-          multipleStatements: true,
-        });
-        await rootConn.query(
-          `CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`
-        );
-        await rootConn.query(`USE \`${dbConfig.database}\`;`);
-
-        // Ưu tiên nạp ctump_docugov_backup.sql (chứa đầy đủ dữ liệu hiện tại), fallback về schema.sql
-        const backupPath = path.resolve(__dirname, '../../ctump_docugov_backup.sql');
-        const schemaPath = path.resolve(__dirname, '../../schema.sql');
-        const sqlFileToLoad = fs.existsSync(backupPath) ? backupPath : schemaPath;
-        if (fs.existsSync(sqlFileToLoad)) {
-          const schemaSql = fs.readFileSync(sqlFileToLoad, 'utf8');
-          await rootConn.query(schemaSql);
-          console.log(
-            `[Database] Đã tự động nạp cấu trúc bảng và dữ liệu từ ${path.basename(sqlFileToLoad)} thành công!`
-          );
-        }
-        await rootConn.end();
-
-        // Thử kết nối lại với pool
-        conn = await pool.getConnection();
-        await conn.ping();
-        conn.release();
-      } else {
-        throw dbErr;
-      }
-    }
-
-    // Kiểm tra xem bảng dossiers đã được nạp chưa, nếu chưa có bảng thì tự động nạp schema.sql
-    try {
-      const [tableCheck] = await pool.query("SHOW TABLES LIKE 'dossiers'");
-      if (!tableCheck || tableCheck.length === 0) {
-        console.log(`[Database] Bảng 'dossiers' chưa tồn tại. Đang tự động nạp schema.sql...`);
-        const schemaPath = path.resolve(__dirname, '../../schema.sql');
-        if (fs.existsSync(schemaPath)) {
-          const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-          const rootConn = await mysql.createConnection({
-            host: dbConfig.host,
-            port: dbConfig.port,
-            user: dbConfig.user,
-            password: dbConfig.password,
-            multipleStatements: true,
-          });
-          await rootConn.query(schemaSql);
-          await rootConn.end();
-          console.log(`[Database] Đã tự động khởi tạo cấu trúc bảng chuẩn từ schema.sql!`);
-        }
-      } else {
-        // Tự động bổ sung các cột hỗ trợ trả về/nộp lại độc lập từng biểu mẫu (1a / 2a) nếu bảng cũ chưa có
-        const requiredCols = [
-          {
-            name: 'rejected_target',
-            ddl: "ALTER TABLE `dossiers` ADD COLUMN `rejected_target` VARCHAR(20) NULL DEFAULT NULL COMMENT 'Biểu mẫu mục tiêu bị trả về: 1a, 2a, both' AFTER `status_2a`",
-          },
-          {
-            name: 'rejection_reason_1a',
-            ddl: "ALTER TABLE `dossiers` ADD COLUMN `rejection_reason_1a` TEXT NULL COMMENT 'Lý do trả về riêng cho Biểu mẫu 1a' AFTER `rejected_target`",
-          },
-          {
-            name: 'rejection_reason_2a',
-            ddl: "ALTER TABLE `dossiers` ADD COLUMN `rejection_reason_2a` TEXT NULL COMMENT 'Lý do trả về riêng cho Biểu mẫu 2a' AFTER `rejection_reason_1a`",
-          },
-        ];
-        for (const col of requiredCols) {
-          try {
-            const [colCheck] = await pool.query(`SHOW COLUMNS FROM \`dossiers\` LIKE ?`, [col.name]);
-            if (!colCheck || colCheck.length === 0) {
-              await pool.query(col.ddl);
-              console.log(`[Database] Đã tự động thêm cột '${col.name}' vào bảng dossiers.`);
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
-    } catch (checkErr) {
-      console.warn(`[Database] Không thể kiểm tra bảng: ${checkErr.message}`);
-    }
-
-    isConnected = true;
-    console.log(
-      `[Database] Đã kết nối MySQL pool thành công tới database: ${dbConfig.database} (${dbConfig.host}:${dbConfig.port})`
-    );
-    return pool;
-  } catch (err) {
-    isConnected = false;
-    console.warn(`[Database] MySQL chưa được khởi động (${err.message}).`);
-    console.warn(
-      `[Database] Đã tự động kích hoạt In-Memory Store dự phòng: Toàn bộ API hoạt động bình thường.`
-    );
-    return null;
+    await connection.ping();
+    await assertSchema(connection);
+    connected = true;
+    return true;
+  } catch (error) {
+    connected = false;
+    throw error;
+  } finally {
+    connection.release();
   }
 }
-
-export function getPool() {
+export async function initDb() {
+  await checkDb();
   return pool;
 }
+export const isDbConnected = () => connected;
+export const getPool = () => pool;
+export const getConnection = () => pool.getConnection();
 
-export function isDbConnected() {
-  return isConnected;
-}
-
-export async function query(sql, params = []) {
-  if (!isConnected) {
-    return [];
-  }
+async function run(method, sql, params) {
   try {
-    const [rows] = await pool.query(sql, params);
-    return rows;
-  } catch (err) {
-    if (err.code === 'ECONNREFUSED') {
-      isConnected = false;
-      console.warn('[Database] Mất kết nối MySQL (ECONNREFUSED). Chuyển sang In-Memory Store.');
-      return [];
-    }
-    throw err;
-  }
-}
-
-export async function execute(sql, params = []) {
-  if (!isConnected) {
-    return [{ affectedRows: 0, insertId: 0 }];
-  }
-  try {
-    const [result] = await pool.execute(sql, params);
+    const [result] = await (transactions.getStore()?.connection || pool)[method](sql, params);
+    connected = true;
     return result;
-  } catch (err) {
-    if (err.code === 'ECONNREFUSED') {
-      isConnected = false;
-      console.warn('[Database] Mất kết nối MySQL (ECONNREFUSED). Chuyển sang In-Memory Store.');
-      return [{ affectedRows: 0, insertId: 0 }];
-    }
-    throw err;
+  } catch (error) {
+    if (['ECONNREFUSED', 'ETIMEDOUT', 'PROTOCOL_CONNECTION_LOST', 'ECONNRESET'].includes(error.code)) connected = false;
+    throw error;
   }
 }
+export const query = (sql, params = []) => run('query', sql, params);
+export const execute = (sql, params = []) => run('execute', sql, params);
 
-export async function getConnection() {
-  return await pool.getConnection();
+export async function transaction(work) {
+  if (transactions.getStore()) return work();
+  const connection = await pool.getConnection();
+  const pending = [];
+  const state = { connection, pending, locks: new Set() };
+  let result;
+  try {
+    await connection.beginTransaction();
+    result = await transactions.run(state, work);
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    for (const name of state.locks) await connection.query('SELECT RELEASE_LOCK(?)', [name]);
+    connection.release();
+  }
+  // External effects must not run before the database commit succeeds.
+  for (const callback of pending) {
+    try { await callback(); } catch (error) { console.error('[afterCommit]', error.message); }
+  }
+  return result;
 }
-
+export function afterCommit(callback) {
+  const state = transactions.getStore();
+  if (state) { state.pending.push(callback); return Promise.resolve(); }
+  return callback();
+}
+export async function withDossierLock(id, work) {
+  return transaction(async () => {
+    const state = transactions.getStore();
+    const name = createHash('sha256').update(dbConfig.database + ':dossier:' + id).digest('hex');
+    if (state.locks.has(name)) return work();
+    const [lock] = await query('SELECT GET_LOCK(?, 30) AS acquired', [name]);
+    if (Number(lock.acquired) !== 1) throw new Error('Hồ sơ đang được xử lý. Vui lòng thử lại.');
+    state.locks.add(name);
+    return work();
+  });
+}
 export default pool;

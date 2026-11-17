@@ -1,3 +1,4 @@
+import { authorizedFetch } from '../services/api';
 import { saveAs } from 'file-saver';
 import { Dossier, WordTemplate } from '../types';
 import { API_BASE_URL } from '../config/api.config';
@@ -33,7 +34,7 @@ export async function generateAndDownloadPdf(
 
   try {
     // 1. Gọi Backend API lấy bản PDF chuẩn khớp 100% với dữ liệu formData mới nhất & cấu hình duyệt của Admin
-    const response = await fetch(`${API_BASE_URL}/applications/${encodeURIComponent(dossier.id)}/export-pdf`, {
+    const response = await authorizedFetch(`${API_BASE_URL}/applications/${encodeURIComponent(dossier.id)}/export-pdf`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -65,18 +66,17 @@ export async function generateAndDownloadPdf(
   // 2. Tải trực tiếp từ đường dẫn file PDF tương ứng với từng mẫu (1a hoặc 2a) trên server
   const formSpecificServerUrl = `/uploads/pdf/${dossier.code}-${isMau2a ? '2a' : '1a'}-v${ver}.pdf`;
   const existingUrl =
-    formSpecificServerUrl ||
     dossier.final_signed_pdf_path ||
     dossier.final_pdf_url ||
     dossier.approved_pdf_path ||
     dossier.generated_pdf_path ||
-    dossier.precheck_pdf_url;
+    dossier.precheck_pdf_url || formSpecificServerUrl;
 
   if (existingUrl && existingUrl.endsWith('.pdf')) {
     const fullUrl = existingUrl.startsWith('http')
       ? existingUrl
       : `${API_BASE_URL.replace(/\/api$/, '')}${existingUrl}`;
-    const res = await fetch(fullUrl);
+    const res = await authorizedFetch(fullUrl);
     if (res.ok) {
       const blob = await res.blob();
       saveAs(new Blob([blob], { type: 'application/pdf' }), fileName);

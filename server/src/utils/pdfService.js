@@ -18,10 +18,12 @@ async function loadFonts(pdfDoc) {
   try {
     pdfDoc.registerFontkit(fontkit);
 
-    const timesPath = 'C:\\Windows\\Fonts\\times.ttf';
-    const timesBoldPath = 'C:\\Windows\\Fonts\\timesbd.ttf';
-    const timesItalicPath = 'C:\\Windows\\Fonts\\timesi.ttf';
-    const timesBoldItalicPath = 'C:\\Windows\\Fonts\\timesbi.ttf';
+    const directories=[process.env.FONT_DIR,'C:/Windows/Fonts','/usr/share/fonts/truetype/liberation2','/usr/share/fonts/truetype/liberation','/usr/share/fonts/truetype/dejavu'].filter(Boolean);
+    const families=[['times.ttf','timesbd.ttf','timesi.ttf','timesbi.ttf'],['LiberationSerif-Regular.ttf','LiberationSerif-Bold.ttf','LiberationSerif-Italic.ttf','LiberationSerif-BoldItalic.ttf'],['DejaVuSerif.ttf','DejaVuSerif-Bold.ttf','DejaVuSerif-Italic.ttf','DejaVuSerif-BoldItalic.ttf']];
+    let fonts;
+    for(const directory of directories){for(const family of families){const candidates=family.map(name=>path.join(directory,name));if(candidates.every(file=>fs.existsSync(file))){fonts=candidates;break;}}if(fonts)break;}
+    if(!fonts)throw new Error('Không tìm thấy font hỗ trợ tiếng Việt. Cấu hình FONT_DIR hoặc cài fonts-liberation.');
+    const [timesPath,timesBoldPath,timesItalicPath,timesBoldItalicPath]=fonts;
 
     if (fs.existsSync(timesPath) && fs.existsSync(timesBoldPath)) {
       const regular = await pdfDoc.embedFont(fs.readFileSync(timesPath));
@@ -1143,6 +1145,7 @@ export async function generateLockedPdf(
 ) {
   const formData = sanitizeFormPayload(rawFormData || {});
   const fileName = customFileName || `${dossierCode}-locked.pdf`;
+  if (!/^[A-Za-z0-9_.-]+$/.test(fileName)) throw new Error('Tên tệp PDF không hợp lệ.');
   const filePath = path.join(pdfDir, fileName);
 
   const pdfDoc = await PDFDocument.create();

@@ -1,13 +1,10 @@
-import { query, execute, isDbConnected } from '../utils/db.js';
+import { randomUUID } from 'node:crypto';
+import { query, execute } from '../utils/db.js';
 import { UserModel } from '../models/userModel.js';
-import { mockStore } from '../utils/mockStore.js';
 
 export const userRepository = {
   // Lấy tất cả người dùng
   async findAll() {
-    if (!isDbConnected()) {
-      return mockStore.users.map((u) => UserModel.fromRow(u).toObject());
-    }
 
     try {
       const rows = await query(`
@@ -17,80 +14,39 @@ export const userRepository = {
         ORDER BY u.role DESC, u.name ASC
       `);
 
-      if (!rows || rows.length === 0) {
-        return mockStore.users.map((u) => UserModel.fromRow(u).toObject());
-      }
+      if (!rows || rows.length === 0) return [];
       return rows.map((r) => UserModel.fromRow(r).toObject());
-    } catch {
-      return mockStore.users.map((u) => UserModel.fromRow(u).toObject());
-    }
+    } catch (error) { throw error; }
   },
 
   // Tìm người dùng theo Email
   async findByEmail(email) {
-    if (!isDbConnected()) {
-      const match = mockStore.users.find(
-        (u) => u.email.toLowerCase() === String(email).toLowerCase()
-      );
-      return match ? UserModel.fromRow(match).toObject() : null;
-    }
 
     try {
       const rows = await query(`
         SELECT * FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1
       `, [email]);
 
-      if (!rows || rows.length === 0) {
-        const match = mockStore.users.find(
-          (u) => u.email.toLowerCase() === String(email).toLowerCase()
-        );
-        return match ? UserModel.fromRow(match).toObject() : null;
-      }
+      if (!rows || rows.length === 0) return null;
       return UserModel.fromRow(rows[0]).toObject();
-    } catch {
-      const match = mockStore.users.find(
-        (u) => u.email.toLowerCase() === String(email).toLowerCase()
-      );
-      return match ? UserModel.fromRow(match).toObject() : null;
-    }
+    } catch (error) { throw error; }
   },
 
   // Tìm theo ID
   async findById(id) {
-    if (!isDbConnected()) {
-      const match = mockStore.users.find((u) => u.id === id);
-      return match ? UserModel.fromRow(match).toObject() : null;
-    }
 
     try {
       const rows = await query(`
         SELECT * FROM users WHERE id = ? LIMIT 1
       `, [id]);
 
-      if (!rows || rows.length === 0) {
-        const match = mockStore.users.find((u) => u.id === id);
-        return match ? UserModel.fromRow(match).toObject() : null;
-      }
+      if (!rows || rows.length === 0) return null;
       return UserModel.fromRow(rows[0]).toObject();
-    } catch {
-      const match = mockStore.users.find((u) => u.id === id);
-      return match ? UserModel.fromRow(match).toObject() : null;
-    }
+    } catch (error) { throw error; }
   },
 
   // Tạo người dùng mới
   async create(user) {
-    if (!isDbConnected()) {
-      const newUser = {
-        ...user,
-        id: user.id || `usr-${Date.now()}`,
-        role: user.role || 'USER',
-        title: user.title || 'Cán bộ / Giảng viên',
-        department: user.department || 'Trường Đại học Y Dược Cần Thơ',
-      };
-      mockStore.users.push(newUser);
-      return UserModel.fromRow(newUser).toObject();
-    }
 
     try {
       await execute(`
@@ -107,24 +63,12 @@ export const userRepository = {
         user.avatar || '',
       ]);
       return this.findById(user.id);
-    } catch {
-      mockStore.users.push(user);
-      return UserModel.fromRow(user).toObject();
-    }
+    } catch (error) { throw error; }
   },
 
   // Lưu hoặc cập nhật người dùng
   async save(user) {
     const id = user.id || `usr-${Date.now()}`;
-    if (!isDbConnected()) {
-      const idx = mockStore.users.findIndex((u) => u.id === id || u.email.toLowerCase() === user.email.toLowerCase());
-      if (idx !== -1) {
-        mockStore.users[idx] = { ...mockStore.users[idx], ...user };
-        return UserModel.fromRow(mockStore.users[idx]).toObject();
-      }
-      mockStore.users.push({ ...user, id });
-      return UserModel.fromRow({ ...user, id }).toObject();
-    }
 
     try {
       await execute(`
@@ -148,14 +92,6 @@ export const userRepository = {
         user.avatar || user.avatarUrl || '',
       ]);
       return this.findById(id);
-    } catch {
-      const idx = mockStore.users.findIndex((u) => u.id === id || u.email.toLowerCase() === user.email.toLowerCase());
-      if (idx !== -1) {
-        mockStore.users[idx] = { ...mockStore.users[idx], ...user };
-        return UserModel.fromRow(mockStore.users[idx]).toObject();
-      }
-      mockStore.users.push({ ...user, id });
-      return UserModel.fromRow({ ...user, id }).toObject();
-    }
+    } catch (error) { throw error; }
   },
 };

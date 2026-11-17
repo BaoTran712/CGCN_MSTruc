@@ -13,6 +13,8 @@ export class EmailModel {
     stepName = 'Thông báo hệ thống',
     status = 'SENT',
     sentAt = null,
+    attempts = 0,
+    lastError = null,
   }) {
     this.id = id;
     this.dossierId = dossierId;
@@ -24,6 +26,8 @@ export class EmailModel {
     this.stepName = stepName;
     this.status = status;
     this.sentAt = sentAt;
+    this.attempts = attempts;
+    this.lastError = lastError;
   }
 
   static fromRow(row) {
@@ -39,6 +43,8 @@ export class EmailModel {
       stepName: row.step_name,
       status: row.status,
       sentAt: row.sent_at ? new Date(row.sent_at).toISOString() : null,
+      attempts: Number(row.attempts || 0),
+      lastError: row.last_error || null,
     });
   }
 
@@ -54,6 +60,13 @@ export class EmailModel {
       stepName: this.stepName,
       status: this.status,
       sentAt: this.sentAt,
+      dossier_id: this.dossierId,
+      recipient_email: this.recipientEmail,
+      recipient_name: this.recipientName,
+      step_name: this.stepName,
+      sent_at: this.sentAt,
+      attempts: this.attempts,
+      last_error: this.lastError,
     };
   }
 }

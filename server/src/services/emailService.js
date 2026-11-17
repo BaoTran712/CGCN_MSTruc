@@ -1,40 +1,8 @@
-import nodemailer from 'nodemailer';
 import { emailRepository } from '../repositories/emailRepository.js';
-import { isDbConnected } from '../utils/db.js';
-import { sendWorkflowEmail } from '../utils/mailer.js';
+import { enqueueEmail } from './mailQueue.js';
 import { config } from '../utils/config.js';
-
-let transporter = null;
-let lastUser = null;
-let lastPass = null;
-
-function getTransporter() {
-  const currentHost = config.smtp.host;
-  const currentPort = config.smtp.port;
-  const currentSecure = config.smtp.secure;
-  const currentUser = config.smtp.user?.trim();
-  const currentPass = config.smtp.pass?.trim();
-
-  if (!currentUser || !currentPass) {
-    return null;
-  }
-
-  if (!transporter || lastUser !== currentUser || lastPass !== currentPass) {
-    transporter = nodemailer.createTransport({
-      host: currentHost,
-      port: currentPort,
-      secure: currentSecure,
-      auth: {
-        user: currentUser,
-        pass: currentPass,
-      },
-    });
-    lastUser = currentUser;
-    lastPass = currentPass;
-  }
-
-  return transporter;
-}
+import { verifyWorkflowSmtp } from '../utils/mailer.js';
+import { getSmtpReadiness } from '../utils/smtpConfig.js';
 
 /**
  * Tạo template HTML chuẩn thương hiệu Đại học Y Dược Cần Thơ (CTUMP DocuGov)
@@ -196,36 +164,16 @@ function buildHtmlEmail({
 export const emailService = {
   // Lấy danh sách email đã gửi (toàn bộ hoặc theo dossierId)
   async getAll(dossierId = null) {
-    if (dossierId) {
-      return emailRepository.findByDossierId(dossierId);
-    }
-    return emailRepository.findAll();
+    const logs = dossierId ? await emailRepository.findByDossierId(dossierId) : await emailRepository.findAll();
+    const readiness = getSmtpReadiness(config.smtp, config.mailDisabled);
+    return logs.map(log => ({ ...log, delivery_issue: log.status === 'PENDING' && !readiness.ready ? readiness.message : log.last_error || null }));
   },
 
   /**
    * Kiểm tra kết nối SMTP Transporter
    */
   async verifyConnection() {
-    const client = getTransporter();
-    if (!client) {
-      return {
-        success: false,
-        message: 'Chưa cấu hình tài khoản SMTP (SMTP_USER hoặc SMTP_PASS còn trống trong .env)',
-      };
-    }
-
-    try {
-      await client.verify();
-      return {
-        success: true,
-        message: 'Kết nối máy chủ SMTP thành công!',
-      };
-    } catch (err) {
-      return {
-        success: false,
-        message: `Kết nối SMTP thất bại: ${err.message}`,
-      };
-    }
+    return verifyWorkflowSmtp();
   },
 
   /**
@@ -252,63 +200,9 @@ export const emailService = {
     actionUrl,
     dossierCode,
   }) {
-    const targetEmail = (recipientEmail || '').trim();
-    if (!targetEmail) {
-      console.warn('[emailService] Không thể gửi email: recipientEmail bị trống.');
-      return null;
-    }
-
-    const emailContent =
-      typeof content === 'string' && (content.includes('<div') || content.includes('<html'))
-        ? content
-        : buildHtmlEmail({
-            recipientName,
-            stepName,
-            subject,
-            content,
-            actionUrl,
-            dossierCode,
-          });
-
-    // 1. Thực hiện gửi mail qua SMTP thật (hoặc simulated an toàn nếu chưa có credentials)
-    const mailResult = await sendWorkflowEmail({
-      to: targetEmail,
-      subject,
-      html: emailContent,
-      attachments,
-    });
-
-    // 2. Lưu nhật ký email
-    const emailId = `em-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const emailRecord = {
-      id: emailId,
-      dossierId,
-      recipientEmail: targetEmail,
-      recipientName: recipientName || targetEmail,
-      subject,
-      content,
-      stepName: stepName || 'Thông báo hệ thống',
-      status: mailResult.success ? 'SENT' : 'FAILED',
-      sentAt: new Date().toISOString(),
-      attachmentsCount: attachments.length,
-      simulated: mailResult.simulated || false,
-    };
-
-    try {
-      await emailRepository.create({
-        id: emailId,
-        dossierId,
-        recipientEmail: targetEmail,
-        recipientName: recipientName || targetEmail,
-        subject,
-        content,
-        stepName: stepName || 'Thông báo hệ thống',
-        status: mailResult.success ? 'SENT' : 'FAILED',
-      });
-    } catch (err) {
-      console.error('[emailService] Lỗi khi lưu nhật ký email:', err.message);
-    }
-
-    return emailRecord;
+    const targetEmail=(recipientEmail||'').trim();
+    if(!targetEmail) return null;
+    const html=typeof content==='string'&&(content.includes('<div')||content.includes('<html'))?content:buildHtmlEmail({recipientName,stepName,subject,content,actionUrl,dossierCode});
+    return enqueueEmail({dossierId,recipientEmail:targetEmail,recipientName,subject,content:html,stepName,attachments});
   },
 };

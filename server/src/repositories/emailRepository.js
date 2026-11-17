@@ -1,11 +1,11 @@
-import { query, execute, isDbConnected } from '../utils/db.js';
+import { randomUUID } from 'node:crypto';
+import { query, execute } from '../utils/db.js';
 import { EmailModel } from '../models/emailModel.js';
-import { mockStore } from '../utils/mockStore.js';
 
 export const emailRepository = {
   // Ghi nhật ký email
   async create(emailLog) {
-    const id = emailLog.id || `em-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const id = emailLog.id || 'em-'+randomUUID();
     const newLog = {
       id,
       dossierId: emailLog.dossierId || emailLog.dossier_id || null,
@@ -17,11 +17,6 @@ export const emailRepository = {
       status: emailLog.status || 'SENT',
       sentAt: new Date().toISOString(),
     };
-
-    if (!isDbConnected()) {
-      mockStore.emailLogs.unshift(newLog);
-      return newLog;
-    }
 
     try {
       await execute(`
@@ -39,19 +34,11 @@ export const emailRepository = {
         new Date(),
       ]);
       return newLog;
-    } catch {
-      mockStore.emailLogs.unshift(newLog);
-      return newLog;
-    }
+    } catch (error) { throw error; }
   },
 
   // Lấy danh sách email theo hồ sơ
   async findByDossierId(dossierId) {
-    if (!isDbConnected()) {
-      return mockStore.emailLogs.filter(
-        (e) => e.dossierId === dossierId || e.dossier_id === dossierId
-      );
-    }
 
     try {
       const rows = await query(`
@@ -60,24 +47,13 @@ export const emailRepository = {
         ORDER BY sent_at DESC
       `, [dossierId]);
 
-      if (!rows || rows.length === 0) {
-        return mockStore.emailLogs.filter(
-          (e) => e.dossierId === dossierId || e.dossier_id === dossierId
-        );
-      }
+      if (!rows || rows.length === 0) return [];
       return rows.map((r) => EmailModel.fromRow(r).toObject());
-    } catch {
-      return mockStore.emailLogs.filter(
-        (e) => e.dossierId === dossierId || e.dossier_id === dossierId
-      );
-    }
+    } catch (error) { throw error; }
   },
 
   // Lấy tất cả email
   async findAll() {
-    if (!isDbConnected()) {
-      return mockStore.emailLogs.map((e) => ({ ...e }));
-    }
 
     try {
       const rows = await query(`
@@ -88,12 +64,8 @@ export const emailRepository = {
         LIMIT 100
       `);
 
-      if (!rows || rows.length === 0) {
-        return mockStore.emailLogs.map((e) => ({ ...e }));
-      }
+      if (!rows || rows.length === 0) return [];
       return rows.map((r) => EmailModel.fromRow(r).toObject());
-    } catch {
-      return mockStore.emailLogs.map((e) => ({ ...e }));
-    }
+    } catch (error) { throw error; }
   },
 };

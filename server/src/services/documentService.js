@@ -1,3 +1,4 @@
+import { config } from '../utils/config.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -9,7 +10,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const TEMPLATES_DIR = path.resolve(__dirname, '../../../docs/templates');
-const UPLOADS_DOCX_DIR = path.resolve(__dirname, '../../uploads/docx');
+const UPLOADS_DOCX_DIR = path.join(config.uploadDir,'docx');
 const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
 function ensureUploadDir() {

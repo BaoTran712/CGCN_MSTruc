@@ -6,12 +6,14 @@ import {
 } from '../types';
 import * as api from '../services/api';
 import { normalizeStatus } from '../services/workflowEngine';
+import { useAuth } from './AuthContext';
 
 interface DossierContextValue {
   templates: DocumentTemplate[];
   dossiers: Application[];
   users: User[];
   isLoading: boolean;
+  loadError: string | null;
   pendingCount: number;
   myDossierCount: number;
   reloadAll: () => Promise<void>;
@@ -37,7 +39,7 @@ interface DossierContextValue {
     id: string,
     decisionNumber?: string,
     decisionDate?: string,
-    finalPdfUrl?: string,
+    finalPdfUrl?: string | File,
     adminUser?: User
   ) => Promise<Application>;
 }
@@ -45,12 +47,17 @@ interface DossierContextValue {
 const DossierContext = createContext<DossierContextValue | undefined>(undefined);
 
 export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { currentUser } = useAuth();
+  const requestGeneration = React.useRef(0);
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
   const [dossiers, setDossiers] = useState<Application[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const reloadAll = useCallback(async () => {
+    const generation = ++requestGeneration.current;
+    if (!currentUser) { setDossiers([]); setUsers([]); setIsLoading(false); setLoadError(null); return; }
     try {
       setIsLoading(true);
       const [loadedTemplates, loadedApps, loadedUsers] = await Promise.all([
@@ -58,28 +65,33 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
         api.getAllApplications(),
         api.getUsers(),
       ]);
+      if (generation !== requestGeneration.current) return;
       setTemplates(Array.isArray(loadedTemplates) ? loadedTemplates : []);
       setDossiers(Array.isArray(loadedApps) ? loadedApps : []);
       setUsers(Array.isArray(loadedUsers) ? loadedUsers : []);
-    } catch {
-      // ignore
+      setLoadError(null);
+    } catch (error: any) {
+      if (generation === requestGeneration.current) setLoadError(error.message || 'Không tải được dữ liệu từ máy chủ.');
     } finally {
-      setIsLoading(false);
+      if (generation === requestGeneration.current) setIsLoading(false);
     }
-  }, []);
+  }, [currentUser?.id]);
 
   useEffect(() => {
     reloadAll();
+    if (!currentUser) return;
     const intervalId = window.setInterval(() => {
       if (document.visibilityState === 'visible') {
+        const generation = requestGeneration.current;
         api.getAllApplications().then((loadedApps) => {
-          if (Array.isArray(loadedApps) && loadedApps.length > 0) {
+          if (generation === requestGeneration.current && Array.isArray(loadedApps)) {
             setDossiers(loadedApps);
+            setLoadError(null);
           }
-        }).catch(() => {});
+        }).catch((error) => { if (generation === requestGeneration.current) setLoadError(error.message); });
       }
     }, 15000);
-    return () => window.clearInterval(intervalId);
+    return () => { ++requestGeneration.current; window.clearInterval(intervalId); };
   }, [reloadAll]);
 
   const upsertInState = useCallback((updated: Application, fallbackId?: string) => {
@@ -180,7 +192,7 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
       id: string,
       decisionNumber?: string,
       decisionDate?: string,
-      finalPdfUrl?: string,
+    finalPdfUrl?: string | File,
       adminUser?: User
     ): Promise<Application> => {
       const updated = await api.completeDossier(id, decisionNumber, decisionDate, finalPdfUrl, adminUser);
@@ -220,6 +232,7 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
       dossiers,
       users,
       isLoading,
+      loadError,
       pendingCount,
       myDossierCount,
       reloadAll,
@@ -239,6 +252,7 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
       dossiers,
       users,
       isLoading,
+      loadError,
       pendingCount,
       myDossierCount,
       reloadAll,

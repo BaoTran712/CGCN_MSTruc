@@ -18,7 +18,7 @@ export const emailController = {
   async sendEmail(req, res) {
     try {
       const sent = await emailService.sendEmail(req.body);
-      return ApiResponse.success(sent, 'Gửi thông báo email thành công', 201).send(res);
+      return ApiResponse.success(sent, sent?.status === 'SENT' ? 'Máy chủ SMTP đã chấp nhận email.' : 'Đã xếp hàng thông báo email; chưa xác nhận gửi thành công.', sent?.status === 'SENT' ? 201 : 202).send(res);
     } catch (err) {
       console.error('[emailController.sendEmail]', err);
       return ApiResponse.error(err.message, 500).send(res);
@@ -29,7 +29,7 @@ export const emailController = {
   async verifySmtp(req, res) {
     try {
       const result = await emailService.verifyConnection();
-      return ApiResponse.success(result, result.message).send(res);
+      return res.status(result.success ? 200 : 503).json({success:result.success,message:result.message,data:result});
     } catch (err) {
       console.error('[emailController.verifySmtp]', err);
       return ApiResponse.error(err.message, 500).send(res);
@@ -48,12 +48,12 @@ export const emailController = {
       const result = await emailService.sendEmail({
         recipientEmail: targetEmail,
         recipientName: 'Quý Thầy/Cô (Kiểm thử hệ thống)',
-        subject: '[CTUMP DocuGov] Thử nghiệm gửi email tự động qua SMTP thành công',
-        content: `Chúc mừng! Hệ thống CTUMP DocuGov đã kết nối thành công đến máy chủ SMTP và gửi email tự động tới hộp thư của Thầy/Cô.\n\nMọi thông báo duyệt hồ sơ, yêu cầu chỉnh sửa và ban hành quyết định sẽ được tự động gửi đến địa chỉ này.`,
+        subject: '[CTUMP DocuGov] Kiểm tra gửi email qua SMTP',
+        content: 'Đây là thư kiểm tra cấu hình gửi email của hệ thống CTUMP DocuGov.',
         stepName: 'Kiểm thử kết nối SMTP',
       });
 
-      return ApiResponse.success(result, `Đã gửi email thử nghiệm tới ${targetEmail}`).send(res);
+      return ApiResponse.success(result,result?.status === 'SENT' ? 'Máy chủ SMTP đã chấp nhận email kiểm tra.' : 'Email kiểm tra đang chờ gửi.',result?.status === 'SENT' ? 200 : 202).send(res);
     } catch (err) {
       console.error('[emailController.testSend]', err);
       return ApiResponse.error(err.message, 500).send(res);

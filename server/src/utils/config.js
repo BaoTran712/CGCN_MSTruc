@@ -1,24 +1,15 @@
-import dotenv from 'dotenv';
+import '../config/env.js';
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { randomBytes } from 'node:crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load .env from server directory (supports both server/.env and root .env)
-const serverEnvPath = path.resolve(__dirname, '../../.env');
-const fallbackEnvPath = path.resolve(__dirname, '../.env');
-if (fs.existsSync(serverEnvPath)) {
-  dotenv.config({ path: serverEnvPath });
-} else {
-  dotenv.config({ path: fallbackEnvPath });
-}
-
 export const config = {
-  port: parseInt(process.env.PORT || '5000', 10),
+  port: parseInt(process.env.PORT || '5001', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
-  appUrl: process.env.APP_URL || 'http://localhost:3000',
+  appUrl: process.env.APP_URL || 'http://localhost:' + (process.env.PORT || '5001'),
   adminEmail: process.env.ADMIN_EMAIL || 'tranthibaotran.2k@gmail.com',
   adminEmails: (
     process.env.ADMIN_EMAILS ||
@@ -49,6 +40,17 @@ export const config = {
   driveFolderUrl:
     process.env.GOOGLE_DRIVE_FOLDER_URL ||
     'https://drive.google.com/drive/folders/1UZfnO_hY9LshjsaHH6btODtWgii0Vv8-?usp=drive_link',
-  uploadDir: path.resolve(__dirname, '../../uploads'),
-  jwtSecret: process.env.JWT_SECRET || 'ctump-docugov-jwt-secret-dev-only-change-in-production',
+  uploadDir: process.env.UPLOAD_DIR ? path.resolve(process.env.UPLOAD_DIR) : path.resolve(__dirname, '../../uploads'),
+  jwtSecret: process.env.JWT_SECRET || randomBytes(48).toString('hex'),
+  googleClientId: process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '',
+  allowedOrigins: (process.env.ALLOWED_ORIGINS || process.env.APP_URL || '').split(',').map(value => value.trim()).filter(Boolean),
+  mailDisabled: process.env.MAIL_DISABLED === 'true',
 };
+
+export function validateConfig() {
+  if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535) throw new Error('PORT không hợp lệ.');
+  if (config.nodeEnv === 'production') {
+    if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32 || process.env.JWT_SECRET.includes('dev-only')) throw new Error('Production yêu cầu JWT_SECRET riêng, tối thiểu 32 ký tự.');
+    if (!config.smtp.user || !config.smtp.pass) console.warn('[SMTP] Chưa cấu hình gửi email. Thông báo sẽ được lưu PENDING để gửi lại.');
+  }
+}

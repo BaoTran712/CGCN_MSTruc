@@ -1,8 +1,10 @@
+import { assertWorkflowTransition } from './workflowPolicy.js';
+import { randomUUID } from 'node:crypto';
+import { transaction, withDossierLock } from '../utils/db.js';
 import path from 'path';
 import fs from 'fs';
 import { dossierRepository } from '../repositories/dossierRepository.js';
 import { auditRepository } from '../repositories/auditRepository.js';
-import { emailRepository } from '../repositories/emailRepository.js';
 import { documentGeneratorService } from './documentGeneratorService.js';
 import { generateLockedPdf } from '../utils/pdfService.js';
 import { emailService } from './emailService.js';
@@ -41,7 +43,7 @@ export const dossierService = {
 
     const [auditLogs, emailLogs, versions] = await Promise.all([
       auditRepository.findByDossierId(dossier.id),
-      emailRepository.findByDossierId(dossier.id),
+      emailService.getAll(dossier.id),
       dossierRepository.findVersionsByDossierId(dossier.id),
     ]);
 
@@ -85,7 +87,7 @@ export const dossierService = {
     const dossierStatus = 'SUBMITTED';
     const currentVersion = 1;
     const code = await dossierRepository.getNextCode();
-    const id = `dos-${Date.now()}`;
+    const id = 'dos-' + randomUUID();
     const applicantEmail =
       user?.email || sanitizedFormData.email || 'thayco.giangvien@ctump.edu.vn';
     const applicantName =
@@ -206,7 +208,7 @@ export const dossierService = {
 
     // Lưu phiên bản v1 vào lịch sử phiên bản
     await dossierRepository.saveVersion({
-      id: `ver-${Date.now()}-v1`,
+      id: 'ver-' + randomUUID(),
       dossierId: id,
       versionNumber: 1,
       formData: docGen.sanitizedFormData,
@@ -477,7 +479,7 @@ export const dossierService = {
     const diffLabel1a = changed1aKeys.length > 0 ? ` (Đã sửa: ${changed1aKeys.join(', ')})` : '';
 
     await dossierRepository.saveVersion({
-      id: `ver-${Date.now()}-v${nextVersion}`,
+      id: 'ver-' + randomUUID(),
       dossierId: dossier.id,
       versionNumber: nextVersion,
       formData: mergedFormData,
@@ -571,7 +573,7 @@ export const dossierService = {
     const diffLabel2a = changed2aKeys.length > 0 ? ` (Đã sửa: ${changed2aKeys.join(', ')})` : '';
 
     await dossierRepository.saveVersion({
-      id: `ver-${Date.now()}-v${nextVersion}`,
+      id: 'ver-' + randomUUID(),
       dossierId: dossier.id,
       versionNumber: nextVersion,
       formData: mergedFormData,
@@ -726,7 +728,7 @@ export const dossierService = {
     const actorName = user?.name || dossier.createdBy?.name || 'Thầy/Cô Giảng viên';
 
     await dossierRepository.saveVersion({
-      id: `ver-${Date.now()}-v${nextVersion}`,
+      id: 'ver-' + randomUUID(),
       dossierId: dossier.id,
       versionNumber: nextVersion,
       formData: docGen.sanitizedFormData,
@@ -770,7 +772,7 @@ export const dossierService = {
     return this.resubmitDossier(id, formData, user);
   },
 
-  async updateFields(id, fields) {
+  async updateFields(id, fields, user) {
     const dossier = await dossierRepository.findById(id);
     if (!dossier) throw new Error('Không tìm thấy hồ sơ');
     return dossierRepository.update(id, fields);
@@ -855,6 +857,7 @@ export const dossierService = {
       timeline_logs: currentTimeline,
     });
 
+    await dossierRepository.snapshotVersion(id,currentVer);
     await auditRepository.create({
       dossierId: dossier.id,
       actorId: adminUser?.id || 'usr-admin',
@@ -863,7 +866,7 @@ export const dossierService = {
       action: 'APPROVE_VALIDATED',
       fromStatus: prevStatus,
       toStatus: 'VALIDATED',
-      notes: `Admin nhấn Duyệt (VALIDATED) cho phiên bản v${currentVer}. Đã chốt 2 file PDF chuẩn (Mẫu 1a & Mẫu 2a) v${currentVer} và gửi Gmail SMTP kèm attachment.`,
+      notes: `Admin nhấn Duyệt (VALIDATED) cho phiên bản v${currentVer}. Đã chốt 2 file PDF chuẩn (Mẫu 1a & Mẫu 2a) v${currentVer} và ghi nhận thông báo email kèm attachment.`,
     });
 
     await emailService.sendEmail({
@@ -1134,7 +1137,7 @@ export const dossierService = {
         decisionNumber: effectiveDecisionNumber,
       });
       resolvedPdfPath = signedGen.generatedPdfPath;
-      resolvedPdfUrl = finalPdfUrl || signedGen.generatedPdfUrl;
+      resolvedPdfUrl = signedGen.generatedPdfUrl;
     }
 
     const currentTimeline = Array.isArray(dossier.timeline_logs) ? [...dossier.timeline_logs] : [];
@@ -1166,7 +1169,7 @@ export const dossierService = {
       action: 'SIGN_AND_ARCHIVE',
       fromStatus: prevStatus,
       toStatus: 'SIGNED_ARCHIVED',
-      notes: `Xác nhận "Đã ký và lưu trữ" (SIGNED_ARCHIVED). Số QĐ: ${effectiveDecisionNumber}. Đã gửi Gmail SMTP đính kèm bản PDF có chữ ký cuối cùng.`,
+      notes: `Xác nhận "Đã ký và lưu trữ" (SIGNED_ARCHIVED). Số QĐ: ${effectiveDecisionNumber}. Đã ghi nhận thông báo email đính kèm bản PDF có chữ ký cuối cùng.`,
     });
 
     await emailService.sendEmail({
@@ -1203,11 +1206,29 @@ export const dossierService = {
     return this.completeDossier(id, completionData, adminUser);
   },
 
+  async rollbackVersion(id,version,user) {
+    const versions=await dossierRepository.findVersionsByDossierId(id);
+    const snapshot=versions.find(item=>item.versionNumber===version);
+    if(!snapshot)throw new Error('Không tìm thấy phiên bản đã chọn.');
+    const archived=snapshot.snapshot;
+    const restored={form_data:snapshot.formData};
+    if(archived){restored.form_data_1a=archived.form_data_1a;restored.form_data_2a=archived.form_data_2a;restored.signature_config=archived.signature_config;}
+    const updated=await dossierRepository.update(id,restored);
+    await auditRepository.create({dossierId:id,actorId:user.id,actorName:user.name,actorRole:user.role,action:'RESTORE_VERSION',notes:'Phục hồi dữ liệu từ phiên bản '+version});
+    return updated;
+  },
+
   // =========================================================================
   // Xuất trực tiếp file PDF của phiên bản mới nhất khớp 100% với dữ liệu Web Form & Cấu hình duyệt của Admin
   // =========================================================================
   async exportPdf(id, overrideData = {}) {
     const dossier = await dossierRepository.findById(id);
+    if (!dossier) throw new Error('Không tìm thấy hồ sơ.');
+    const finalFile=resolveUploadAbsolutePath(dossier.final_signed_pdf_path || dossier.final_pdf_url);
+    if (dossier.status === 'SIGNED_ARCHIVED') {
+      if (finalFile && fs.existsSync(finalFile)) return {filePath:finalFile,fileName:dossier.code+'-signed.pdf'};
+      const error=new Error('Không tìm thấy bản PDF đã ký trên máy chủ. Vui lòng phục hồi từ bản sao lưu.');error.statusCode=404;throw error;
+    }
     const code = dossier?.code || overrideData.code || 'CGCN-2026-0001';
     const currentVer = Number(dossier?.current_version || overrideData.version || 1);
 
@@ -1273,12 +1294,34 @@ export const dossierService = {
       },
       templateTitle,
       templateCode,
-      `${code}-${isMau2a ? '2a' : '1a'}-v${currentVer}.pdf`
+      code+'-'+(isMau2a?'2a':'1a')+'-v'+currentVer+'-'+randomUUID()+'.pdf'
     );
 
     return {
       ...pdfRes,
+      temporary: true,
+      fileName:code+'-'+(isMau2a?'2a':'1a')+'-v'+currentVer+'.pdf',
       filename: pdfRes.fileName,
     };
   },
 };
+
+// Enforce the existing workflow and serialize persistence for each dossier.
+const actionTargets={returnForRevision:'RETURNED_FOR_REVISION',resubmit1a:'SUBMITTED',resubmit2a:'SUBMITTED',resubmitDossier:'SUBMITTED',approveApplication:'VALIDATED',uploadFacultySignature:'PENDING_SIGNED_REVIEW',submitToRector:'WAITING_RECTOR_SIGNATURE',completeDossier:'SIGNED_ARCHIVED'};
+for(const name of [...Object.keys(actionTargets),'updateFields','rollbackVersion']){
+  const action=dossierService[name];
+  dossierService[name]=async function(id,...args){return withDossierLock(id,async()=>{
+    const dossier=await dossierRepository.findById(id);
+    if(!dossier)throw new Error('Không tìm thấy hồ sơ.');
+    const actor=name==='uploadFacultySignature'?args[2]:args[1];
+    const target=actionTargets[name] || (name==='updateFields'?args[0].status:null);
+    if(dossier.status==='SIGNED_ARCHIVED'){
+      if(name==='completeDossier')return dossier;
+      const error=new Error('Hồ sơ đã ký và lưu trữ đã được khóa.');error.statusCode=409;throw error;
+    }
+    if(target&&target!==dossier.status)assertWorkflowTransition(dossier.status,target,actor?.role||'USER');
+    return action.call(this,id,...args);
+  });};
+}
+const createDossier=dossierService.createDossier;
+dossierService.createDossier=function(...args){return transaction(()=>createDossier.apply(this,args));};

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mail, CheckCircle2, Clock, Send, User } from 'lucide-react';
+import { Mail, CheckCircle2, Clock, XCircle, User } from 'lucide-react';
 
 interface EmailLogItem {
   id: string;
@@ -10,6 +10,8 @@ interface EmailLogItem {
   step_name: string;
   status: string;
   sent_at: string;
+  delivery_issue?: string;
+  last_error?: string;
 }
 
 interface EmailLogViewerProps {
@@ -38,7 +40,7 @@ export const EmailLogViewer: React.FC<EmailLogViewerProps> = ({ logs = [] }) => 
           </p>
         </div>
         <span className="px-2 py-0.5 text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 rounded-full font-mono">
-          {logs.length} email đã gửi
+          {logs.length} thông báo
         </span>
       </div>
 
@@ -57,7 +59,7 @@ export const EmailLogViewer: React.FC<EmailLogViewerProps> = ({ logs = [] }) => 
               </div>
               <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-mono">
                 <Clock className="w-3 h-3 text-slate-400" />
-                <span>{new Date(log.sent_at).toLocaleString('vi-VN')}</span>
+                <span>{log.sent_at ? new Date(log.sent_at).toLocaleString('vi-VN') : 'Chưa gửi'}</span>
               </div>
             </div>
 
@@ -67,15 +69,16 @@ export const EmailLogViewer: React.FC<EmailLogViewerProps> = ({ logs = [] }) => 
                 <span>Người nhận: <strong className="text-slate-800">{log.recipient_name}</strong></span>
               </div>
               <div className="font-mono text-slate-500">({log.recipient_email})</div>
-              <div className="ml-auto flex items-center gap-1 text-emerald-700 font-semibold text-[10px]">
-                <CheckCircle2 className="w-3 h-3" />
-                <span>Đã gửi thành công</span>
+              <div className={`ml-auto flex items-center gap-1 font-semibold text-[10px] ${log.status === 'SENT' ? 'text-emerald-700' : log.status === 'FAILED' ? 'text-red-700' : 'text-amber-700'}`}>
+                {log.status === 'SENT' ? <CheckCircle2 className="w-3 h-3" /> : log.status === 'FAILED' ? <XCircle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                <span>{log.status === 'SENT' ? 'Đã gửi thành công' : log.status === 'FAILED' ? 'Gửi thất bại' : 'Đang chờ gửi'}</span>
               </div>
             </div>
 
             <div className="p-2.5 bg-slate-50 rounded border border-slate-200/80 text-[11.5px] text-slate-700 whitespace-pre-wrap font-sans leading-relaxed">
               {log.content}
             </div>
+            {(log.delivery_issue || log.last_error) && <p className="text-xs text-amber-800">{log.delivery_issue || log.last_error}</p>}
           </div>
         ))}
       </div>

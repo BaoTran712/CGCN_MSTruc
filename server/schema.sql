@@ -3,25 +3,10 @@
 -- Database Schema Chuẩn 3NF - Hỗ trợ đầy đủ True Flow & False Flow (6 trạng thái)
 -- ===================================================================================
 
-CREATE DATABASE IF NOT EXISTS `ctump_docugov` 
-  DEFAULT CHARACTER SET utf8mb4 
-  COLLATE utf8mb4_unicode_ci;
-
-USE `ctump_docugov`;
-
-SET FOREIGN_KEY_CHECKS = 0;
-DROP TABLE IF EXISTS `attachments`;
-DROP TABLE IF EXISTS `audit_logs`;
-DROP TABLE IF EXISTS `email_notifications`;
-DROP TABLE IF EXISTS `dossier_versions`;
-DROP TABLE IF EXISTS `dossiers`;
-DROP TABLE IF EXISTS `document_templates`;
-DROP TABLE IF EXISTS `users`;
-DROP TABLE IF EXISTS `departments`;
-SET FOREIGN_KEY_CHECKS = 1;
+-- Cấu trúc tham chiếu an toàn. Dùng npm run db:migrate để nâng cấp database hiện có.
 
 -- 1. BẢNG DANH MỤC ĐƠN VỊ / KHOA / PHÒNG BAN (departments)
-CREATE TABLE `departments` (
+CREATE TABLE IF NOT EXISTS `departments` (
   `id` VARCHAR(50) NOT NULL,
   `code` VARCHAR(50) NOT NULL,
   `name` VARCHAR(150) NOT NULL,
@@ -36,7 +21,7 @@ CREATE TABLE `departments` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 2. BẢNG NGƯỜI DÙNG NỘI BỘ (users)
-CREATE TABLE `users` (
+CREATE TABLE IF NOT EXISTS `users` (
   `id` VARCHAR(50) NOT NULL,
   `email` VARCHAR(150) NOT NULL,
   `name` VARCHAR(150) NOT NULL,
@@ -56,7 +41,7 @@ CREATE TABLE `users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 3. BẢNG BIỂU MẪU CHUẨN CGCN (document_templates)
-CREATE TABLE `document_templates` (
+CREATE TABLE IF NOT EXISTS `document_templates` (
   `id` VARCHAR(50) NOT NULL,
   `code` VARCHAR(50) NOT NULL,
   `title` VARCHAR(255) NOT NULL,
@@ -73,7 +58,7 @@ CREATE TABLE `document_templates` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 4. BẢNG HỒ SƠ CGCN (dossiers / applications) - HỖ TRỢ TRUE FLOW + FALSE FLOW (6 TRẠNG THÁI)
-CREATE TABLE `dossiers` (
+CREATE TABLE IF NOT EXISTS `dossiers` (
   `id` VARCHAR(50) NOT NULL,
   `code` VARCHAR(50) NOT NULL COMMENT 'Mã định danh duy nhất: CGCN-2026-XXXX',
   `title` VARCHAR(255) NOT NULL,
@@ -170,7 +155,7 @@ CREATE TABLE `dossiers` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 5. BẢNG LỊCH SỬ PHIÊN BẢN (dossier_versions)
-CREATE TABLE `dossier_versions` (
+CREATE TABLE IF NOT EXISTS `dossier_versions` (
   `id` VARCHAR(50) NOT NULL,
   `dossier_id` VARCHAR(50) NOT NULL,
   `version_number` INT NOT NULL,
@@ -188,7 +173,7 @@ CREATE TABLE `dossier_versions` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 6. BẢNG TỆP ĐÍNH KÈM & MINH CHỨNG (attachments)
-CREATE TABLE `attachments` (
+CREATE TABLE IF NOT EXISTS `attachments` (
   `id` VARCHAR(50) NOT NULL,
   `dossier_id` VARCHAR(50) NOT NULL,
   `file_name` VARCHAR(255) NOT NULL,
@@ -204,7 +189,7 @@ CREATE TABLE `attachments` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 7. BẢNG NHẬT KÝ KIỂM TOÁN (audit_logs)
-CREATE TABLE `audit_logs` (
+CREATE TABLE IF NOT EXISTS `audit_logs` (
   `id` VARCHAR(50) NOT NULL,
   `dossier_id` VARCHAR(50) NOT NULL,
   `actor_id` VARCHAR(50) NOT NULL,
@@ -222,7 +207,7 @@ CREATE TABLE `audit_logs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 8. BẢNG NHẬT KÝ THÔNG BÁO EMAIL TỰ ĐỘNG (email_notifications)
-CREATE TABLE `email_notifications` (
+CREATE TABLE IF NOT EXISTS `email_notifications` (
   `id` VARCHAR(50) NOT NULL,
   `dossier_id` VARCHAR(50) NULL,
   `recipient_email` VARCHAR(150) NOT NULL,
@@ -241,7 +226,7 @@ CREATE TABLE `email_notifications` (
 -- DỮ LIỆU KHỞI TẠO DANH MỤC CỐT LÕI (KHÔNG CHỨA HỒ SƠ NHÁP/TEST RÁC)
 -- ===================================================================================
 
-INSERT INTO `departments` (`id`, `code`, `name`, `short_name`, `dean_name`, `email`, `phone`) VALUES
+INSERT IGNORE INTO `departments` (`id`, `code`, `name`, `short_name`, `dean_name`, `email`, `phone`) VALUES
 ('dept-y', 'khoa_y', 'Khoa Y', 'KY', 'PGS.TS.BS. Trưởng Khoa Y', 'khoay@ctump.edu.vn', '0292.3831.501'),
 ('dept-duoc', 'khoa_duoc', 'Khoa Dược', 'KD', 'PGS.TS. Trưởng Khoa Dược', 'khoaduoc@ctump.edu.vn', '0292.3831.502'),
 ('dept-rhm', 'khoa_rhm', 'Khoa Răng Hàm Mặt', 'KRHM', 'TS. Trưởng Khoa Răng Hàm Mặt', 'khoarhm@ctump.edu.vn', '0292.3831.503'),
@@ -251,15 +236,7 @@ INSERT INTO `departments` (`id`, `code`, `name`, `short_name`, `dean_name`, `ema
 ('dept-khtc', 'phong_khtc', 'Phòng Kế hoạch Tài chính', 'PKHTC', 'ThS. Trưởng phòng KHTC', 'khtc@ctump.edu.vn', '0292.3831.532'),
 ('dept-bgh', 'ban_giam_hieu', 'Ban Giám hiệu (Hiệu trưởng)', 'BGH', 'GS.TS. Hiệu trưởng CTUMP', 'bgh@ctump.edu.vn', '0292.3831.500');
 
-INSERT INTO `users` (`id`, `email`, `name`, `role`, `title`, `department_id`, `department`, `phone`) VALUES
-('usr-admin-tran', 'tranthibaotran.2k@gmail.com', 'Bảo Trân (Admin)', 'ADMIN', 'Quản trị viên Hệ thống', 'dept-khcn', 'Phòng Khoa học Công nghệ & HTQT', '0912.345.678'),
-('usr-admin-truc', 'admin@ctump.edu.vn', 'Cô Trúc (Phòng KH&CN)', 'ADMIN', 'Chuyên viên Quản lý CGCN', 'dept-khcn', 'Phòng Khoa học Công nghệ & HTQT', '0292.3831.531'),
-('usr-admin-dev', 'toanhkhai12345@gmail.com', 'Quản trị viên (Toàn Khải)', 'ADMIN', 'Quản trị viên Hệ thống', 'dept-khcn', 'Phòng Khoa học Công nghệ & HTQT', '0912.345.678'),
-('usr-canbo', 'canbo@ctump.edu.vn', 'TS. Nguyễn Văn Nam', 'USER', 'Giảng viên chính', 'dept-y', 'Khoa Y', '0912.345.678'),
-('usr-giangvien', 'giangvien@ctump.edu.vn', 'ThS.BS. Lê Thị Thu Hà', 'USER', 'Giảng viên Bộ môn Nội', 'dept-y', 'Khoa Y', '0988.765.432'),
-('usr-giangvien-demo', 'thayco.giangvien@ctump.edu.vn', 'Trần Thị Bảo Trân', 'USER', 'Cán bộ / Giảng viên', 'dept-y', 'Khoa Y', '0909.888.999');
-
-INSERT INTO `document_templates` (`id`, `code`, `title`, `category`, `description`, `version`, `file_name`, `is_active`) VALUES
+INSERT IGNORE INTO `document_templates` (`id`, `code`, `title`, `category`, `description`, `version`, `file_name`, `is_active`) VALUES
 ('tmpl-cgcn-1a', 'Mẫu 1a-TT.CGCN', 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu', 'Đào tạo & Tri thức', 'Tờ trình trình Ban Giám hiệu Trường Đại học Y Dược Cần Thơ xin phê duyệt chuyển giao tri thức vào giảng dạy, tập huấn.', '2026.1', 'mau_1a_chuan.docx', 1),
 ('tmpl-cgcn-2a', 'Mẫu 2a-KH.CGCN', 'Kế hoạch tổ chức chuyển giao công nghệ trong trường', 'Khoa học Công nghệ', 'Kế hoạch chi tiết về nhân sự, hội thảo, kinh phí và rủi ro chuyển giao công nghệ ứng dụng.', '2026.1', 'mau_2a_chuan.docx', 1);
 

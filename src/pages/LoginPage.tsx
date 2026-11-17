@@ -11,8 +11,8 @@ import {
   LogIn,
   HelpCircle,
 } from 'lucide-react';
-import { DEFAULT_DEV_USER, DEFAULT_CANBO_USER, isAdminEmail } from '../constants';
 import logoUrl from '../assets/logo.png';
+import { getGoogleOriginIssue } from '../utils/googleAuth';
 
 declare global {
   interface Window {
@@ -21,8 +21,7 @@ declare global {
 }
 
 const GOOGLE_CLIENT_ID =
-  (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID ||
-  '155584685837-ggv7pj77tb2r1entrs988ocg5qvmpp4t.apps.googleusercontent.com';
+  (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || '';
 
 interface LoginPageProps {
   onLoginSuccess: (user: User) => void;
@@ -39,6 +38,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [errorMsg, setErrorMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGisReady, setIsGisReady] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(() =>
+    getGoogleOriginIssue(window.location.origin) ||
+    (GOOGLE_CLIENT_ID ? null : 'Quản trị viên chưa cấu hình đăng nhập Google.')
+  );
   const [showForgotModal, setShowForgotModal] = useState(false);
 
   const googleBtnRef = useRef<HTMLDivElement>(null);
@@ -59,137 +62,36 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   // Xử lý đăng nhập thông thường bằng Form (Email & Password)
   const handleStandardLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMsg('');
-
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanPassword = password.trim();
-
-    if (!cleanEmail) {
-      setErrorMsg('Vui lòng nhập địa chỉ Email hoặc Tên tài khoản.');
-      return;
-    }
-
-    if (!cleanPassword) {
-      setErrorMsg('Vui lòng nhập Mật khẩu.');
-      return;
-    }
-
-    setIsLoading(true);
-
+    setErrorMsg(''); setIsLoading(true);
     try {
-      if (rememberMe) {
-        localStorage.setItem('ctump_remembered_email', cleanEmail);
-      } else {
-        localStorage.removeItem('ctump_remembered_email');
-      }
-
-      // Xác định quyền Admin hoặc Cán bộ
-      const isAdmin = isAdminEmail(cleanEmail);
-
-      // Tên hiển thị dự phòng dựa trên email
-      let displayName = isAdmin ? 'Quản trị viên KH&CN' : 'Cán bộ / Giảng viên';
-      if (cleanEmail === 'canbo@ctump.edu.vn' || cleanEmail.includes('nam')) {
-        displayName = 'TS. Nguyễn Văn Nam';
-      } else if (cleanEmail.includes('ha') || cleanEmail.includes('thu')) {
-        displayName = 'ThS.BS. Lê Thị Thu Hà';
-      } else if (cleanEmail.includes('toan') || cleanEmail.includes('khai')) {
-        displayName = 'Quản trị viên (Toàn Khải)';
-      }
-
-      let user: User;
-      try {
-        user = await api.login(cleanEmail, {
-          name: displayName,
-          avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(displayName)}`,
-        });
-      } catch (backendErr) {
-        console.warn('Backend login fallback:', backendErr);
-        // Fallback người dùng nội bộ
-        if (isAdmin) {
-          user = {
-            ...DEFAULT_DEV_USER,
-            email: cleanEmail,
-            name: displayName,
-          };
-        } else {
-          user = {
-            ...DEFAULT_CANBO_USER,
-            email: cleanEmail,
-            name: displayName,
-            department: cleanEmail.includes('duoc') ? 'Khoa Dược' : 'Khoa Công nghệ Thông tin',
-          };
-        }
-      }
-
+      const cleanEmail=email.trim().toLowerCase();
+      if(!cleanEmail || !password) throw new Error('Vui lòng nhập email và mật khẩu.');
+      const user=await api.login(cleanEmail,{password});
+      if(rememberMe)localStorage.setItem('ctump_remembered_email',cleanEmail);
+      else localStorage.removeItem('ctump_remembered_email');
       onLoginSuccess(user);
-    } catch (err: any) {
-      console.error('Lỗi đăng nhập:', err);
-      setErrorMsg(err.message || 'Đăng nhập không thành công. Vui lòng kiểm tra lại thông tin.');
-    } finally {
-      setIsLoading(false);
-    }
+    } catch(error:any) {setErrorMsg(error.message || 'Không thể đăng nhập.');}
+    finally {setIsLoading(false);}
   };
 
   // Xử lý phản hồi từ Google Identity Services (GIS)
   const handleGoogleCredentialResponse = async (response: any) => {
-    if (!response?.credential) {
-      setErrorMsg('Không nhận được mã xác thực từ Google. Vui lòng thử lại.');
-      return;
-    }
-
-    setIsLoading(true);
-    setErrorMsg('');
-
-    try {
-      const base64Url = response.credential.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(
-        atob(base64)
-          .split('')
-          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-          .join('')
-      );
-      const googleData = JSON.parse(jsonPayload);
-      const gEmail = (googleData.email || '').trim().toLowerCase();
-      const gName = googleData.name || googleData.given_name || 'Người dùng Google';
-      const gAvatar = googleData.picture || '';
-      const googleId = googleData.sub || '';
-
-      if (!gEmail) {
-        throw new Error('Google không cung cấp địa chỉ email.');
-      }
-
-      const isAdmin = isAdminEmail(gEmail);
-
-      let user: User;
-      try {
-        user = await api.login(gEmail, { name: gName, avatar: gAvatar, googleId });
-      } catch (backendErr) {
-        console.warn('Backend login fallback:', backendErr);
-        user = {
-          id: `usr-${googleId || Date.now()}`,
-          name: gName,
-          email: gEmail,
-          role: isAdmin ? 'ADMIN' : 'USER',
-          title: isAdmin ? 'Quản trị viên Hệ thống' : 'Cán bộ / Giảng viên',
-          department: isAdmin ? 'Phòng Khoa học Công nghệ' : 'Trường Đại học Y Dược Cần Thơ',
-          avatar: gAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(gName)}`,
-        };
-      }
-
-      onLoginSuccess(user);
-    } catch (err: any) {
-      console.error('Lỗi xác thực Google:', err);
-      setErrorMsg(err.message || 'Đăng nhập Google thất bại. Vui lòng thử lại.');
-    } finally {
-      setIsLoading(false);
-    }
+    if(!response?.credential){setErrorMsg('Không nhận được mã xác thực Google.');return;}
+    setIsLoading(true);setErrorMsg('');
+    try {onLoginSuccess(await api.login('',{credential:response.credential}));}
+    catch(error:any){setErrorMsg(error.message || 'Không thể đăng nhập Google.');}
+    finally{setIsLoading(false);}
   };
 
   // Khởi tạo nút Google Sign-In
   useEffect(() => {
+    if (getGoogleOriginIssue(window.location.origin) || !GOOGLE_CLIENT_ID) return;
     let checkInterval: any = null;
     let isMounted = true;
+    const timeoutId = window.setTimeout(() => {
+      if (checkInterval) clearInterval(checkInterval);
+      if (isMounted) setGoogleError('Không tải được dịch vụ Google. Vui lòng kiểm tra kết nối và tải lại trang.');
+    }, 15000);
 
     const renderGoogleBtn = () => {
       if (!isMounted) return;
@@ -214,7 +116,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           });
 
           setIsGisReady(true);
+          window.clearTimeout(timeoutId);
         } catch (err) {
+          window.clearTimeout(timeoutId);
+          setGoogleError('Không khởi tạo được đăng nhập Google. Vui lòng kiểm tra cấu hình OAuth.');
           console.error('Lỗi khởi tạo nút Google:', err);
         }
       }
@@ -233,6 +138,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
     return () => {
       isMounted = false;
+      window.clearTimeout(timeoutId);
       if (checkInterval) clearInterval(checkInterval);
     };
   }, []);
@@ -406,7 +312,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           {/* Google GIS Button */}
           <div className="flex flex-col items-center justify-center min-h-[44px]">
             <div ref={googleBtnRef} className="w-full flex justify-center"></div>
-            {!isGisReady && (
+            {googleError && <p role="status" className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">{googleError}</p>}
+            {!isGisReady && !googleError && (
               <div className="flex items-center gap-1.5 text-xs text-slate-400 py-1">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 <span>Đang kết nối dịch vụ Google...</span>

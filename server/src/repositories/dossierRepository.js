@@ -1,13 +1,10 @@
-import { query, execute, isDbConnected } from '../utils/db.js';
-import { mockStore } from '../utils/mockStore.js';
+import { query, execute, transaction } from '../utils/db.js';
+
 import { sanitizeFormPayload } from '../utils/sanitizer.js';
 
 export const dossierRepository = {
   // Lấy tất cả hồ sơ kèm thông tin người tạo và biểu mẫu
   async findAll() {
-    if (!isDbConnected()) {
-      return mockStore.dossiers.map((d) => ({ ...d }));
-    }
 
     try {
       const rows = await query(`
@@ -25,9 +22,7 @@ export const dossierRepository = {
         ORDER BY d.created_at DESC
       `);
 
-      if (!rows || rows.length === 0) {
-        return mockStore.dossiers.map((d) => ({ ...d }));
-      }
+      if (!rows || rows.length === 0) return [];
       const formatted = rows.map(formatDossierRow);
       const uniqueMap = new Map();
       for (const item of formatted) {
@@ -38,17 +33,11 @@ export const dossierRepository = {
         }
       }
       return Array.from(uniqueMap.values());
-    } catch {
-      return mockStore.dossiers.map((d) => ({ ...d }));
-    }
+    } catch (error) { throw error; }
   },
 
   // Lấy hồ sơ theo ID hoặc Mã định danh
   async findById(id) {
-    if (!isDbConnected()) {
-      const match = mockStore.dossiers.find((d) => d.id === id || d.code === id);
-      return match ? { ...match } : null;
-    }
 
     try {
       const rows = await query(`
@@ -67,39 +56,19 @@ export const dossierRepository = {
         LIMIT 1
       `, [id, id]);
 
-      if (!rows || rows.length === 0) {
-        const match = mockStore.dossiers.find((d) => d.id === id || d.code === id);
-        return match ? { ...match } : null;
-      }
+      if (!rows || rows.length === 0) return null;
       return formatDossierRow(rows[0]);
-    } catch {
-      const match = mockStore.dossiers.find((d) => d.id === id || d.code === id);
-      return match ? { ...match } : null;
-    }
+    } catch (error) { throw error; }
   },
 
   // Sinh mã định danh tiếp theo CGCN-YYYY-XXXX
   async getNextCode() {
-    const year = new Date().getFullYear();
-    if (!isDbConnected()) {
-      const count = mockStore.dossiers.length + 1;
-      const numStr = String(count).padStart(4, '0');
-      return `CGCN-${year}-${numStr}`;
-    }
-
-    try {
-      const rows = await query(
-        `SELECT MAX(CAST(SUBSTRING_INDEX(code, '-', -1) AS UNSIGNED)) as max_num FROM dossiers WHERE code LIKE ?`,
-        [`CGCN-${year}-%`]
-      );
-      const count = (Number(rows[0]?.max_num) || 0) + 1;
-      const numStr = String(count).padStart(4, '0');
-      return `CGCN-${year}-${numStr}`;
-    } catch {
-      const count = mockStore.dossiers.length + 1;
-      const numStr = String(count).padStart(4, '0');
-      return `CGCN-${year}-${numStr}`;
-    }
+    return transaction(async () => {
+      const year = new Date().getFullYear();
+      await execute('INSERT INTO dossier_sequences (year,last_number) VALUES (?,1) ON DUPLICATE KEY UPDATE last_number=last_number+1', [year]);
+      const [row] = await query('SELECT last_number FROM dossier_sequences WHERE year=? FOR UPDATE', [year]);
+      return 'CGCN-' + year + '-' + String(row.last_number).padStart(4,'0');
+    });
   },
 
   // Tạo mới hồ sơ
@@ -123,76 +92,6 @@ export const dossierRepository = {
 
     const generatedDocxPath = dossier.generated_docx_path || dossier.docx_file_url || null;
     const generatedPdfPath = dossier.generated_pdf_path || null;
-
-    if (!isDbConnected()) {
-      const is2a =
-        String(dossier.template_id || dossier.templateId || '').includes('2a') ||
-        String(dossier.templateCode || '').includes('2a') ||
-        Boolean(sanitizedFormData.plan_code || sanitizedFormData.product_name);
-
-      const effectiveTmplId = is2a ? 'tmpl-cgcn-2a' : (dossier.template_id || dossier.templateId || 'tmpl-cgcn-1a');
-      const effectiveTmplCode = is2a ? 'Mẫu 2a-KH.CGCN' : (dossier.templateCode || 'Mẫu 1a-TT.CGCN');
-      const effectiveTmplTitle = is2a
-        ? 'Kế hoạch tổ chức chuyển giao công nghệ trong trường'
-        : (dossier.templateTitle || 'Tờ trình về việc chuyển giao tri thức từ kết quả đề tài nghiên cứu');
-
-      const createdItem = {
-        ...dossier,
-        id: dossier.id || `dos-${Date.now()}`,
-        code: dossier.code,
-        template_id: effectiveTmplId,
-        templateId: effectiveTmplId,
-        templateCode: effectiveTmplCode,
-        templateTitle: effectiveTmplTitle,
-        status: dossier.status || 'SUBMITTED',
-        current_version: currentVersion,
-        currentVersion,
-        applicant_email: applicantEmail,
-        applicantEmail,
-        formData: sanitizedFormData,
-        form_data: sanitizedFormData,
-        generated_docx_path: generatedDocxPath,
-        generatedDocxPath,
-        docx_file_url: generatedDocxPath,
-        generated_pdf_path: generatedPdfPath,
-        generatedPdfPath,
-        approved_pdf_path: dossier.approved_pdf_path || null,
-        approvedPdfPath: dossier.approved_pdf_path || null,
-        department_signed_files: dossier.department_signed_files || [],
-        departmentSignedFiles: dossier.department_signed_files || [],
-        resubmitted_signed_files: dossier.resubmitted_signed_files || [],
-        resubmittedSignedFiles: dossier.resubmitted_signed_files || [],
-        final_signed_pdf_path: dossier.final_signed_pdf_path || null,
-        finalSignedPdfPath: dossier.final_signed_pdf_path || null,
-        revision_note: dossier.revision_note || null,
-        revisionNote: dossier.revision_note || null,
-        review_notes: dossier.review_notes || dossier.revision_note || null,
-        timeline_logs: initialTimeline,
-        timelineLogs: initialTimeline,
-        timeline: initialTimeline.map((tl, idx) => ({
-          id: `tl-${idx + 1}`,
-          title: tl.title,
-          actor: dossier.createdBy?.name || 'Cán bộ / Giảng viên',
-          role: 'USER',
-          status: tl.status,
-          timestamp: tl.timestamp,
-          description: tl.note || '',
-        })),
-        created_at: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        submitted_at: dossier.submitted_at || new Date().toISOString(),
-        submittedAt: dossier.submitted_at || new Date().toISOString(),
-        createdBy: {
-          id: dossier.user_id || 'usr_canbo',
-          name: dossier.createdBy?.name || sanitizedFormData.full_name || 'Cán bộ / Giảng viên',
-          email: applicantEmail,
-          role: 'USER',
-          department: dossier.department_name || sanitizedFormData.department || 'Khoa Y',
-        },
-      };
-      mockStore.dossiers.unshift(createdItem);
-      return createdItem;
-    }
 
     const formDataJson = JSON.stringify(sanitizedFormData);
     const deptSignedJson = dossier.department_signed_files
@@ -233,13 +132,7 @@ export const dossierRepository = {
             );
           }
         }
-      } catch (uErr) {
-        console.warn(
-          '[dossierRepository] Tự động tạo user thất bại, chuyển sang usr-canbo dự phòng:',
-          uErr.message
-        );
-        finalUserId = 'usr-canbo';
-      }
+      } catch (error) { throw error; }
       dossier.user_id = finalUserId;
 
       // 2. Đảm bảo template_id hợp lệ với ràng buộc khóa ngoại fk_dossier_tmpl
@@ -254,9 +147,7 @@ export const dossierRepository = {
             ? 'tmpl-cgcn-2a'
             : 'tmpl-cgcn-1a';
         }
-      } catch {
-        finalTemplateId = 'tmpl-cgcn-1a';
-      }
+      } catch (error) { throw error; }
       dossier.template_id = finalTemplateId;
 
       const formData1aObj = dossier.form_data_1a || dossier.formData1a || null;
@@ -325,26 +216,7 @@ export const dossierRepository = {
         dossier.created_at || new Date(),
       ]);
       return this.findById(dossier.id);
-    } catch (dbErr) {
-      console.warn('[dossierRepository.create] Fallback mockStore:', dbErr.message);
-      const createdMock = {
-        ...dossier,
-        current_version: currentVersion,
-        currentVersion,
-        form_data: sanitizedFormData,
-        formData: sanitizedFormData,
-        generated_docx_path: generatedDocxPath,
-        generatedDocxPath,
-        generated_pdf_path: generatedPdfPath,
-        generatedPdfPath,
-        applicant_email: applicantEmail,
-        applicantEmail,
-        timeline_logs: initialTimeline,
-        timelineLogs: initialTimeline,
-      };
-      mockStore.dossiers.unshift(createdMock);
-      return createdMock;
-    }
+    } catch (error) { throw error; }
   },
 
   // Cập nhật thông tin hồ sơ
@@ -353,77 +225,6 @@ export const dossierRepository = {
     if (cleanFields.form_data || cleanFields.formData) {
       const cleanedForm = sanitizeFormPayload(cleanFields.form_data || cleanFields.formData);
       cleanFields.form_data = cleanedForm;
-    }
-
-    if (!isDbConnected()) {
-      const idx = mockStore.dossiers.findIndex((d) => d.id === id || d.code === id);
-      if (idx !== -1) {
-        const existing = mockStore.dossiers[idx];
-        const nextVersion =
-          cleanFields.current_version !== undefined
-            ? Number(cleanFields.current_version)
-            : existing.current_version || 1;
-        const nextDocx =
-          cleanFields.generated_docx_path ||
-          cleanFields.docx_file_url ||
-          existing.generated_docx_path ||
-          existing.docx_file_url;
-        const nextPdf =
-          cleanFields.generated_pdf_path ||
-          existing.generated_pdf_path;
-        const nextApprovedPdf =
-          cleanFields.approved_pdf_path ||
-          cleanFields.precheck_pdf_url ||
-          existing.approved_pdf_path;
-        const nextDeptFiles =
-          cleanFields.department_signed_files ||
-          cleanFields.resubmitted_signed_files ||
-          existing.department_signed_files ||
-          [];
-        const nextFinalPdf =
-          cleanFields.final_signed_pdf_path ||
-          cleanFields.final_pdf_url ||
-          existing.final_signed_pdf_path;
-        const nextRevisionNote =
-          cleanFields.revision_note !== undefined
-            ? cleanFields.revision_note
-            : cleanFields.review_notes !== undefined
-              ? cleanFields.review_notes
-              : existing.revision_note;
-
-        mockStore.dossiers[idx] = {
-          ...existing,
-          ...cleanFields,
-          current_version: nextVersion,
-          currentVersion: nextVersion,
-          formData: cleanFields.form_data || existing.formData,
-          form_data: cleanFields.form_data || existing.form_data,
-          status: cleanFields.status || existing.status,
-          generated_docx_path: nextDocx,
-          generatedDocxPath: nextDocx,
-          docx_file_url: nextDocx,
-          generated_pdf_path: nextPdf,
-          generatedPdfPath: nextPdf,
-          approved_pdf_path: nextApprovedPdf,
-          approvedPdfPath: nextApprovedPdf,
-          precheck_pdf_url: nextApprovedPdf,
-          department_signed_files: nextDeptFiles,
-          departmentSignedFiles: nextDeptFiles,
-          resubmitted_signed_files: nextDeptFiles,
-          resubmittedSignedFiles: nextDeptFiles,
-          final_signed_pdf_path: nextFinalPdf,
-          finalSignedPdfPath: nextFinalPdf,
-          final_pdf_url: nextFinalPdf,
-          revision_note: nextRevisionNote,
-          revisionNote: nextRevisionNote,
-          review_notes: nextRevisionNote,
-          reviewNotes: nextRevisionNote,
-          timeline_logs: cleanFields.timeline_logs || existing.timeline_logs,
-          timelineLogs: cleanFields.timeline_logs || existing.timelineLogs,
-        };
-        return { ...mockStore.dossiers[idx] };
-      }
-      return null;
     }
 
     const ALLOWED_DB_COLUMNS = new Set([
@@ -540,22 +341,11 @@ export const dossierRepository = {
     try {
       await execute(`UPDATE dossiers SET ${updates.join(', ')} WHERE id = ? OR code = ?`, values);
       return this.findById(id);
-    } catch (err) {
-      console.warn('[dossierRepository.update] Fallback mockStore:', err.message);
-      const idx = mockStore.dossiers.findIndex((d) => d.id === id || d.code === id);
-      if (idx !== -1) {
-        mockStore.dossiers[idx] = { ...mockStore.dossiers[idx], ...cleanFields };
-        return mockStore.dossiers[idx];
-      }
-      return null;
-    }
+    } catch (error) { throw error; }
   },
 
   // Đếm số phiên bản hiện có của một hồ sơ
   async countVersions(dossierId) {
-    if (!isDbConnected()) {
-      return mockStore.versions.filter((v) => v.dossier_id === dossierId || v.dossierId === dossierId).length;
-    }
 
     try {
       const rows = await query(
@@ -563,16 +353,11 @@ export const dossierRepository = {
         [dossierId]
       );
       return Number(rows[0]?.total || 0);
-    } catch {
-      return mockStore.versions.filter((v) => v.dossier_id === dossierId || v.dossierId === dossierId).length;
-    }
+    } catch (error) { throw error; }
   },
 
   // Lấy danh sách phiên bản lịch sử của một hồ sơ
   async findVersionsByDossierId(dossierId) {
-    if (!isDbConnected()) {
-      return mockStore.versions.filter((v) => v.dossier_id === dossierId || v.dossierId === dossierId);
-    }
 
     try {
       const rows = await query(
@@ -583,6 +368,9 @@ export const dossierRepository = {
         id: r.id,
         dossierId: r.dossier_id,
         versionNumber: Number(r.version_number),
+        snapshot: typeof r.snapshot === 'string' ? JSON.parse(r.snapshot) : r.snapshot,
+        signatureConfig: (typeof r.snapshot === 'string' ? JSON.parse(r.snapshot) : r.snapshot)?.signature_config,
+        isOfficial: ['VALIDATED','PENDING_SIGNED_REVIEW','WAITING_RECTOR_SIGNATURE','SIGNED_ARCHIVED'].includes((typeof r.snapshot === 'string' ? JSON.parse(r.snapshot) : r.snapshot)?.status),
         formData: typeof r.form_data === 'string' ? JSON.parse(r.form_data) : (r.form_data || {}),
         generatedDocxPath: r.generated_docx_path,
         generatedPdfPath: r.generated_pdf_path,
@@ -591,17 +379,16 @@ export const dossierRepository = {
         changeSummary: r.change_summary,
         createdAt: r.created_at,
       }));
-    } catch {
-      return mockStore.versions.filter((v) => v.dossier_id === dossierId || v.dossierId === dossierId);
-    }
+    } catch (error) { throw error; }
+  },
+
+  async snapshotVersion(id,version) {
+    const snapshot=await this.findById(id);
+    await execute('UPDATE dossier_versions SET snapshot=? WHERE dossier_id=? AND version_number=?',[JSON.stringify(snapshot),id,version]);
   },
 
   // Lưu bản ghi lịch sử phiên bản khi sửa form
   async saveVersion(versionData) {
-    if (!isDbConnected()) {
-      mockStore.versions.push(versionData);
-      return versionData;
-    }
 
     const formDataJson = typeof versionData.formData === 'string'
       ? versionData.formData
@@ -612,9 +399,9 @@ export const dossierRepository = {
         INSERT INTO dossier_versions (
           id, dossier_id, version_number, form_data,
           generated_docx_path, generated_pdf_path,
-          edited_by_id, edited_by_name, change_summary, created_at
+          edited_by_id, edited_by_name, change_summary, created_at, snapshot
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         versionData.id,
         versionData.dossierId,
@@ -626,17 +413,16 @@ export const dossierRepository = {
         versionData.editedByName,
         versionData.changeSummary,
         new Date(),
+        JSON.stringify(await this.findById(versionData.dossierId)),
       ]);
       return versionData;
-    } catch {
-      mockStore.versions.push(versionData);
-      return versionData;
-    }
+    } catch (error) { throw error; }
   },
 };
 
 function formatDossierRow(row) {
   if (!row) return null;
+  const legacyStatuses = { PENDING_PRECHECK:'SUBMITTED', NEEDS_REVISION:'RETURNED_FOR_REVISION', PRECHECK_PASSED:'VALIDATED', EVIDENCE_UPLOADED:'PENDING_SIGNED_REVIEW', SCHOOL_PROCESSING:'WAITING_RECTOR_SIGNATURE', COMPLETED:'SIGNED_ARCHIVED' };
 
   let formData = {};
   if (row.form_data) {
@@ -699,7 +485,7 @@ function formatDossierRow(row) {
     templateTitle: row.templateTitle || 'Biểu mẫu CGCN',
     templateCode: row.templateCode || 'Mẫu CGCN',
     department_name: row.department_name,
-    status: row.status,
+    status: legacyStatuses[row.status] || row.status,
     current_version: currentVersion,
     currentVersion,
     applicant_email: applicantEmail,

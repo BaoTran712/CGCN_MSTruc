@@ -26,12 +26,15 @@ console.log('=======================================================\n');
 const server = spawn('node', ['--watch', '--watch-path=server/src', 'server/src/server.js'], {
   stdio: 'inherit',
   shell: true,
+  env: { ...process.env, NODE_ENV: 'development' },
+  windowsHide: true,
 });
 
 // 2. Chạy Frontend Vite Dev Server (Port 3000)
 const client = spawn('npx', ['vite', '--port=3000', '--host=0.0.0.0'], {
   stdio: 'inherit',
   shell: true,
+  windowsHide: true,
 });
 
 const cleanup = () => {

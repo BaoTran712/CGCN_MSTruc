@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import { User, ActiveNavTab, Application } from '../../types';
 import { isAdminUser } from '../../constants';
-import { useAuth } from '../../contexts/AuthContext';
 import { normalizeStatus } from '../../services/workflowEngine';
 import logoUrl from '../../assets/logo.png';
 
@@ -55,7 +54,6 @@ export const Header: React.FC<HeaderProps> = ({
 
   const notifRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
-  const { switchRole } = useAuth();
 
   const isAdmin = isAdminUser(currentUser);
   const storageKey = `ctump_read_notifs_${currentUser?.id || currentUser?.email || 'default'}`;
@@ -162,7 +160,7 @@ export const Header: React.FC<HeaderProps> = ({
           code: d.code,
           title: `Hồ sơ ${d.code} (v${ver}) đã được duyệt hợp lệ`,
           message: isAdmin
-            ? `Đã gửi file PDF chuẩn cho giảng viên để trình ký phòng ban.`
+            ? `PDF chuẩn đã sẵn sàng cho giảng viên trình ký phòng ban.`
             : `Vui lòng tải file PDF chuẩn đi trình ký phòng ban và upload lại bản ký.`,
           timestamp: timeStr,
           type: 'success',
@@ -317,26 +315,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Zone 2: Subtle Role Pill, Notification Bell & User Profile */}
       <div className="flex items-center gap-2.5">
-        <button
-          type="button"
-          onClick={() => switchRole(isAdmin ? 'USER' : 'ADMIN')}
-          title={`Nhấn để chuyển nhanh sang vai trò ${isAdmin ? 'Giảng viên (User)' : 'Quản trị viên (Admin)'}`}
-          className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold rounded-full border transition-colors cursor-pointer ${
-            isAdmin
-              ? 'bg-emerald-50/80 hover:bg-emerald-100/80 text-emerald-800 border-emerald-200/80'
-              : 'bg-slate-100 hover:bg-slate-200/80 text-slate-700 border-slate-200/80'
-          }`}
-        >
-          {isAdmin ? (
-            <>
-              <Shield className="w-3 h-3 text-emerald-600" />
-              <span>Quản trị viên</span>
-            </>
-          ) : (
-            <span>Giảng viên</span>
-          )}
-          <ArrowLeftRight className="w-3 h-3 opacity-60 ml-0.5" />
-        </button>
+        <span className="hidden sm:inline-flex text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100">{isAdmin ? 'Quản trị viên' : 'Giảng viên'}</span>
 
         {/* Notification Bell */}
         <div className="relative" ref={notifRef}>
@@ -514,19 +493,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setShowUserMenu(false);
-                  switchRole(isAdmin ? 'USER' : 'ADMIN');
-                }}
-                className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-100 rounded-md flex items-center gap-2 cursor-pointer transition-colors"
-              >
-                <ArrowLeftRight className="w-4 h-4 text-indigo-600" />
-                <span className="font-medium">
-                  Chuyển sang vai trò {isAdmin ? 'Giảng viên (User)' : 'Quản trị viên (Admin)'}
-                </span>
-              </button>
+
 
               {onSignOut && (
                 <button
