@@ -201,6 +201,19 @@ export interface SignedFileItem {
   path?: string;
   type?: string;
   uploadedAt?: string;
+  form?: '1a' | '2a';
+  mimeType?: string;
+  sha256?: string;
+}
+
+export interface UploadFileSelection extends SignedFileItem {
+  file?: File;
+  dataUrl?: string;
+}
+export interface SignedUploadPayload {
+  signed1a: UploadFileSelection;
+  signed2a: UploadFileSelection;
+  evidenceFiles: UploadFileSelection[];
 }
 
 export interface TimelineLogItem {
@@ -209,6 +222,11 @@ export interface TimelineLogItem {
   title: string;
   timestamp: string;
   note?: string;
+  id?: string;
+  type?: 'SIGNED_UPLOAD_RETURNED' | 'SIGNED_UPLOAD_SUBMITTED';
+  round?: number;
+  files?: SignedFileItem[];
+  actorName?: string;
 }
 
 export interface ApplicationHistory {

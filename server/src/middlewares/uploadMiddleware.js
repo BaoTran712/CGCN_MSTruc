@@ -26,8 +26,19 @@ function uploader(final=false) {
 export const uploadSignedAndEvidence=uploader();
 export const uploadMulti=uploadSignedAndEvidence;
 export const uploadFinalSignedPdf=uploader(true);
+export function uploadedFiles(req){return req.file?[req.file]:Array.isArray(req.files)?req.files:Object.values(req.files||{}).flat();}
+export function removeUploadedFiles(req){
+  for(const file of uploadedFiles(req)){
+    const absolute=path.resolve(file.path);const relative=path.relative(config.uploadDir,absolute);
+    if(relative&&!relative.startsWith('..')&&!path.isAbsolute(relative)&&fs.existsSync(absolute))fs.unlinkSync(absolute);
+  }
+}
+export function requireSignedUploadStage(req,res,next){
+  if(req.dossier?.status!=='VALIDATED')return res.status(409).json({success:false,message:'Chỉ được tải bản ký/minh chứng khi hồ sơ đã duyệt hoặc được Admin trả lại để tải lại.'});
+  next();
+}
 export function verifyUploadedFiles(req,_res,next) {
-  const files=req.file?[req.file]:req.files||[];
+  const files=uploadedFiles(req);
   try {
     for(const file of files){
       const descriptor=fs.openSync(file.path,'r');
@@ -41,5 +52,5 @@ export function verifyUploadedFiles(req,_res,next) {
       if(!valid)throw new Error('Nội dung tệp không khớp định dạng khai báo.');
     }
     next();
-  }catch(error){for(const file of files)fs.rmSync(file.path,{force:true});error.status=400;next(error);}
+  }catch(error){removeUploadedFiles(req);error.status=400;next(error);}
 }

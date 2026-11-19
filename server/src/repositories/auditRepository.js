@@ -16,13 +16,14 @@ export const auditRepository = {
       fromStatus: log.fromStatus || log.from_status || null,
       toStatus: log.toStatus || log.to_status || null,
       notes: log.notes || '',
+      metadata: log.metadata || null,
       createdAt: new Date().toISOString(),
     };
 
     try {
       await execute(`
-        INSERT INTO audit_logs (id, dossier_id, actor_id, actor_name, actor_role, action, from_status, to_status, notes, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO audit_logs (id, dossier_id, actor_id, actor_name, actor_role, action, from_status, to_status, notes, metadata, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         id,
         newLog.dossierId,
@@ -33,6 +34,7 @@ export const auditRepository = {
         newLog.fromStatus,
         newLog.toStatus,
         newLog.notes,
+        newLog.metadata ? JSON.stringify(newLog.metadata) : null,
         new Date(),
       ]);
       return newLog;

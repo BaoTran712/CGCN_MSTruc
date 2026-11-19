@@ -3,6 +3,7 @@ import {
   Application,
   DocumentTemplate,
   User,
+  SignedUploadPayload,
 } from '../types';
 import * as api from '../services/api';
 import { normalizeStatus } from '../services/workflowEngine';
@@ -25,10 +26,10 @@ interface DossierContextValue {
   adminPrecheck: (id: string, isValid: boolean, reviewNotes?: string, adminUser?: User, targetForm?: '1a' | '2a' | 'both') => Promise<Application>;
   uploadFacultySignature: (
     id: string,
-    facultySignedPdfUrl?: string,
-    evidenceFiles?: Array<{ name: string; url: string; size?: string }>,
+    packet: SignedUploadPayload,
     user?: User
   ) => Promise<Application>;
+  returnSignedUpload: (id:string,reason:string) => Promise<Application>;
   updateSchoolSigning: (
     id: string,
     flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean; note?: string },
@@ -163,16 +164,21 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const uploadFacultySignature = useCallback(
     async (
       id: string,
-      facultySignedPdfUrl?: string,
-      evidenceFiles?: Array<{ name: string; url: string; size?: string }>,
+      packet: SignedUploadPayload,
       user?: User
     ): Promise<Application> => {
-      const updated = await api.uploadFacultySignature(id, facultySignedPdfUrl, evidenceFiles, user);
+      const updated = await api.uploadFacultySignature(id, packet, user);
       upsertInState(updated, id);
       return updated;
     },
     [upsertInState]
   );
+
+  const returnSignedUpload=useCallback(async(id:string,reason:string)=>{
+    const updated=await api.returnSignedUpload(id,reason);
+    upsertInState(updated,id);
+    return updated;
+  },[upsertInState]);
 
   const updateSchoolSigning = useCallback(
     async (
@@ -243,6 +249,7 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
       returnDossier,
       adminPrecheck,
       uploadFacultySignature,
+      returnSignedUpload,
       updateSchoolSigning,
       completeDossier,
       updateDossier,
@@ -263,6 +270,7 @@ export const DossierProvider: React.FC<{ children: React.ReactNode }> = ({ child
       returnDossier,
       adminPrecheck,
       uploadFacultySignature,
+      returnSignedUpload,
       updateSchoolSigning,
       completeDossier,
       updateDossier,

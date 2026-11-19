@@ -3,6 +3,7 @@ import {
   ActiveNavTab,
   Application,
   DocumentTemplate,
+  SignedUploadPayload,
 } from './types';
 import { isAdminUser } from './constants';
 import { getEffectiveTemplate } from './utils/templateUtils';
@@ -41,6 +42,7 @@ function AppContent() {
     returnDossier,
     adminPrecheck,
     uploadFacultySignature,
+    returnSignedUpload,
     updateSchoolSigning,
     completeDossier,
     updateDossier,
@@ -193,17 +195,24 @@ function AppContent() {
 
   const handleUploadFacultySignature = async (
     dossierId: string,
-    pdfUrl: string,
-    evidenceFiles: Array<{ name: string; url: string; size?: string }>
+    packet: SignedUploadPayload
   ) => {
     try {
-    const updated = await uploadFacultySignature(dossierId, pdfUrl, evidenceFiles, currentUser);
+    const updated = await uploadFacultySignature(dossierId, packet, currentUser);
     if (selectedDossier?.id === updated.id) {
       setSelectedDossier(updated);
     }
     showToast(`Đã tải lên bản ký phòng ban cho hồ sơ ${updated.code} (Trạng thái: Chờ duyệt)!`);
 
     } catch(error:any) { showToast(error.message || 'Không thể hoàn tất thao tác.','error'); throw error; }
+  };
+
+  const handleReturnSignedUpload=async(id:string,reason:string)=>{
+    try{
+      const updated=await returnSignedUpload(id,reason);
+      if(selectedDossier?.id===updated.id)setSelectedDossier(updated);
+      showToast('Đã yêu cầu tải lại bản ký/minh chứng. Nội dung 1a/2a giữ nguyên.');
+    }catch(error:any){showToast(error.message||'Không thể trả lại bản ký/minh chứng.','error');throw error;}
   };
 
   const handleUpdateSchoolSigning = async (
@@ -267,6 +276,7 @@ function AppContent() {
           onResubmitDossier={handleResubmitDossier}
           onAdminPrecheck={handleAdminPrecheck}
           onUploadFacultySignature={handleUploadFacultySignature}
+          onReturnSignedUpload={handleReturnSignedUpload}
           onUpdateSchoolSigning={handleUpdateSchoolSigning}
           onCompleteDossier={handleCompleteDossier}
           onUpdateDossier={updateDossier}

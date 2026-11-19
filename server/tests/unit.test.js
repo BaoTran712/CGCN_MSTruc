@@ -117,6 +117,29 @@ test('multipart upload preserves browser boundary and transmits actual file byte
  assert.equal(client.calls[0].headers.has('Content-Type'),false);
  assert.equal(client.calls[0].body,data);
 });
+
+test('signed upload sends explicit 1a/2a fields and keeps PDF evidence separate',async()=>{
+ const client=await frontend();
+ const first=new Blob(['%PDF-first'],{type:'application/pdf'}),second=new Blob(['%PDF-second'],{type:'application/pdf'}),proof=new Blob(['%PDF-proof'],{type:'application/pdf'});
+ await client.api.uploadFacultySignature('dossier',{signed1a:{name:'1a.pdf',url:'',file:first},signed2a:{name:'2a.pdf',url:'',file:second},evidenceFiles:[{name:'proof.pdf',url:'',file:proof},{name:'kept.png',url:'/uploads/evidence/kept.png'}]});
+ const body=client.calls[0].body;
+ assert.equal(client.calls[0].headers.has('Content-Type'),false);
+ assert.equal(body.get('signed1a').name,'1a.pdf');assert.equal(body.get('signed2a').name,'2a.pdf');
+ assert.equal(body.getAll('evidence').length,1);assert.equal(body.get('evidence').name,'proof.pdf');
+ assert.equal(await body.get('signed1a').text(),'%PDF-first');
+ assert.equal(body.get('retainedEvidence'),'[{"url":"/uploads/evidence/kept.png"}]');
+});
+
+test('signed upload return notice follows the latest upload event without changing form approval',async()=>{
+ const {api}=await frontend('src/utils/signedUploads.ts');
+ const returned={id:'return-1',type:'SIGNED_UPLOAD_RETURNED',note:'Minh chứng không rõ',timestamp:'2026-11-19T00:00:00Z'};
+ const dossier={status:'VALIDATED',status_1a:'APPROVED',status_2a:'APPROVED',timeline_logs:[returned],department_signed_files:[{name:'1a.pdf',url:'/uploads/signed/1a.pdf',form:'1a'},{name:'2a.pdf',url:'/uploads/signed/2a.pdf',form:'2a'}],evidence_files:[{name:'proof.pdf',url:'/uploads/evidence/proof.pdf',type:'EVIDENCE'}]};
+ assert.equal(api.signedUploadReturn(dossier).note,'Minh chứng không rõ');
+ assert.equal(api.currentSignedPacket(dossier).signed2a.name,'2a.pdf');assert.equal(api.currentSignedPacket(dossier).evidence.length,1);
+ dossier.timeline_logs.push({id:'upload-2',type:'SIGNED_UPLOAD_SUBMITTED'});dossier.status='PENDING_SIGNED_REVIEW';
+ assert.equal(api.signedUploadReturn(dossier),undefined);assert.equal(api.signedUploadEvents(dossier).length,2);
+ assert.equal(dossier.status_1a,'APPROVED');assert.equal(dossier.status_2a,'APPROVED');
+});
 test('server data remains authoritative when there is stale local browser data',async()=>{
  const client=await frontend();
  client.storage.setItem('ctump_dossiers_cache_v3','[{"id":"stale"}]');

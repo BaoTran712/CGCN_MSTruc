@@ -23,7 +23,7 @@ import {
   ExternalLink,
   X,
 } from 'lucide-react';
-import { Application, DocumentTemplate, User, ActiveNavTab, SignatureConfig, DossierVersion } from '../types';
+import { Application, DocumentTemplate, User, ActiveNavTab, SignatureConfig, DossierVersion, UploadFileSelection, SignedUploadPayload } from '../types';
 import { rollbackDossierVersion, API_BASE_URL, authorizedFetch } from '../services/api';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { WordDocumentPreview } from '../components/document/WordDocumentPreview';
@@ -34,6 +34,7 @@ import { normalizeStatus } from '../services/workflowEngine';
 import { isAdminUser, OFFICIAL_TEMPLATES } from '../constants';
 import { formatDateTimeVi } from '../utils/statusHelpers';
 import { getEffectiveTemplate, isMau2aTemplateOrDossier } from '../utils/templateUtils';
+import { currentSignedPacket, signedUploadEvents, signedUploadReturn } from '../utils/signedUploads';
 
 interface DossierDetailViewProps {
   dossier: Application;
@@ -54,9 +55,9 @@ interface DossierDetailViewProps {
   ) => Promise<void>;
   onUploadFacultySignature?: (
     dossierId: string,
-    pdfUrl: string,
-    evidenceFiles: Array<{ name: string; url: string; size?: string }>
+    packet: SignedUploadPayload
   ) => Promise<void>;
+  onReturnSignedUpload?: (id:string,reason:string) => Promise<void>;
   onUpdateSchoolSigning?: (
     dossierId: string,
     flags: { khcnSigned?: boolean; khtcSigned?: boolean; bghSigned?: boolean; note?: string }
@@ -82,6 +83,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
   onResubmitDossier,
   onAdminPrecheck,
   onUploadFacultySignature,
+  onReturnSignedUpload,
   onUpdateSchoolSigning,
   onCompleteDossier,
   onUpdateDossier,
@@ -118,10 +120,12 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
   const [isRollingBack, setIsRollingBack] = useState<boolean>(false);
 
   // Lecturer state (Upload bản ký phòng ban + minh chứng)
-  const [signedPdfName, setSignedPdfName] = useState<string>('');
-  const [evidenceList, setEvidenceList] = useState<
-    Array<{ name: string; url: string; size: string; dataUrl?: string; mimeType?: string }>
-  >([]);
+  const [signed1a,setSigned1a]=useState<UploadFileSelection|null>(null);
+  const [signed2a,setSigned2a]=useState<UploadFileSelection|null>(null);
+  const [evidenceList,setEvidenceList]=useState<UploadFileSelection[]>([]);
+  const [signedReturnNote,setSignedReturnNote]=useState('');
+  const [showSignedReturnBox,setShowSignedReturnBox]=useState(false);
+  const [isReturningSigned,setIsReturningSigned]=useState(false);
   const [isUploadingSign, setIsUploadingSign] = useState<boolean>(false);
   const [previewUploadedFile, setPreviewUploadedFile] = useState<{
     name: string;
@@ -131,6 +135,10 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
     isLoading?: boolean;
   } | null>(null);
 
+  useEffect(()=>()=>{
+    if(previewUploadedFile?.blobUrl)URL.revokeObjectURL(previewUploadedFile.blobUrl);
+  },[previewUploadedFile?.blobUrl]);
+
   useEffect(() => {
     setCurrentDossier(dossier);
     setStatus1a((dossier as any).status_1a || 'PENDING');
@@ -138,6 +146,13 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
   }, [dossier]);
 
   const normalizedStatus = normalizeStatus(currentDossier.status);
+  const uploadReturn=signedUploadReturn(currentDossier);
+  const uploadHistory=signedUploadEvents(currentDossier);
+  useEffect(()=>{
+    const packet=currentSignedPacket(dossier);
+    setSigned1a(packet.signed1a||null);setSigned2a(packet.signed2a||null);setEvidenceList(packet.evidence);
+    setShowSignedReturnBox(false);setSignedReturnNote('');
+  },[dossier.id,dossier.status]);
   const isReturnedForRevision = normalizedStatus === 'RETURNED_FOR_REVISION';
   const isAdmin = isAdminUser(currentUser);
   const currentVersion = currentDossier.current_version || currentDossier.currentVersion || 1;
@@ -392,47 +407,28 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
     }
   };
 
-  const handleSelectSignedAndEvidenceFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    let firstPdf = signedPdfName;
-    const fileArray = Array.from(files);
-
-    const readAsDataUrl = (file: File): Promise<string> =>
-      new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result || ''));
-        reader.onerror = () => resolve('');
-        reader.readAsDataURL(file);
-      });
-
-    const added: Array<{ name: string; url: string; size: string; dataUrl?: string; mimeType?: string }> = [];
-
-    for (const f of fileArray) {
-      const sizeStr = `${(f.size / 1024).toFixed(1)} KB`;
-      if (f.name.toLowerCase().endsWith('.pdf') && !firstPdf) {
-        firstPdf = f.name;
-      }
-      const dataUrl = await readAsDataUrl(f);
-      added.push({
-        name: f.name,
-        url: `/uploads/signed/${encodeURIComponent(f.name)}`,
-        size: sizeStr,
-        dataUrl: dataUrl || undefined,
-        mimeType: f.type || undefined,
-      });
-    }
-
-    if (firstPdf) setSignedPdfName(firstPdf);
-    setEvidenceList((prev) => [...prev, ...added]);
+  const handleSelectSignedFile=(form:'1a'|'2a',event:React.ChangeEvent<HTMLInputElement>)=>{
+    const file=event.target.files?.[0];
+    if(!file)return;
+    if(!file.name.toLowerCase().endsWith('.pdf')){alert('Vui lòng chọn tệp PDF đã ký.');event.target.value='';return;}
+    const item:UploadFileSelection={name:file.name,url:'',size:(file.size/1024).toFixed(1)+' KB',mimeType:file.type,file};
+    if(form==='1a')setSigned1a(item);else setSigned2a(item);
+    event.target.value='';
+  };
+  const handleSelectEvidenceFiles=(event:React.ChangeEvent<HTMLInputElement>)=>{
+    const files=Array.from(event.target.files||[]);
+    if(evidenceList.length+files.length>8){alert('Chỉ được gửi tối đa 8 tệp minh chứng.');event.target.value='';return;}
+    setEvidenceList(previous=>[...previous,...files.map(file=>({name:file.name,url:'',size:(file.size/1024).toFixed(1)+' KB',mimeType:file.type,file}))]);
+    event.target.value='';
   };
 
   const resolveUploadedFileBlobUrl = async (fileItem: {
     name: string;
     url?: string;
     dataUrl?: string;
+    file?: File;
   }): Promise<{ blobUrl: string; isImage: boolean }> => {
+    if(fileItem.file)return {blobUrl:URL.createObjectURL(fileItem.file),isImage:fileItem.file.type.startsWith('image/')};
     const lowerName = String(fileItem.name || '').toLowerCase();
     const isImage =
       lowerName.endsWith('.png') ||
@@ -513,6 +509,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
     name: string;
     url?: string;
     dataUrl?: string;
+    file?: File;
   }) => {
     setPreviewUploadedFile({
       name: fileItem.name,
@@ -538,6 +535,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
     name: string;
     url?: string;
     dataUrl?: string;
+    file?: File;
   }) => {
     try {
       const { blobUrl } = await resolveUploadedFileBlobUrl(fileItem);
@@ -554,22 +552,18 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
   };
 
   const handleSubmitSignedUpload = async () => {
-    if (!onUploadFacultySignature) return;
-    if (!signedPdfName && evidenceList.length === 0) {
-      alert('Vui lòng chọn file PDF đã ký phòng ban (kèm minh chứng nếu có) trước khi nhấn Gửi.');
-      return;
-    }
-
+    if(!onUploadFacultySignature)return;
+    if(!signed1a||!signed2a){alert('Vui lòng chọn đủ bản PDF đã ký Mẫu 1a và Mẫu 2a.');return;}
     try {
       setIsUploadingSign(true);
-      const pdfUrl = `/uploads/signed/${currentDossier.code}-${encodeURIComponent(
-        signedPdfName || 'department-signed.pdf'
-      )}`;
-
-      await onUploadFacultySignature(currentDossier.id, pdfUrl, evidenceList);
-    } finally {
-      setIsUploadingSign(false);
-    }
+      await onUploadFacultySignature(currentDossier.id,{signed1a,signed2a,evidenceFiles:evidenceList});
+    } finally {setIsUploadingSign(false);}
+  };
+  const handleReturnSignedUpload=async()=>{
+    if(!onReturnSignedUpload)return;
+    if(!signedReturnNote.trim()){alert('Vui lòng nhập lý do yêu cầu tải lại.');return;}
+    try{setIsReturningSigned(true);await onReturnSignedUpload(currentDossier.id,signedReturnNote.trim());}
+    finally{setIsReturningSigned(false);}
   };
 
   const handleMoveToRectorSignature = async () => {
@@ -931,6 +925,26 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
         />
       )}
 
+      {uploadHistory.length>0&&(
+        <details className="bg-white rounded-xl border border-slate-200 p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-800">Lịch sử nộp và trả lại bản ký/minh chứng</summary>
+          <div className="mt-3 space-y-3">
+            {[...uploadHistory].reverse().map((event,index)=>(
+              <div key={event.id||event.timestamp+index} className="rounded-lg border border-slate-200 p-3 space-y-2 text-xs">
+                <div className="font-semibold text-slate-800">{event.title}</div>
+                <div className="text-slate-500">{formatDateTimeVi(event.timestamp)}{event.actorName?' — '+event.actorName:''}</div>
+                {event.note&&<p className="whitespace-pre-wrap text-slate-700">{event.note}</p>}
+                <div className="flex flex-wrap gap-2">
+                  {(event.files||[]).map(file=>(
+                    <button key={file.url} type="button" className="text-blue-700 underline text-left" onClick={()=>handlePreviewUploadedFile(file)}>{file.form?'Mẫu '+file.form+': ':''}{file.name}</button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
       {/* =================================================================
           TRƯỜNG HỢP 1: GIẢNG VIÊN / THẦY CÔ (USER)
       ================================================================= */}
@@ -956,6 +970,11 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
           {/* Bước 2: Đã hợp lệ -> Tải PDF chuẩn (Mẫu 1a & Mẫu 2a) & Upload lại sau khi ký */}
           {normalizedStatus === 'VALIDATED' && (
             <div className="space-y-4">
+              {uploadReturn&&<div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-xs text-amber-900 space-y-2">
+                <p className="font-bold">Admin yêu cầu tải lại bản ký/minh chứng</p>
+                <p className="whitespace-pre-wrap">Lý do: {uploadReturn.note}</p>
+                <p>Nội dung và kết quả duyệt 1a/2a giữ nguyên. Bạn có thể giữ file đúng và thay file cần sửa trước khi nộp lại.</p>
+              </div>}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <button
                   type="button"
@@ -1008,21 +1027,26 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
                   2. Upload lại sau khi ký xong
                 </div>
                 <p className="text-[11px] text-slate-600">
-                  Tải lên file PDF đã có chữ ký phòng ban kèm ảnh/PDF minh chứng:
+                  Chọn riêng hai bản PDF đã ký Mẫu 1a và Mẫu 2a; đính kèm minh chứng nếu có:
                 </p>
 
-                <label className="flex flex-col items-center justify-center border-2 border-dashed border-blue-300 hover:border-blue-500 bg-white rounded-lg p-4 text-center cursor-pointer transition-colors">
-                  <Upload className="w-5 h-5 text-blue-600 mb-1" />
-                  <span className="text-xs font-semibold text-blue-800">
-                    Chọn file PDF đã ký + Minh chứng
-                  </span>
-                  <input
-                    type="file"
-                    multiple
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={handleSelectSignedAndEvidenceFiles}
-                    className="hidden"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {([{form:'1a',selection:signed1a},{form:'2a',selection:signed2a}] as const).map(({form,selection})=>(
+                    <div key={form} className="rounded-lg border border-blue-200 bg-white p-3 space-y-2">
+                      <label className="block text-xs font-semibold text-blue-900">
+                        Bản PDF đã ký Mẫu {form} *
+                        <input aria-label={'Bản PDF đã ký Mẫu '+form} type="file" accept=".pdf,application/pdf" onChange={event=>handleSelectSignedFile(form,event)} className="block mt-2 w-full text-xs" />
+                      </label>
+                      {selection&&<div className="flex items-center gap-2 text-xs">
+                        <button type="button" className="min-w-0 truncate text-blue-700 underline" onClick={()=>handlePreviewUploadedFile(selection)}>{selection.name}</button>
+                        <button type="button" aria-label={'Bỏ bản ký '+form} onClick={()=>form==='1a'?setSigned1a(null):setSigned2a(null)} className="ml-auto text-rose-600"><X className="w-4 h-4" /></button>
+                      </div>}
+                    </div>
+                  ))}
+                </div>
+                <label className="block rounded-lg border border-dashed border-slate-300 bg-white p-3 text-xs font-semibold text-slate-700">
+                  Minh chứng (ảnh hoặc PDF, tối đa 8 tệp)
+                  <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={handleSelectEvidenceFiles} className="block mt-2 w-full text-xs" />
                 </label>
 
                 {evidenceList.length > 0 && (
@@ -1068,12 +1092,12 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
 
                 <button
                   type="button"
-                  disabled={isUploadingSign}
+                  disabled={isUploadingSign||!signed1a||!signed2a}
                   onClick={handleSubmitSignedUpload}
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-5 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  <span>{isUploadingSign ? 'Đang gửi...' : 'Gửi bản ký phòng ban'}</span>
+                  <span>{isUploadingSign ? 'Đang gửi...' : 'Nộp bản ký 1a/2a và minh chứng'}</span>
                 </button>
               </div>
             </div>
@@ -1111,7 +1135,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
                           className="flex items-center gap-2 min-w-0 text-left hover:text-blue-700 font-medium cursor-pointer"
                         >
                           <Paperclip className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                          <span className="truncate">{f.name}</span>
+                          <span className="truncate">{f.form ? "Mẫu "+f.form+" — " : ""}{f.name}</span>
                           {f.size && (
                             <span className="text-[10.5px] text-slate-400 font-mono shrink-0">
                               ({f.size})
@@ -1466,8 +1490,8 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
           {/* Khi đơn ở VALIDATED: Chờ Thầy/Cô upload bản ký phòng ban */}
           {normalizedStatus === 'VALIDATED' && (
             <div className="p-4 rounded-lg bg-sky-50 border border-sky-200 text-xs text-sky-900 space-y-1.5">
-              <div className="font-bold">Đã duyệt hợp lệ &amp; gửi PDF chuẩn</div>
-              <p>Đang chờ Thầy/Cô xin chữ ký phòng ban và upload lại lên hệ thống.</p>
+              <div className="font-bold">{uploadReturn?'Đang chờ tải lại bản ký/minh chứng':'Đã duyệt hợp lệ & gửi PDF chuẩn'}</div>
+              <p>{uploadReturn?uploadReturn.note:'Đang chờ Thầy/Cô xin chữ ký phòng ban và upload lại lên hệ thống.'}</p>
             </div>
           )}
 
@@ -1495,7 +1519,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
                       title="Nhấn để mở xem trực tiếp nội dung tệp"
                     >
                       <Paperclip className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                      <span className="truncate">{f.name}</span>
+                      <span className="truncate">{f.form ? "Mẫu "+f.form+" — " : ""}{f.name}</span>
                       {f.size && (
                         <span className="text-[10.5px] text-slate-400 font-mono shrink-0">
                           ({f.size})
@@ -1529,9 +1553,23 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
 
           {/* Khi đơn ở PENDING_SIGNED_REVIEW: Nút chuyển sang Chờ ký Hiệu trưởng */}
           {normalizedStatus === 'PENDING_SIGNED_REVIEW' && (
+            <div className="space-y-3">
+              <button type="button" disabled={isReturningSigned||isMovingToRector} onClick={()=>setShowSignedReturnBox(value=>!value)} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 text-xs font-semibold disabled:opacity-50">
+                <RotateCcw className="w-4 h-4" />Yêu cầu tải lại bản ký/minh chứng
+              </button>
+              {showSignedReturnBox&&<div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-3">
+                <p className="text-xs text-amber-900">Thao tác này mở lại bước tải file, giữ nguyên nội dung và kết quả duyệt 1a/2a.</p>
+                <label className="block text-xs font-semibold text-slate-800">Lý do yêu cầu tải lại
+                  <textarea value={signedReturnNote} onChange={event=>setSignedReturnNote(event.target.value)} maxLength={4000} rows={3} className="block mt-2 w-full rounded border border-amber-300 bg-white p-2 text-xs" placeholder="Nêu rõ bản ký hoặc minh chứng cần thay và nội dung chưa hợp lệ..." />
+                </label>
+                <div className="flex gap-2">
+                  <button type="button" disabled={isReturningSigned||!signedReturnNote.trim()} onClick={handleReturnSignedUpload} className="rounded-lg bg-amber-700 text-white px-4 py-2 text-xs font-semibold disabled:opacity-50">{isReturningSigned?'Đang gửi...':'Trả lại để tải lại'}</button>
+                  <button type="button" disabled={isReturningSigned} onClick={()=>setShowSignedReturnBox(false)} className="rounded-lg bg-white border px-4 py-2 text-xs">Hủy</button>
+                </div>
+              </div>}
             <button
               type="button"
-              disabled={isMovingToRector}
+              disabled={isMovingToRector||isReturningSigned}
               onClick={handleMoveToRectorSignature}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-lg shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
             >
@@ -1540,6 +1578,7 @@ export const DossierDetailView: React.FC<DossierDetailViewProps> = ({
                 {isMovingToRector ? 'Đang chuyển...' : 'Chuyển sang Chờ ký Hiệu trưởng'}
               </span>
             </button>
+            </div>
           )}
 
           {/* Khi đơn ở PENDING_SIGNED_REVIEW hoặc WAITING_RECTOR_SIGNATURE: Tải lên bản ký Hiệu trưởng & Xác nhận Đã ký */}

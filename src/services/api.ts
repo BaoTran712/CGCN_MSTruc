@@ -1,4 +1,4 @@
-import type { DocumentTemplate, Application, ApplicationHistory, User, Notification as NotificationItem } from '../types';
+import type { DocumentTemplate, Application, ApplicationHistory, User, Notification as NotificationItem, SignedUploadPayload, UploadFileSelection } from '../types';
 import { API_BASE_URL, API_ENDPOINTS } from '../config/api.config';
 import { OFFICIAL_TEMPLATES, AUTH_TOKEN_KEY } from '../constants';
 
@@ -110,18 +110,21 @@ export async function adminPrecheck(id: string,isValid: boolean,reviewNotes?: st
 }
 export const rollbackDossierVersion = (id: string,targetVersionNumber: number,_user?: User) =>
   request<Application>(API_ENDPOINTS.GET_DOSSIER_DETAIL(encodeURIComponent(id)) + '/rollback',{method:'POST',body:JSON.stringify({targetVersionNumber})});
-export interface EvidenceUpload { name:string; url:string; size?:string; dataUrl?:string; mimeType?:string; }
-export async function uploadFacultySignature(id: string,facultySignedPdfUrl?: string,evidenceFiles: EvidenceUpload[] = [],_user?: User): Promise<Application> {
-  const body = new FormData();
-  const retained = [];
-  for (const item of evidenceFiles) {
-    if (item.dataUrl?.startsWith('data:')) {
-      const blob = await fetch(item.dataUrl).then(response => response.blob());
-      body.append('files',blob,item.name);
-    } else retained.push({name:item.name,url:item.url,size:item.size});
-  }
-  if (facultySignedPdfUrl && !evidenceFiles.some(item => item.dataUrl)) body.set('facultySignedPdfUrl',facultySignedPdfUrl);
-  body.set('evidenceFiles',JSON.stringify(retained));
+export type EvidenceUpload = UploadFileSelection;
+export const returnSignedUpload = (id:string,reason:string) =>
+  request<Application>(API_ENDPOINTS.RETURN_SIGNED_UPLOAD(encodeURIComponent(id)),{method:'PATCH',body:JSON.stringify({reason})});
+export async function uploadFacultySignature(id: string,packet: SignedUploadPayload,_user?: User): Promise<Application> {
+  const body=new FormData();
+  const append=async(field:string,item:UploadFileSelection)=>{
+    if(item.file){body.append(field,item.file,item.name);return true;}
+    if(item.dataUrl?.startsWith('data:')){const blob=await fetch(item.dataUrl).then(response=>response.blob());body.append(field,blob,item.name);return true;}
+    return false;
+  };
+  if(!await append('signed1a',packet.signed1a))body.set('retainedSigned1a',packet.signed1a.url);
+  if(!await append('signed2a',packet.signed2a))body.set('retainedSigned2a',packet.signed2a.url);
+  const retained=[];
+  for(const item of packet.evidenceFiles)if(!await append('evidence',item))retained.push({url:item.url});
+  body.set('retainedEvidence',JSON.stringify(retained));
   return request<Application>(API_ENDPOINTS.REUPLOAD_SIGNED(encodeURIComponent(id)),{method:'POST',body});
 }
 export const updateSchoolSigning = (id: string,flags: {khcnSigned?:boolean;khtcSigned?:boolean;bghSigned?:boolean;note?:string},_adminUser?:User) =>

@@ -100,6 +100,12 @@ Lệnh `npm run test:mail` kiểm thử xác thực, lỗi SMTP và tệp đính
 
 File ký và minh chứng được gửi bằng multipart, lưu trên server và kiểm tra quyền khi tải. File PDF cuối đã upload được giữ nguyên nội dung khi tải/xuất, gồm chữ ký có trong file. Hệ thống không thay thế file ký đã mất bằng PDF sinh lại từ biểu mẫu.
 
+Ở bước duyệt bản ký/minh chứng, Admin có thể chọn “Yêu cầu tải lại bản ký/minh chứng”, nhập lý do và trả hồ sơ về bước tải file. Người nộp chọn riêng PDF ký 1a/2a, giữ file đúng hoặc thay file cần sửa, rồi nộp lại. Nội dung, trạng thái duyệt và số phiên bản biểu mẫu giữ nguyên. Các lượt nộp, lý do trả lại và file cũ được lưu trong lịch sử, có kiểm tra quyền tải.
+
+Chỉ được nộp file khi hồ sơ ở bước tải lên; API chặn tải đè trong lúc chờ Admin kiểm tra. Bộ nộp cần hai PDF khác nhau được gán rõ Mẫu 1a/Mẫu 2a; PDF minh chứng được phân loại riêng. Các lượt cũ chưa có phân loại 1a/2a cần được trả lại để chọn đúng hai bản ký trước khi chuyển tiếp. Bản cập nhật này dùng các cột JSON/attachments hiện có, không yêu cầu tạo lại database hoặc chạy lại SOURCE.
+
+API tương ứng: `PATCH /api/applications/:id/return-signed` với JSON `{ "reason": "Lý do tải lại" }` (ADMIN); `POST /api/applications/:id/reupload-signed` dùng multipart `signed1a`, `signed2a`, `evidence`. Tệp giữ lại dùng `retainedSigned1a`, `retainedSigned2a` và `retainedEvidence` (JSON array chứa url); backend chỉ chấp nhận đúng file của lượt hiện tại/đúng biểu mẫu.
+
 Cần sao lưu MySQL cùng UPLOAD_DIR; chỉ sao lưu một phía không đủ phục hồi hồ sơ đầy đủ. Dữ liệu tham chiếu tới file đã mất trước khi sửa phải được phục hồi từ nguồn/bản sao gốc hoặc upload lại đúng file.
 
 ## Development và kiểm thử
@@ -112,6 +118,7 @@ npm run test:login
 npm run test:mail
 npm run test:outbox
 npm run test:runtime
+npm run test:signed-ui
 npm run test:migration
 npm run test:integration
 ~~~

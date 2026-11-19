@@ -19,6 +19,7 @@ import { User, ActiveNavTab, Application } from '../../types';
 import { isAdminUser } from '../../constants';
 import { normalizeStatus } from '../../services/workflowEngine';
 import logoUrl from '../../assets/logo.png';
+import { signedUploadReturn, signedUploadEvents } from '../../utils/signedUploads';
 
 interface HeaderProps {
   currentUser: User;
@@ -111,7 +112,10 @@ export const Header: React.FC<HeaderProps> = ({
         'Hồ sơ Chuyển giao Công nghệ';
 
       // 1. Thông báo trạng thái chính của hồ sơ
-      if (st === 'RETURNED_FOR_REVISION') {
+      const uploadReturn=signedUploadReturn(d);
+      if(uploadReturn){
+        list.push({id:`status-${d.id}-${uploadReturn.id||uploadReturn.timestamp}`,dossier:d,code:d.code,title:`Yêu cầu tải lại bản ký/minh chứng: ${d.code}`,message:uploadReturn.note||'Vui lòng kiểm tra và nộp lại tệp theo yêu cầu của Admin.',timestamp:uploadReturn.timestamp,type:'warning'});
+      } else if (st === 'RETURNED_FOR_REVISION') {
         const reason =
           d.revision_note ||
           d.revisionNote ||
@@ -167,7 +171,7 @@ export const Header: React.FC<HeaderProps> = ({
         });
       } else if (st === 'PENDING_SIGNED_REVIEW') {
         list.push({
-          id: `status-${d.id}-signed-upload-v${ver}`,
+          id: `status-${d.id}-signed-upload-${signedUploadEvents(d).at(-1)?.id||'v'+ver}`,
           dossier: d,
           code: d.code,
           title: isAdmin

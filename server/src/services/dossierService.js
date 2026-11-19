@@ -11,6 +11,7 @@ import { emailService } from './emailService.js';
 import { config } from '../utils/config.js';
 import { sanitizeFormPayload, sanitizeStringValue } from '../utils/sanitizer.js';
 import { resolveUploadAbsolutePath } from '../utils/cleanupGarbageData.js';
+import { currentUploadFiles, validateSignedUpload, validateCurrentSignedUpload, preserveUploadFiles, uploadError } from './signedUploadFiles.js';
 
 function computeChangedFields(oldForm = {}, newForm = {}) {
   const keys = new Set([...Object.keys(oldForm || {}), ...Object.keys(newForm || {})]);
@@ -775,6 +776,13 @@ export const dossierService = {
   async updateFields(id, fields, user) {
     const dossier = await dossierRepository.findById(id);
     if (!dossier) throw new Error('Không tìm thấy hồ sơ');
+    const uploadFields=['faculty_signed_pdf_url','department_signed_files','departmentSignedFiles','evidence_files','evidenceFiles','resubmitted_signed_files','resubmittedSignedFiles'];
+    if(uploadFields.some(key=>key in fields))throw uploadError('Vui lòng dùng chức năng tải bản ký/minh chứng để cập nhật tệp.');
+    if(dossier.status==='VALIDATED'&&fields.status==='PENDING_SIGNED_REVIEW')throw uploadError('Vui lòng nộp bộ bản ký 1a/2a và minh chứng qua chức năng tải file.');
+    if(dossier.status==='PENDING_SIGNED_REVIEW'&&fields.status==='VALIDATED'){
+      if(Object.keys(fields).some(key=>!['status','reason','review_notes','revision_note'].includes(key)))throw uploadError('Yêu cầu trả lại bản ký/minh chứng không được thay đổi nội dung biểu mẫu.');
+      return this.returnSignedUpload(id,fields.reason||fields.review_notes||fields.revision_note,user);
+    }
     return dossierRepository.update(id, fields);
   },
 
@@ -918,108 +926,35 @@ export const dossierService = {
   // =========================================================================
   // BƯỚC 4: Thầy/Cô Upload bản ký phòng ban (PENDING_SIGNED_REVIEW - Chờ duyệt)
   // =========================================================================
-  async uploadFacultySignature(id, facultySignedPdfUrl, evidenceFiles = [], user) {
-    const dossier = await dossierRepository.findById(id);
-    if (!dossier) throw new Error('Không tìm thấy hồ sơ');
+  async returnSignedUpload(id,reason,adminUser) {
+    const dossier=await dossierRepository.findById(id);
+    if(adminUser?.role!=='ADMIN')throw uploadError('Chỉ Admin được trả lại bản ký/minh chứng.',403);
+    if(dossier.status!=='PENDING_SIGNED_REVIEW')throw uploadError('Hồ sơ không ở bước chờ duyệt bản ký/minh chứng.',409);
+    const note=typeof reason==='string'?sanitizeStringValue(reason):'';
+    if(!note)throw uploadError('Vui lòng nhập lý do yêu cầu tải lại bản ký/minh chứng.');
+    if(note.length>4000)throw uploadError('Lý do yêu cầu tải lại không được vượt quá 4000 ký tự.');
+    const files=currentUploadFiles(dossier);
+    await preserveUploadFiles(dossier,files,dossier.user_id);
+    const event={id:'upload-'+randomUUID(),type:'SIGNED_UPLOAD_RETURNED',step:4,status:'VALIDATED',title:'Yêu cầu tải lại bản ký/minh chứng',timestamp:new Date().toISOString(),note,files,actorName:adminUser.name};
+    const updated=await dossierRepository.update(id,{status:'VALIDATED',timeline_logs:[...(dossier.timeline_logs||[]),event]});
+    await auditRepository.create({dossierId:id,actorId:adminUser.id,actorName:adminUser.name,actorRole:'ADMIN',action:'RETURN_SIGNED_EVIDENCE',fromStatus:'PENDING_SIGNED_REVIEW',toStatus:'VALIDATED',notes:note,metadata:{eventId:event.id,files}});
+    const escaped=note.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+    await emailService.sendEmail({dossierId:id,recipientEmail:dossier.applicant_email||dossier.createdBy?.email,recipientName:dossier.createdBy?.name||'Thầy/Cô',subject:'[CTUMP DocuGov] Yêu cầu tải lại bản ký/minh chứng: '+dossier.code,content:'Admin yêu cầu kiểm tra và tải lại bản ký/minh chứng cho hồ sơ '+dossier.code+'.<br/>Lý do: '+escaped+'<br/>Nội dung và kết quả duyệt biểu mẫu 1a/2a được giữ nguyên.',stepName:'Bước 4 - Yêu cầu tải lại bản ký/minh chứng'});
+    return updated;
+  },
 
-    const prevStatus = dossier.status;
-    const applicantName = user?.name || dossier.createdBy?.name || 'Thầy/Cô Giảng viên';
-    const rawEvidence = Array.isArray(evidenceFiles) ? evidenceFiles : [];
-
-    const signedDir = path.join(config.uploadDir, 'signed');
-    if (!fs.existsSync(signedDir)) {
-      fs.mkdirSync(signedDir, { recursive: true });
-    }
-
-    const cleanEvidence = rawEvidence.map((ev, idx) => {
-      const rawName = String(ev?.name || `minh-chung-${idx + 1}.pdf`);
-      const safeFileName = `${dossier.code}-${Date.now()}-${rawName.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-      let resolvedUrl = ev?.url || `/uploads/signed/${safeFileName}`;
-
-      if (typeof ev?.dataUrl === 'string' && ev.dataUrl.includes('base64,')) {
-        try {
-          const base64Part = ev.dataUrl.split('base64,')[1];
-          const fileBuffer = Buffer.from(base64Part, 'base64');
-          const destPath = path.join(signedDir, safeFileName);
-          fs.writeFileSync(destPath, fileBuffer);
-          resolvedUrl = `/uploads/signed/${safeFileName}`;
-        } catch (writeErr) {
-          console.warn('[uploadFacultySignature] Không ghi được file base64:', writeErr.message);
-        }
-      }
-
-      return {
-        name: rawName,
-        url: resolvedUrl,
-        size: ev?.size || '',
-        mimeType: ev?.mimeType || (rawName.toLowerCase().endsWith('.pdf') ? 'application/pdf' : ''),
-        type: rawName.toLowerCase().endsWith('.pdf') ? 'DEPARTMENT_SIGNED_PDF' : 'EVIDENCE',
-        uploadedAt: new Date().toISOString(),
-      };
-    });
-
-    const signedUrl =
-      cleanEvidence.find((f) => f.url?.toLowerCase().endsWith('.pdf'))?.url ||
-      facultySignedPdfUrl ||
-      `/uploads/signed/${dossier.code}-department-signed.pdf`;
-
-    const departmentSignedFiles =
-      cleanEvidence.length > 0
-        ? cleanEvidence
-        : [
-            {
-              name: `${dossier.code}_Ban_Ky_Phong_Ban.pdf`,
-              url: signedUrl,
-              type: 'DEPARTMENT_SIGNED_PDF',
-              uploadedAt: new Date().toISOString(),
-            },
-          ];
-
-    const currentTimeline = Array.isArray(dossier.timeline_logs) ? [...dossier.timeline_logs] : [];
-    currentTimeline.push({
-      step: 4,
-      status: 'PENDING_SIGNED_REVIEW',
-      title: 'Chờ duyệt (Đã tải lên bản ký phòng ban)',
-      timestamp: new Date().toISOString(),
-      note: `Thầy/Cô đã upload bản PDF có chữ ký phòng ban kèm ${cleanEvidence.length} tệp minh chứng`,
-    });
-
-    const updated = await dossierRepository.update(id, {
-      status: 'PENDING_SIGNED_REVIEW',
-      faculty_signed_pdf_url: signedUrl,
-      evidence_files: cleanEvidence,
-      department_signed_files: departmentSignedFiles,
-      resubmitted_signed_files: departmentSignedFiles,
-      timeline_logs: currentTimeline,
-    });
-
-    await auditRepository.create({
-      dossierId: dossier.id,
-      actorId: user?.id || dossier.user_id,
-      actorName: applicantName,
-      actorRole: 'USER',
-      action: 'UPLOAD_DEPARTMENT_SIGNED',
-      fromStatus: prevStatus,
-      toStatus: 'PENDING_SIGNED_REVIEW',
-      notes: `Thầy/Cô upload file PDF đã ký phòng ban (${signedUrl}) và ${cleanEvidence.length} file minh chứng. Trạng thái: PENDING_SIGNED_REVIEW (Chờ duyệt).`,
-    });
-
-    await emailService.sendEmail({
-      dossierId: dossier.id,
-      recipientEmail: config.smtp.adminNotificationEmail,
-      recipientName: 'Cô Admin (Phòng KH&CN)',
-      subject: `[CTUMP DocuGov] Thầy/Cô đã upload bản ký phòng ban: ${dossier.code} - Chờ duyệt`,
-      content: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-          <h3 style="color: #1e3a8a;">Kính gửi Cô Admin (Phòng KH&CN),</h3>
-          <p>Thầy/Cô <b>${applicantName}</b> vừa tải lên <b>bản PDF đã có chữ ký phòng ban</b> và <b>${cleanEvidence.length} tệp minh chứng</b> cho hồ sơ mã <b>${dossier.code}</b>.</p>
-          <p>Trạng thái hiện tại: <b style="color: #d97706;">PENDING_SIGNED_REVIEW (Chờ duyệt)</b>.</p>
-          <p>Kính mời Cô Admin kiểm tra file ký phòng ban và nhấn nút <b>"Chuyển sang Chờ ký Hiệu trưởng"</b>.</p>
-        </div>
-      `,
-      stepName: 'Bước 4 - Upload bản ký phòng ban (Chờ duyệt)',
-    });
-
+  async uploadFacultySignature(id,packet,user) {
+    const dossier=await dossierRepository.findById(id);
+    if(dossier.status!=='VALIDATED')throw uploadError('Chỉ được tải bản ký/minh chứng khi hồ sơ đã duyệt hoặc được Admin trả lại.',409);
+    const {signed,evidence,files}=validateSignedUpload(packet,dossier);
+    await preserveUploadFiles(dossier,currentUploadFiles(dossier),dossier.user_id);
+    await preserveUploadFiles(dossier,files,user.id);
+    const timeline=dossier.timeline_logs||[];
+    const round=timeline.filter(event=>event.type==='SIGNED_UPLOAD_SUBMITTED'||event.step===4&&event.status==='PENDING_SIGNED_REVIEW').length+1;
+    const event={id:'upload-'+randomUUID(),type:'SIGNED_UPLOAD_SUBMITTED',round,step:4,status:'PENDING_SIGNED_REVIEW',title:'Đã nộp bản ký 1a/2a và minh chứng (lượt '+round+')',timestamp:new Date().toISOString(),note:'Đã nộp hai bản ký 1a/2a và '+evidence.length+' tệp minh chứng.',files,actorName:user.name};
+    const updated=await dossierRepository.update(id,{status:'PENDING_SIGNED_REVIEW',faculty_signed_pdf_url:signed[0].url,evidence_files:evidence,department_signed_files:files,resubmitted_signed_files:files,timeline_logs:[...timeline,event]});
+    await auditRepository.create({dossierId:id,actorId:user.id,actorName:user.name,actorRole:user.role,action:'UPLOAD_DEPARTMENT_SIGNED',fromStatus:'VALIDATED',toStatus:'PENDING_SIGNED_REVIEW',notes:event.note,metadata:{eventId:event.id,round,files}});
+    await emailService.sendEmail({dossierId:id,recipientEmail:config.smtp.adminNotificationEmail,recipientName:'Admin (Phòng KH&CN)',subject:'[CTUMP DocuGov] Bản ký/minh chứng chờ duyệt: '+dossier.code+' (lượt '+round+')',content:'Người nộp đã gửi hai bản ký Mẫu 1a, Mẫu 2a và '+evidence.length+' tệp minh chứng cho hồ sơ '+dossier.code+'. Vui lòng kiểm tra để chuyển trình ký hoặc trả lại kèm lý do nếu chưa hợp lệ.',stepName:'Bước 4 - Kiểm tra bản ký/minh chứng'});
     return updated;
   },
 
@@ -1029,6 +964,7 @@ export const dossierService = {
   async submitToRector(id, note, adminUser) {
     const dossier = await dossierRepository.findById(id);
     if (!dossier) throw new Error('Không tìm thấy hồ sơ');
+    validateCurrentSignedUpload(dossier);
 
     const prevStatus = dossier.status;
     const applicantEmail =
@@ -1092,6 +1028,7 @@ export const dossierService = {
   async completeDossier(id, completionData = {}, adminUser) {
     const dossier = await dossierRepository.findById(id);
     if (!dossier) throw new Error('Không tìm thấy hồ sơ');
+    if(dossier.status==='PENDING_SIGNED_REVIEW')validateCurrentSignedUpload(dossier);
 
     const prevStatus = dossier.status;
     const currentVer = Number(dossier.current_version || 1);
@@ -1307,13 +1244,13 @@ export const dossierService = {
 };
 
 // Enforce the existing workflow and serialize persistence for each dossier.
-const actionTargets={returnForRevision:'RETURNED_FOR_REVISION',resubmit1a:'SUBMITTED',resubmit2a:'SUBMITTED',resubmitDossier:'SUBMITTED',approveApplication:'VALIDATED',uploadFacultySignature:'PENDING_SIGNED_REVIEW',submitToRector:'WAITING_RECTOR_SIGNATURE',completeDossier:'SIGNED_ARCHIVED'};
+const actionTargets={returnForRevision:'RETURNED_FOR_REVISION',returnSignedUpload:'VALIDATED',resubmit1a:'SUBMITTED',resubmit2a:'SUBMITTED',resubmitDossier:'SUBMITTED',approveApplication:'VALIDATED',uploadFacultySignature:'PENDING_SIGNED_REVIEW',submitToRector:'WAITING_RECTOR_SIGNATURE',completeDossier:'SIGNED_ARCHIVED'};
 for(const name of [...Object.keys(actionTargets),'updateFields','rollbackVersion']){
   const action=dossierService[name];
   dossierService[name]=async function(id,...args){return withDossierLock(id,async()=>{
     const dossier=await dossierRepository.findById(id);
     if(!dossier)throw new Error('Không tìm thấy hồ sơ.');
-    const actor=name==='uploadFacultySignature'?args[2]:args[1];
+    const actor=args[1];
     const target=actionTargets[name] || (name==='updateFields'?args[0].status:null);
     if(dossier.status==='SIGNED_ARCHIVED'){
       if(name==='completeDossier')return dossier;

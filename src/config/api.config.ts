@@ -43,6 +43,7 @@ export const API_ENDPOINTS = {
 
   // Bước 4: Thầy/Cô upload bản ký phòng ban + minh chứng (PENDING_SIGNED_REVIEW)
   REUPLOAD_SIGNED: (id: string) => `${API_BASE_URL}/applications/${id}/reupload-signed`,
+  RETURN_SIGNED_UPLOAD: (id: string) => `${API_BASE_URL}/applications/${id}/return-signed`,
   UPLOAD_FACULTY_SIGN: (id: string) => `${API_BASE_URL}/applications/${id}/reupload-signed`,
 
   // Bước 5: Admin chuyển sang Chờ ký Hiệu trưởng (WAITING_RECTOR_SIGNATURE)

@@ -14,6 +14,7 @@ export class AuditModel {
     fromStatus = null,
     toStatus = null,
     notes = '',
+    metadata = null,
     createdAt = null,
   }) {
     this.id = id;
@@ -27,6 +28,7 @@ export class AuditModel {
     this.fromStatus = fromStatus;
     this.toStatus = toStatus;
     this.notes = notes;
+    this.metadata = metadata;
     this.createdAt = createdAt;
   }
 
@@ -44,6 +46,7 @@ export class AuditModel {
       fromStatus: row.from_status,
       toStatus: row.to_status,
       notes: row.notes,
+      metadata: typeof row.metadata==='string'?JSON.parse(row.metadata):row.metadata||null,
       createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
     });
   }
@@ -61,6 +64,7 @@ export class AuditModel {
       fromStatus: this.fromStatus,
       toStatus: this.toStatus,
       notes: this.notes,
+      metadata: this.metadata,
       createdAt: this.createdAt,
     };
   }

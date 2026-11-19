@@ -5,6 +5,8 @@ import { cleanupGarbageData } from '../utils/cleanupGarbageData.js';
 import { requireAdmin } from '../middlewares/authMiddleware.js';
 import { ownsDossier } from '../middlewares/dossierAccess.js';
 import { canAccessUpload } from '../middlewares/fileAccess.js';
+import { removeUploadedFiles } from '../middlewares/uploadMiddleware.js';
+import { uploadError } from '../services/signedUploadFiles.js';
 
 export const dossierController = {
   // GET /api/dossiers & GET /api/applications
@@ -345,58 +347,32 @@ export const dossierController = {
   // BƯỚC 4: POST /api/applications/:id/reupload-signed (Thầy/Cô Upload bản ký phòng ban - PENDING_SIGNED_REVIEW)
   async reuploadSigned(req, res) {
     try {
-      const { id } = req.params;
-      let facultySignedPdfUrl = req.body.facultySignedPdfUrl;
-      if (facultySignedPdfUrl && !(await canAccessUpload(req.user,facultySignedPdfUrl))) return ApiResponse.error('Tệp chưa được tải lên hoặc không thuộc quyền truy cập.',400).send(res);
-      let evidenceFiles = [];
-
-      if (req.body.evidenceFiles) {
-        try {
-          evidenceFiles =
-            typeof req.body.evidenceFiles === 'string'
-              ? JSON.parse(req.body.evidenceFiles)
-              : req.body.evidenceFiles;
-        } catch {
-          evidenceFiles = [];
-        }
-      }
-
-      for (const item of evidenceFiles) { if (!item.url || !(await canAccessUpload(req.user,item.url))) return ApiResponse.error('Tệp minh chứng không hợp lệ.',400).send(res); }
-      if (req.files && Array.isArray(req.files) && req.files.length > 0) {
-        for (const file of req.files) {
-          const isPdf = file.mimetype === 'application/pdf';
-          const fileUrl = isPdf
-            ? `/uploads/signed/${file.filename}`
-            : `/uploads/evidence/${file.filename}`;
-
-          if (isPdf && !facultySignedPdfUrl) {
-            facultySignedPdfUrl = fileUrl;
-          }
-          evidenceFiles.push({
-              name: file.originalname,
-              url: fileUrl,
-              size: `${(file.size / 1024).toFixed(1)} KB`,
-              path: file.path,
-            });
-        }
-      }
-
-      const user = req.user;
-
-      const updated = await dossierService.uploadFacultySignature(
-        id,
-        facultySignedPdfUrl,
-        evidenceFiles,
-        user
-      );
-
-      return ApiResponse.success(
-        updated,
-        'Đã tải lên bản ký phòng ban và minh chứng. Trạng thái đơn chuyển sang "Chờ duyệt" (PENDING_SIGNED_REVIEW) và đã ghi nhận thông báo gửi cho Cô Admin.'
-      ).send(res);
-    } catch (err) {
-      return ApiResponse.error(err.message, err.statusCode || 500).send(res);
+      let retained=[];
+      try { retained=req.body.retainedEvidence?JSON.parse(req.body.retainedEvidence):[]; }
+      catch { throw uploadError('Danh sách minh chứng giữ lại không hợp lệ.'); }
+      if(!Array.isArray(retained)||retained.some(file=>!file||typeof file.url!=='string'))throw uploadError('Danh sách minh chứng giữ lại không hợp lệ.');
+      const selection=(file,retainedUrl)=>{
+        if(file)return {name:file.originalname,url:'/uploads/'+(file.mimetype==='application/pdf'?'signed':'evidence')+'/'+file.filename,size:(file.size/1024).toFixed(1)+' KB',mimeType:file.mimetype,fresh:true};
+        return retainedUrl?{url:retainedUrl}:null;
+      };
+      const packet={
+        signed1a:selection(req.files?.signed1a?.[0],req.body.retainedSigned1a),
+        signed2a:selection(req.files?.signed2a?.[0],req.body.retainedSigned2a),
+        evidenceFiles:[...retained.map(file=>({url:file.url})),...(req.files?.evidence||[]).map(file=>selection(file))],
+      };
+      const updated=await dossierService.uploadFacultySignature(req.params.id,packet,req.user);
+      return ApiResponse.success(updated,'Đã nộp hai bản ký 1a/2a và minh chứng để Admin kiểm tra.').send(res);
+    } catch(err) {
+      removeUploadedFiles(req);
+      return ApiResponse.error(err.message,err.statusCode||500).send(res);
     }
+  },
+
+  async returnSignedUpload(req,res) {
+    try {
+      const updated=await dossierService.returnSignedUpload(req.params.id,req.body?.reason,req.user);
+      return ApiResponse.success(updated,'Đã trả lại bản ký/minh chứng và ghi nhận yêu cầu tải lại. Nội dung 1a/2a giữ nguyên.').send(res);
+    } catch(err) { return ApiResponse.error(err.message,err.statusCode||500).send(res); }
   },
 
   async uploadFacultySignature(req, res) {
@@ -434,7 +410,7 @@ export const dossierController = {
       const { id } = req.params;
       let finalPdfUrl = req.body?.finalPdfUrl;
       let finalPdfPath;
-      if (finalPdfUrl && !(await canAccessUpload(req.user,finalPdfUrl))) return ApiResponse.error('Tệp không hợp lệ.',400).send(res);
+      if (finalPdfUrl && !(await canAccessUpload(req.user,finalPdfUrl))) throw uploadError('Tệp không hợp lệ.');
       const decisionNumber = req.body?.decisionNumber;
       const decisionDate = req.body?.decisionDate;
 
@@ -459,6 +435,7 @@ export const dossierController = {
         'Xác nhận "Đã ký và lưu trữ" (SIGNED_ARCHIVED) thành công. Hệ thống đã khóa hồ sơ lưu trữ và ghi nhận thông báo email kèm file PDF đã ký cuối cùng cho Thầy/Cô.'
       ).send(res);
     } catch (err) {
+      removeUploadedFiles(req);
       return ApiResponse.error(err.message, err.statusCode || 500).send(res);
     }
   },

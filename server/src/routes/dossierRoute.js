@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { dossierController } from '../controllers/dossierController.js';
-import { uploadSignedAndEvidence, uploadFinalSignedPdf, verifyUploadedFiles } from '../middlewares/uploadMiddleware.js';
+import { uploadSignedAndEvidence, uploadFinalSignedPdf, verifyUploadedFiles, requireSignedUploadStage } from '../middlewares/uploadMiddleware.js';
 import { sanitizePayloadMiddleware } from '../utils/sanitizer.js';
 import { requireAuth, requireAdmin } from '../middlewares/authMiddleware.js';
 import { requireDossierAccess } from '../middlewares/dossierAccess.js';
@@ -45,8 +45,10 @@ router.patch('/:id/approve', requireAdmin, dossierController.approve);
 router.post('/:id/approve', requireAdmin, dossierController.approve);
 
 // BƯỚC 4: Thầy/Cô upload bản ký phòng ban + minh chứng (PENDING_SIGNED_REVIEW - Chờ duyệt)
-router.post('/:id/reupload-signed', uploadSignedAndEvidence.array('files', 10), verifyUploadedFiles, dossierController.reuploadSigned);
-router.post('/:id/faculty-signed', uploadSignedAndEvidence.array('files', 10), verifyUploadedFiles, dossierController.uploadFacultySignature);
+const signedFields=[{name:'signed1a',maxCount:1},{name:'signed2a',maxCount:1},{name:'evidence',maxCount:8}];
+router.post('/:id/reupload-signed', requireSignedUploadStage, uploadSignedAndEvidence.fields(signedFields), verifyUploadedFiles, dossierController.reuploadSigned);
+router.post('/:id/faculty-signed', requireSignedUploadStage, uploadSignedAndEvidence.fields(signedFields), verifyUploadedFiles, dossierController.uploadFacultySignature);
+router.patch('/:id/return-signed', requireAdmin, dossierController.returnSignedUpload);
 
 // BƯỚC 5: Admin chuyển sang Chờ ký Hiệu trưởng (WAITING_RECTOR_SIGNATURE)
 router.patch('/:id/submit-to-rector', requireAdmin, dossierController.submitToRector);
